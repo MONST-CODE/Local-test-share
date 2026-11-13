@@ -220,8 +220,12 @@ void HostServer::run(std::stop_token token) {
         connections_.erase(std::remove_if(connections_.begin(), connections_.end(),
             [](const std::unique_ptr<Connection>& connection) { return !connection->socket.valid(); }), connections_.end());
         accept_pending_connections();
+        // Le jeu de poll est figé pour cette itération : les connexions acceptées
+        // pendant le pompage ne sont PAS parcourues ici, sinon les indices
+        // débordent du tableau d'entrées (lecture hors limites).
+        const std::size_t polled_connections = connections_.size();
         std::vector<PollEntry> entries;
-        entries.reserve(connections_.size() + 2);
+        entries.reserve(polled_connections + 2);
         entries.push_back(PollEntry{listener_.native(), true, false, false, false, false});
         entries.push_back(PollEntry{wakeup_.native(), true, false, false, false, false});
         for (const auto& connection : connections_) {
@@ -241,9 +245,8 @@ void HostServer::run(std::stop_token token) {
             if (warnings_.size() < kMaxWarnings) warnings_.push_back(waited.error());
             ++revision_;
         } else {
-            if (entries[0].readable) accept_pending_connections();
             if (entries[1].readable) { wakeup_.drain(); continue; }
-            for (std::size_t index = 0; index < connections_.size(); ++index) {
+            for (std::size_t index = 0; index < polled_connections; ++index) {
                 auto& connection = *connections_[index];
                 const auto& entry = entries[index + 2];
                 if (entry.failed) {
@@ -306,6 +309,8 @@ void HostServer::run(std::stop_token token) {
             }
             connections_.erase(std::remove_if(connections_.begin(), connections_.end(),
                 [](const std::unique_ptr<Connection>& connection) { return !connection->socket.valid(); }), connections_.end());
+            // Acceptation APRÈS le pompage : jamais au milieu d'un tableau d'entrées.
+            if (entries[0].readable) accept_pending_connections();
         }
         apply_timeouts();
         if (revision_ != published_revision_) publish();

@@ -45,19 +45,31 @@ ProviderState& state() {
 const wchar_t* algorithm_name(DigestAlgorithm algorithm) {
     return algorithm == DigestAlgorithm::Sha256 ? BCRYPT_SHA256_ALGORITHM : BCRYPT_SHA1_ALGORITHM;
 }
+// CNG exige un objet de hachage distinct du fournisseur d'algorithme :
+// BCryptOpenAlgorithmProvider -> BCryptCreateHash -> BCryptHashData ->
+// BCryptFinishHash. BCryptFinishHash ne rend aucune longueur : la taille est
+// celle de l'algorithme, et toute divergence est une erreur, pas un succès.
 Result<std::vector<std::uint8_t>> windows_digest(DigestAlgorithm algorithm, std::span<const std::uint8_t> data) {
-    BCRYPT_ALG_HANDLE handle = nullptr;
-    const auto opened = ::BCryptOpenAlgorithmProvider(&handle, algorithm_name(algorithm), nullptr, 0);
-    if (opened < 0 || handle == nullptr)
-        return Result<std::vector<std::uint8_t>>::failure({ErrorCode::PlatformError, "BCryptOpenAlgorithmProvider", "digest", static_cast<std::int64_t>(opened)});
+    BCRYPT_ALG_HANDLE provider_handle = nullptr;
+    auto status = ::BCryptOpenAlgorithmProvider(&provider_handle, algorithm_name(algorithm), nullptr, 0);
+    if (status < 0 || provider_handle == nullptr)
+        return Result<std::vector<std::uint8_t>>::failure(
+            {ErrorCode::PlatformError, "BCryptOpenAlgorithmProvider", "digest", static_cast<std::int64_t>(status)});
+    BCRYPT_HASH_HANDLE hash_handle = nullptr;
+    status = ::BCryptCreateHash(provider_handle, &hash_handle, nullptr, 0, nullptr, 0, 0);
+    if (status < 0 || hash_handle == nullptr) {
+        ::BCryptCloseAlgorithmProvider(provider_handle, 0);
+        return Result<std::vector<std::uint8_t>>::failure(
+            {ErrorCode::PlatformError, "BCryptCreateHash", "digest", static_cast<std::int64_t>(status)});
+    }
     std::vector<std::uint8_t> out(digest_size(algorithm));
-    ULONG produced = 0;
-    const auto status = ::BCryptHashData(handle, const_cast<PUCHAR>(data.data()), static_cast<ULONG>(data.size()), 0) == 0
-        ? ::BCryptFinishHash(handle, out.data(), static_cast<ULONG>(out.size()), &produced)
-        : static_cast<NTSTATUS>(0xC0000001L);
-    ::BCryptCloseAlgorithmProvider(handle, 0);
-    if (status < 0 || produced != out.size())
-        return Result<std::vector<std::uint8_t>>::failure({ErrorCode::PlatformError, "BCryptHashData/FinishHash", "digest", static_cast<std::int64_t>(status)});
+    if (!data.empty()) status = ::BCryptHashData(hash_handle, const_cast<PUCHAR>(data.data()), static_cast<ULONG>(data.size()), 0);
+    if (status >= 0) status = ::BCryptFinishHash(hash_handle, out.data(), static_cast<ULONG>(out.size()), 0);
+    ::BCryptDestroyHash(hash_handle);
+    ::BCryptCloseAlgorithmProvider(provider_handle, 0);
+    if (status < 0)
+        return Result<std::vector<std::uint8_t>>::failure(
+            {ErrorCode::PlatformError, "BCryptHashData/BCryptFinishHash", "digest", static_cast<std::int64_t>(status)});
     return Result<std::vector<std::uint8_t>>::success(std::move(out));
 }
 #elif defined(__linux__)
