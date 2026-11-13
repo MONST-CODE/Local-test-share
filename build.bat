@@ -184,8 +184,8 @@ if /I not "%CXXNAME%"=="clang++.exe" (call :problem "choose clang++.exe, not ano
 for %%I in ("%CXX%") do set "LLD=%%~dpIlld-link.exe"
 if not exist "%LLD%" (call :problem "matching lld-link.exe required next to clang++.exe"& exit /b 2)
 call :run "%CXX%" --version || exit /b
-findstr /C:"clang version" "%CMDLOG%" >nul || (call :problem "selected compiler is not LLVM Clang"& exit /b 2)
 call :notice_file "%CMDLOG%"
+findstr /I /C:"clang version" "%CMDLOG%" >nul || (call :problem "selected compiler is not LLVM Clang: %CXX%"& exit /b 2)
 call :run "%CXX%" -dumpmachine || exit /b
 findstr /I /C:"x86_64-pc-windows-msvc" "%CMDLOG%" >nul || (call :problem "compiler default target must be x86_64-pc-windows-msvc. MinGW is forbidden."& exit /b 2)
 call :run "%CXX%" -dumpversion || exit /b
