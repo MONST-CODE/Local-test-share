@@ -1,6 +1,7 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 rem PLPT authoritative Windows build: MSYS2 UCRT64 clang++.exe ONLY.
+setlocal DisableDelayedExpansion
 cd /d "%~dp0"
 set "ROOT=%CD%"
 set "ACTION=%~1"
@@ -221,12 +222,12 @@ exit /b 0
 call :paths || exit /b
 if not exist "%OUT%\doctor" mkdir "%OUT%\doctor"
 set "TOOLCHAIN_INFO=%LOG%.toolchain.txt"
->"%TOOLCHAIN_INFO%" echo PROFILE=MSYS2 UCRT64 root=%PLPT_MSYS2_ROOT%
+>"%TOOLCHAIN_INFO%" echo PROFILE=MSYS2 UCRT64 root="%PLPT_MSYS2_ROOT%"
 >>"%TOOLCHAIN_INFO%" echo compiler=%CXX%
 >>"%TOOLCHAIN_INFO%" echo PATH=%PATH%
 call :run "%PACMAN%" -Qqo /ucrt64/bin/clang++.exe
 if errorlevel 1 exit /b
-findstr /X /C:"mingw-w64-ucrt-x86_64-clang" "%CMDLOG%" >nul || (call :problem "clang++.exe is not owned by the UCRT64 clang package"& exit /b 2)
+call :exact_output "%CMDLOG%" "mingw-w64-ucrt-x86_64-clang" || (call :problem "clang++.exe is not owned by the UCRT64 clang package"& exit /b 2)
 call :run "%CXX%" --version
 if errorlevel 1 exit /b
 type "%CMDLOG%" >>"%TOOLCHAIN_INFO%"
@@ -234,7 +235,7 @@ findstr /C:"clang version" "%CMDLOG%" >nul || (call :problem "selected executabl
 call :run "%CXX%" -dumpmachine
 if errorlevel 1 exit /b
 type "%CMDLOG%" >>"%TOOLCHAIN_INFO%"
-findstr /X /C:"x86_64-w64-windows-gnu" "%CMDLOG%" >nul || (call :problem "expected default target x86_64-w64-windows-gnu, no target substitution"& exit /b 2)
+call :exact_output "%CMDLOG%" "x86_64-w64-windows-gnu" || (call :problem "expected default target x86_64-w64-windows-gnu, no target substitution"& exit /b 2)
 call :run "%CXX%" -print-search-dirs
 if errorlevel 1 exit /b
 type "%CMDLOG%" >>"%TOOLCHAIN_INFO%"
@@ -271,7 +272,7 @@ findstr /R /C:"^ [A-Za-z]:" "%CMDLOG%" >"%LOG%.include-paths.txt"
 if errorlevel 1 (call :problem "cannot identify actual native header search paths"& exit /b 2)
 for /f "usebackq tokens=*" %%I in ("%LOG%.include-paths.txt") do (call :path_in_ucrt "%%I" || exit /b)
 type "%LOG%.include-paths.txt" >>"%TOOLCHAIN_INFO%"
-call :run "%PACMAN%" -Q mingw-w64-ucrt-x86_64-clang mingw-w64-ucrt-x86_64-headers mingw-w64-ucrt-x86_64-crt mingw-w64-ucrt-x86_64-gcc-libs mingw-w64-ucrt-x86_64-libwinpthread mingw-w64-ucrt-x86_64-binutils
+call :run "%PACMAN%" -Q mingw-w64-ucrt-x86_64-clang mingw-w64-ucrt-x86_64-headers mingw-w64-ucrt-x86_64-crt mingw-w64-ucrt-x86_64-libwinpthread mingw-w64-ucrt-x86_64-binutils
 if errorlevel 1 exit /b
 type "%CMDLOG%" >>"%TOOLCHAIN_INFO%"
 call :run "%CXX%" %LINK_DRIVER% -std=c++20 -Wall -Wextra -Wpedantic -Werror tests/build/toolchain_probe.cpp -o "%OUT%\doctor\probe.exe" -lbcrypt
@@ -293,8 +294,8 @@ if "%ASAN_AVAILABLE%"=="true" if exist "%RESOURCE_DIR%\lib\windows\libclang_rt.f
 if "%ASAN_AVAILABLE%"=="false" echo SKIP capability: UCRT64 ASan runtime not installed. Not a memory-test PASS.
 if "%FUZZ_AVAILABLE%"=="false" echo SKIP capability: UCRT64 libFuzzer runtime not installed. Not a fuzz-test PASS.
 if /I "%ACTION%"=="doctor" if defined GITHUB_OUTPUT (
-  >>"%GITHUB_OUTPUT%" echo asan=%ASAN_AVAILABLE%
-  >>"%GITHUB_OUTPUT%" echo fuzz=%FUZZ_AVAILABLE%
+  >>"%GITHUB_OUTPUT%" echo "asan=%ASAN_AVAILABLE%"
+  >>"%GITHUB_OUTPUT%" echo "fuzz=%FUZZ_AVAILABLE%"
 )
 call :notice_file "%TOOLCHAIN_INFO%"
 exit /b 0
@@ -322,6 +323,25 @@ findstr /I /C:"DLL Name: msvcrt.dll" /C:"DLL Name: MSVCP" /C:"DLL Name: VCRUNTIM
 if not errorlevel 1 (call :problem "forbidden MSVCRT/MSVC/MSYS/libc++ runtime import in %~1"& exit /b 2)
 exit /b 0
 
+:exact_output
+rem FOR /F handles both MSYS LF and native CRLF; FINDSTR /X is not portable between them.
+set "OUTPUT_LINES=0"
+set "OBSERVED_LINE="
+for /f "usebackq delims=" %%I in ("%~1") do (
+  set /a OUTPUT_LINES+=1 >nul
+  set "OBSERVED_LINE=%%I"
+)
+if not defined OBSERVED_LINE exit /b 1
+if not "%OUTPUT_LINES%"=="1" exit /b 1
+if not "%OBSERVED_LINE%"=="%~2" exit /b 1
+exit /b 0
+
+:contains_exact_line
+set "MATCHED_LINE=0"
+for /f "usebackq delims=" %%I in ("%~1") do if "%%I"=="%~2" set "MATCHED_LINE=1"
+if not "%MATCHED_LINE%"=="1" exit /b 1
+exit /b 0
+
 :verify
 if not exist "%~1" (call :problem "missing archive %~1. Run build.bat deps --fetch or provision that exact pinned file."& exit /b 2)
 call :run "%SystemRoot%\System32\certutil.exe" -hashfile "%~1" SHA256
@@ -340,13 +360,13 @@ call :verify "%SDL_ARCHIVE%" "%SDL_SHA%" || exit /b
 call :verify "%IMGUI_ARCHIVE%" "%IMGUI_SHA%" || exit /b
 call :run "%PACMAN%" -Q mingw-w64-ucrt-x86_64-sdl3
 if errorlevel 1 exit /b
-findstr /X /C:"mingw-w64-ucrt-x86_64-sdl3 3.4.20-1" "%CMDLOG%" >nul || (call :problem "installed SDL3 must be the pinned UCRT64 package 3.4.20-1"& exit /b 2)
+call :exact_output "%CMDLOG%" "mingw-w64-ucrt-x86_64-sdl3 3.4.20-1" || (call :problem "installed SDL3 must be the pinned UCRT64 package 3.4.20-1"& exit /b 2)
 set "SDL_VERIFY=%OUT%\doctor\sdl-package"
 call :fresh "%SDL_VERIFY%" || exit /b
 call :run "%TAR%" -xf "%SDL_ARCHIVE%" -C "%SDL_VERIFY%"
 if errorlevel 1 exit /b
-findstr /X /C:"pkgname = mingw-w64-ucrt-x86_64-sdl3" "%SDL_VERIFY%\.PKGINFO" >nul || (call :problem "wrong SDL3 package identity"& exit /b 2)
-findstr /X /C:"pkgver = 3.4.20-1" "%SDL_VERIFY%\.PKGINFO" >nul || (call :problem "wrong SDL3 package revision"& exit /b 2)
+call :contains_exact_line "%SDL_VERIFY%\.PKGINFO" "pkgname = mingw-w64-ucrt-x86_64-sdl3" || (call :problem "wrong SDL3 package identity"& exit /b 2)
+call :contains_exact_line "%SDL_VERIFY%\.PKGINFO" "pkgver = 3.4.20-1" || (call :problem "wrong SDL3 package revision"& exit /b 2)
 for %%F in (lib\libSDL3.dll.a lib\libSDL3.a bin\SDL3.dll) do (
   call :run fc.exe /b "%SDL_VERIFY%\ucrt64\%%F" "%UCRT%\%%F"
   if errorlevel 1 exit /b
@@ -460,6 +480,7 @@ exit /b 0
 
 :link
 rem All links use the same clang++ driver and GNU ld from this installation.
+if not exist "%OUT%\doctor\probe.exe" call :toolchain || exit /b
 echo Linking: %~1
 set "SUBSYSTEM=-mconsole"
 if /I "%~2"=="WINDOWS" set "SUBSYSTEM=-mwindows"
@@ -518,7 +539,7 @@ exit /b 0
 call :run copy /y "%UCRT%\bin\SDL3.dll" "%BIN%\SDL3.dll"
 if errorlevel 1 exit /b
 for %%S in (%IMGUI_SOURCES%) do (call :gui_one "%%S" || exit /b)
-set "UI_INCLUDES=-isystem "%UCRT%\include" -isystem "%IMGUI_ROOT%""
+set "UI_INCLUDES=-isystem "%UCRT%\include" -isystem "%IMGUI_ROOT%" -isystem "%IMGUI_ROOT%\backends""
 call :cpp app/desktop_ui/main.cpp || exit /b
 set "UI_INCLUDES="
 set "LINK_OBJECTS=%CORE_OBJECTS% %GUI_OBJECTS% "%OBJECT%""
@@ -838,6 +859,7 @@ echo CLEAN SUCCESS: compiled outputs removed. Verified archives and logs retaine
 exit /b 0
 
 :selftest
+call :paths || exit /b
 rem Negative child calls delegate to this script; no alternative compiler is invoked.
 rmdir "%OUT%\.build-lock"
 set "LOCK=0"
