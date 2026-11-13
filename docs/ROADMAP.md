@@ -13,8 +13,8 @@ fonctionnelles/humaines ci-dessous.
 
 ## 1. Fermer les portes B/C/D sous Windows
 
-- Debug/Release/SDL3 + SDK/STL Microsoft sont validés sur runner natif ; reproduire
-  sur un poste client avec compte standard, sans élévation.
+- Debug/Release/SDL3 sont construits par MSYS2 UCRT64 clang++ sur runner natif ;
+  reproduire sur un poste client avec compte standard, sans élévation.
 - Vérifier TCP4/6, UDP4/6, PPID, accès refusés, Unicode, PID recyclés et rapid churn.
 - Tester Next.js, Vite, Flask, lancement PowerShell/CMD/IDE et Docker Desktop/WSL2
   (proxy reconnu comme incertain ; pas d'accès Docker ajouté en douce).

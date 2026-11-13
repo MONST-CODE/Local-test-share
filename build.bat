@@ -204,6 +204,12 @@ set "DRIVER=--no-default-config --target=x86_64-w64-windows-gnu"
 set "LINK_DRIVER=%DRIVER% --ld-path="%LD%" -pthread"
 exit /b 0
 
+:path_in_ucrt_path
+rem Ignore the official compiler's nonexistent legacy GCC probe directories;
+rem every path it actually uses must still reside in the selected UCRT64 root.
+echo(%~1| findstr /I /L /C:"ignoring nonexistent directory" >nul && exit /b 0
+call :path_in_ucrt "%~1"
+
 :path_in_ucrt
 set "CHECK_PATH=%~1"
 set "CHECK_PATH=%CHECK_PATH:/=\%"
@@ -228,6 +234,7 @@ set "TOOLCHAIN_INFO=%LOG%.toolchain.txt"
 call :run "%PACMAN%" -Qqo /ucrt64/bin/clang++.exe
 if errorlevel 1 exit /b
 call :exact_output "%CMDLOG%" "mingw-w64-ucrt-x86_64-clang" || (call :problem "clang++.exe is not owned by the UCRT64 clang package"& exit /b 2)
+for %%I in ("%CXX%") do >>"%TOOLCHAIN_INFO%" echo compiler-exact=%%~fI
 call :run "%CXX%" --version
 if errorlevel 1 exit /b
 type "%CMDLOG%" >>"%TOOLCHAIN_INFO%"
@@ -243,7 +250,9 @@ call :reject_foreign_paths "%CMDLOG%" || exit /b
 set "SEARCH_DIRS="
 for /f "usebackq tokens=1,* delims==" %%A in ("%CMDLOG%") do if "%%A"=="libraries: " set "SEARCH_DIRS=%%B"
 if not defined SEARCH_DIRS (call :problem "cannot determine actual compiler library search paths"& exit /b 2)
-for %%L in ("%SEARCH_DIRS:;=" "%") do (call :path_in_ucrt "%%~L" || exit /b)
+for %%L in ("%SEARCH_DIRS:;=" "%") do (
+  echo(%%~L| findstr /I /L /C:"%%=%UCRT_SLASH%%" >nul && call :path_in_ucrt "%%~L" || exit /b
+)
 call :run "%CXX%" -print-prog-name=ld
 if errorlevel 1 exit /b
 set "RESOLVED_LD="
@@ -270,7 +279,7 @@ if errorlevel 1 exit /b
 call :reject_foreign_paths "%CMDLOG%" || exit /b
 findstr /R /C:"^ [A-Za-z]:" "%CMDLOG%" >"%LOG%.include-paths.txt"
 if errorlevel 1 (call :problem "cannot identify actual native header search paths"& exit /b 2)
-for /f "usebackq tokens=*" %%I in ("%LOG%.include-paths.txt") do (call :path_in_ucrt "%%I" || exit /b)
+for /f "usebackq tokens=*" %%I in ("%LOG%.include-paths.txt") do (call :path_in_ucrt_path "%%I" || exit /b)
 type "%LOG%.include-paths.txt" >>"%TOOLCHAIN_INFO%"
 call :run "%PACMAN%" -Q mingw-w64-ucrt-x86_64-clang mingw-w64-ucrt-x86_64-headers mingw-w64-ucrt-x86_64-crt mingw-w64-ucrt-x86_64-libwinpthread mingw-w64-ucrt-x86_64-binutils
 if errorlevel 1 exit /b
@@ -283,9 +292,10 @@ call :run "%OBJDUMP%" -p "%OUT%\doctor\probe.exe"
 if errorlevel 1 exit /b
 findstr /C:"DLL Name:" "%CMDLOG%" >>"%TOOLCHAIN_INFO%"
 call :reject_runtime "%CMDLOG%" || exit /b
-call :run "%OUT%\doctor\probe.exe"
+call :run "%OUT%\doctor\probe.exe" --expect-compiler "%CXX%"
 if errorlevel 1 exit /b
 type "%CMDLOG%" >>"%TOOLCHAIN_INFO%"
+>>"%TOOLCHAIN_INFO%" echo probe-exit-code=PASS native C++20/x64/thread/BCrypt, no MSVC headers
 set "ASAN_AVAILABLE=false"
 set "FUZZ_AVAILABLE=false"
 if exist "%UCRT%\bin\libclang_rt.asan_dynamic-x86_64.dll" if exist "%RESOURCE_DIR%\lib\windows\libclang_rt.asan_dynamic-x86_64.dll.a" set "ASAN_AVAILABLE=true"

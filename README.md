@@ -26,9 +26,12 @@ L'objectif : cinq testeurs sur le même Wi-Fi, des contextes navigateur distinct
 
 ## Compiler — Windows x64 prioritaire
 
-Prérequis développeur : LLVM **clang++.exe** et lld-link, Visual Studio C++ Build
-Tools avec **SDK Windows + STL/UCRT x64**, curl/tar/certutil natifs. Microsoft ABI
-uniquement, aucun repli MinGW. Le script peut initialiser `VsDevCmd.bat`.
+Prérequis développeur : **MSYS2 UCRT64** avec ses paquets mingw-w64 (clang++, binutils,
+SDL3). Le compilateur est exclusivement
+`C:\msys64\ucrt64\bin\clang++.exe`, cible **x86_64-w64-windows-gnu**, UCRT et GNU
+libstdc++. Pas de Visual Studio, SDK Microsoft, LLVM autonome, CLANG64 ni ABI MSVC ;
+une autre racine MSYS2 passe uniquement par `PLPT_MSYS2_ROOT`. Votre copie ImGui
+existante peut être utilisée via `PLPT_IMGUI_DIR` après vérification du pin.
 
 ```bat
 build.bat deps --fetch
@@ -63,14 +66,14 @@ qualifie pas un bureau natif et ne peut pas produire un package desktop.
 
 ## Preuves et limites
 
-La migration est suivie dans [DIRECT_BUILD_MIGRATION](docs/reports/DIRECT_BUILD_MIGRATION.md),
-avec les résultats **réellement exécutés** séparés :
-[Windows](docs/reports/BUILD_VALIDATION_WINDOWS.md) ·
-[Linux](docs/reports/BUILD_VALIDATION_LINUX.md) ·
-[dépendances](docs/reports/BUILD_DEPENDENCIES.md).
-La **qualification P0 native Windows et Linux a réussi** au commit `13fd464` :
-[exécution 43426058514](https://github.com/MONST-CODE/Local-test-share/actions/runs/43426058514),
-Debug/Release, tests mémoire/fuzz, fenêtre native, nettoyage/rebuild et packages.
+La correction Windows est suivie par
+[UCRT64_TOOLCHAIN_MIGRATION](docs/reports/UCRT64_TOOLCHAIN_MIGRATION.md),
+[UCRT64_WINDOWS_VALIDATION](docs/reports/UCRT64_WINDOWS_VALIDATION.md) et
+[UCRT64_DEPENDENCIES](docs/reports/UCRT64_DEPENDENCIES.md), avec les résultats
+**réellement exécutés**. Les pages [Windows](docs/reports/BUILD_VALIDATION_WINDOWS.md)
+et [dépendances](docs/reports/BUILD_DEPENDENCIES.md) antérieures sont conservées
+comme preuve de l'ancien profil Microsoft, **explicitement remplacé** ; elles ne
+qualifient pas UCRT64. [Linux](docs/reports/BUILD_VALIDATION_LINUX.md) reste distinct.
 Cela ne vaut ni validation humaine du produit ni qualification d'une fonction de partage.
 Les anciens [lots et résultats](docs/reports/VALIDATION.md) sont explicitement
 historiques et ne qualifient pas la nouvelle architecture de build.
@@ -83,7 +86,7 @@ des archives de développement portables, pas des installateurs signés.
 
 | Document | Contenu |
 |---|---|
-| [Compilation](docs/BUILD.md) | Commandes officielles, SDK/CRT, profils, sorties, diagnostics, packaging |
+| [Compilation](docs/BUILD.md) | UCRT64 exact, ImGui/SDL du propriétaire, VS Code, profils et sorties |
 | [Utilisation](docs/QUICKSTART.md) | Installation portable et limites de la preview |
 | [Architecture](docs/ARCHITECTURE.md) | Modules, invariants, frontières de confiance |
 | [Sécurité](docs/SECURITY.md) | Protection actuelle et preuves encore nécessaires |
@@ -96,7 +99,7 @@ des archives de développement portables, pas des installateurs signés.
 
 ## Branche et distribution
 
-Migration sur `arena/da48a9c5-local-test-share`, depuis `main` à `73162d9`.
+Correction UCRT64 sur `arena/4197f0b0-local-test-share`, depuis `main` à `3b62b48`.
 Aucune réécriture d'historique, modification directe de main ou fusion automatique.
 
 La licence de distribution de PLPT reste à choisir par son propriétaire. Les

@@ -1,6 +1,9 @@
 // Native compile/link/runtime and manifest probe. This does not orchestrate builds.
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <system_error>
 #include <cstring>
 #include <string_view>
 #include <thread>
@@ -35,12 +38,19 @@ int manifest(const char* path) {
     FreeLibrary(module);
     return valid ? 0 : 1;
 }
-bool runtime(const char* name) {
+bool runtime(const char* name, const std::filesystem::path& prefix) {
     const HMODULE module = GetModuleHandleA(name);
     if (!module) { std::fprintf(stderr, "runtime: required loaded module absent: %s\n", name); return false; }
     char path[32768]{};
     const DWORD size = GetModuleFileNameA(module, path, sizeof(path));
     if (size == 0 || size >= sizeof(path)) return false;
+    std::error_code error;
+    const auto actual = std::filesystem::canonical(path, error);
+    if (error) return false;
+    if (!prefix.empty() && actual.parent_path() != prefix) {
+        std::fprintf(stderr, "runtime: %s loaded outside selected UCRT64 bin: %s\n", name, path);
+        return false;
+    }
     std::printf("runtime: %s=%s\n", name, path);
     return true;
 }
@@ -61,10 +71,25 @@ int main(int argc, char** argv) {
     thread.join();
     if (!done.load()) return 1;
 #ifdef _WIN32
+    std::error_code canonical_error;
+    const char* root = std::getenv("PLPT_MSYS2_ROOT");
+    if (root == nullptr) { std::fprintf(stderr, "toolchain: PLPT_MSYS2_ROOT is required for provenance proof\n"); return 1; }
+    const auto prefix = std::filesystem::canonical(std::filesystem::path(root) / "ucrt64" / "bin", canonical_error);
+    if (canonical_error) { std::fprintf(stderr, "toolchain: selected UCRT64 bin is not canonicalizable\n"); return 1; }
+    if (argc != 3 || std::strcmp(argv[1], "--expect-compiler") != 0) {
+        std::fprintf(stderr, "toolchain: --expect-compiler <path> is required to prove the selected executable\n");
+        return 1;
+    }
+    const auto executable = std::filesystem::canonical(argv[2], canonical_error);
+    if (canonical_error || executable.parent_path() != prefix || executable.filename() != "clang++.exe") {
+        std::fprintf(stderr, "toolchain: compiler is not <PLPT_MSYS2_ROOT>/ucrt64/bin/clang++.exe\n");
+        return 1;
+    }
+    std::printf("toolchain-probe: selected compiler=%s\n", executable.string().c_str());
     unsigned char byte = 0;
     if (BCryptGenRandom(nullptr, &byte, 1, BCRYPT_USE_SYSTEM_PREFERRED_RNG) < 0) return 1;
     std::printf("toolchain-probe: MSYS2 UCRT64, GNU ABI, clang=%s, C++=%ld, pointer=%zu, libstdc++=%d, GCC=%d, _UCRT=1\n", __clang_version__, __cplusplus, sizeof(void*), __GLIBCXX__, _GLIBCXX_RELEASE);
-    if (!runtime("ucrtbase.dll") || !runtime("libstdc++-6.dll") || !runtime("libwinpthread-1.dll")) return 1;
+    if (!runtime("ucrtbase.dll", {}) || !runtime("libstdc++-6.dll", prefix) || !runtime("libwinpthread-1.dll", prefix)) return 1;
 #else
 #ifndef __linux__
 #error Native Linux is required

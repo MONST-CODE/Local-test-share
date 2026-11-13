@@ -115,9 +115,11 @@ ligne de commande, historique ou variables d'environnement.
 - `GetAdaptersAddresses` pour les interfaces et adresses, y compris loopback.
 
 L'ancien contrôle syntaxique croisé est historique et son helper a été retiré.
-La migration utilise **clang++.exe, ABI/SDK/STL Microsoft et lld-link x64**, sans
-repli MinGW. Debug/Release, tests natifs et fenêtre SDL ont désormais été exécutés
-sur Windows réel en CI : voir [le rapport Windows](reports/BUILD_VALIDATION_WINDOWS.md).
+La correction Windows utilise exclusivement le **clang++.exe de MSYS2 UCRT64**,
+cible GNU x64, MinGW-w64/UCRT et GNU libstdc++, sans SDK/ABI MSVC ni LLVM autonome.
+Les résultats natifs Windows UCRT64 sont suivis dans
+[le rapport de validation UCRT64](reports/UCRT64_WINDOWS_VALIDATION.md) ; le rapport
+Microsoft antérieur est conservé comme profil remplacé.
 Cela ne remplace pas les tests de churn, de compte standard, DPI/IME et applications
 réelles décrits dans la roadmap.
 

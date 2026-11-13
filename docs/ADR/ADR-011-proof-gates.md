@@ -29,7 +29,8 @@ Le sandbox Linux ne change pas la priorité Windows : les gates exigent des
 résultats Windows natifs, jamais une substitution par une syntaxe croisée.
 
 **Mise à jour P0 du 13 novembre 2026 :** cette preuve de build/tests natifs existe
-maintenant via `build.bat` (SDK/STL Microsoft) et `build.sh`, avec rapports
+maintenant via `build.bat` (MSYS2 UCRT64 clang++ uniquement, profil Microsoft remplacé)
+et `build.sh`, avec rapports
 [Windows](../reports/BUILD_VALIDATION_WINDOWS.md), [Linux](../reports/BUILD_VALIDATION_LINUX.md)
 et [migration](../reports/DIRECT_BUILD_MIGRATION.md). Aucune release automatique.
 Les groupes cœur/modèles sont des listes de sources explicites dans ces deux scripts,
