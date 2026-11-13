@@ -60,7 +60,11 @@ Result<std::vector<std::uint8_t>> encode_announcement(const Announcement& announ
 }
 
 Result<Announcement> decode_announcement(std::span<const std::uint8_t> datagram) {
-    if (datagram.size() < kMagic.size() + 30 || datagram.size() > kMaxAnnouncementBytes)
+    // Borne minimale exacte : 8 octets de magie + 30 octets de champs fixes +
+    // 2 longueurs de nom (session et hôte). Une borne plus petite laissait les
+    // lectures de longueur déborder du datagramme tronqué.
+    constexpr std::size_t kMinimumAnnouncementBytes = 8 + 30 + 2 + 2;
+    if (datagram.size() < kMinimumAnnouncementBytes || datagram.size() > kMaxAnnouncementBytes)
         return Result<Announcement>::failure(malformed());
     for (std::size_t index = 0; index < kMagic.size(); ++index)
         if (datagram[index] != static_cast<std::uint8_t>(kMagic[index])) return Result<Announcement>::failure(malformed());
