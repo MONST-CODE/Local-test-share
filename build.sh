@@ -54,7 +54,9 @@ error() {
     local rc=$?; say "FAILURE exit=$rc operation=$ACTION (see $LOG)"
     if [[ ${GITHUB_ACTIONS:-} == true && ${PLPT_EXPECT_FAILURE:-} != 1 ]]; then
         echo "::error title=PLPT Linux build::Operation $ACTION failed, exit $rc. See preserved log."
-        while IFS= read -r line; do notice "failure context: $line"; done < <(tail -20 "$LOG")
+        local details
+        details=$(grep -E 'error:|undefined reference|Command exit|FAILURE|FAIL ' "$LOG" | tail -4 || true)
+        notice "failure context: ${details//$'\n'/%0A}"
     fi
     exit "$rc"
 }
@@ -411,11 +413,13 @@ expect() {
     fi
     if [[ $rc != "$expected" ]] || ! grep -Eq -- "$pattern" "$capture"; then say "FAIL test=$name expected=$expected actual=$rc command=$(command_text "$@")"; if (( rc != 0 )); then return "$rc"; else return 1; fi; fi
     if grep -Eq 'AddressSanitizer|LeakSanitizer|UndefinedBehaviorSanitizer|runtime error:' "$capture"; then fail "sanitizer diagnostic in $name (even if exit matched)"; fi
-    PASS=$((PASS+1)); say "PASS $name: exit=$rc"; notice "PASS $name exit=$rc"
-    while IFS= read -r line; do notice "$line"; done < <(grep -E 'desktop-runtime:|cases,.*checks' "$capture" || true)
+    PASS=$((PASS+1)); say "PASS $name: exit=$rc"
+    printf 'PASS %s exit=%s\n' "$name" "$rc" >> "$DIR/test-summary.txt"
+    grep -E 'desktop-runtime:|cases,.*checks' "$capture" >> "$DIR/test-summary.txt" || true
 }
 tests() {
     PASS=0; SKIP=0
+    printf 'Native Linux tests mode=%s\n' "$MODE" > "$DIR/test-summary.txt"
     expect unit 0 '0 failures' "$BIN/plpt-unit-tests"
     expect platform 0 '0 failures' "$BIN/plpt-platform-tests"
     expect ipv6 0 '0 failures' "$BIN/plpt-platform-tests" --ipv6
@@ -437,7 +441,9 @@ tests() {
             expect ui-native-x11 0 'video=x11 renderer=software' env SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software "$BIN/plpt-desktop" --smoke-test --screenshot "$DIR/desktop-native.bmp"
         else say 'NOT RUN: native X11 window launch (use --native-ui with DISPLAY; dummy is not native display validation)'; fi
     fi
-    say "TEST SUMMARY passed=$PASS skipped=$SKIP mode=$MODE"; notice "TEST SUMMARY passed=$PASS skipped=$SKIP mode=$MODE"
+    say "TEST SUMMARY passed=$PASS skipped=$SKIP mode=$MODE"
+    printf 'TEST SUMMARY passed=%s skipped=%s mode=%s\n' "$PASS" "$SKIP" "$MODE" >> "$DIR/test-summary.txt"
+    local summary; summary=$(cat "$DIR/test-summary.txt"); notice "${summary//$'\n'/%0A}"
     (( SKIP == 0 )) || return 77
 }
 fuzz() {
@@ -452,6 +458,7 @@ fuzz() {
 }
 package() {
     (( ! HEADLESS && ! CORE_ONLY )) || fail 'package requires the full native desktop, not a headless/core-only profile'
+    fresh "$OUT/packages"
     MODE=release; DIR="$OUT/release"; build_project 1; tests
     local stage="$OUT/packages/stage" archive="$OUT/packages/PLPT-0.1.0-preview-linux-x64.tar.gz"
     fresh "$stage"; mkdir -p "$stage/PLPT/bin" "$stage/PLPT/docs" "$stage/PLPT/licenses"
@@ -464,6 +471,9 @@ package() {
     local check="$OUT/packages/check"; fresh "$check"; run tar -xzf "$archive" -C "$check"
     run cmp "$BIN/plpt-monitor" "$check/PLPT/bin/plpt-monitor"
     run cmp "$BIN/plpt-desktop" "$check/PLPT/bin/plpt-desktop"
+    run cmp "$BIN/libSDL3.so.0" "$check/PLPT/bin/libSDL3.so.0"
+    local license
+    for license in SDL3.txt ImGui.txt Bundled-notices.txt; do run cmp "third_party/licenses/$license" "$check/PLPT/licenses/$license"; done
     run "$check/PLPT/bin/plpt-monitor" --version
     run env SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software "$check/PLPT/bin/plpt-desktop" --smoke-test
     run ldd "$check/PLPT/bin/plpt-desktop"
