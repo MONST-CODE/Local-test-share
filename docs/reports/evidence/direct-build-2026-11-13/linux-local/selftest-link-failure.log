@@ -1,0 +1,32 @@
+PLPT direct Linux operation=debug mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261113T115613Z-debug-debug-8101.log
+CXX=/home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++
+CC=/home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang
+clang version 22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin
+Configuration file: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/etc/clang/clang++.cfg
+native linker: /usr/bin/ld
+clang version 22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin
+Configuration file: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/etc/clang/clang++.cfg
+toolchain-probe: native Linux x64, clang=22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1), C++=202002, pointer=8
+libstdc++ headers: 20220819
+Compilation started: debug, clean deterministic objects (no cache)
+Compilation: engine/core/random.cpp
+Compilation: engine/diagnostics/audit.cpp
+Compilation: engine/discovery/process_tree.cpp
+Compilation: engine/discovery/terminal_classifier.cpp
+Compilation: engine/discovery/monitor.cpp
+Compilation: engine/service_registry/registry.cpp
+Compilation: engine/port_allocator/port_allocator.cpp
+Compilation: engine/platform/linux/linux_platform.cpp
+Compilation: app/host_shell/main.cpp
+Linking: /home/user/Local-test-share/out/linux/debug/bin/plpt-monitor
+/usr/bin/ld: unrecognized option '--plpt-deliberate-invalid-option'
+/usr/bin/ld: use the --help option for usage information
+clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+Command exit 1: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -O0 -g -pthread /home/user/Local-test-share/out/linux/debug/objects/engine_core_random.cpp.o /home/user/Local-test-share/out/linux/debug/objects/engine_diagnostics_audit.cpp.o /home/user/Local-test-share/out/linux/debug/objects/engine_discovery_process_tree.cpp.o /home/user/Local-test-share/out/linux/debug/objects/engine_discovery_terminal_classifier.cpp.o /home/user/Local-test-share/out/linux/debug/objects/engine_discovery_monitor.cpp.o /home/user/Local-test-share/out/linux/debug/objects/engine_service_registry_registry.cpp.o /home/user/Local-test-share/out/linux/debug/objects/engine_port_allocator_port_allocator.cpp.o /home/user/Local-test-share/out/linux/debug/objects/engine_platform_linux_linux_platform.cpp.o /home/user/Local-test-share/out/linux/debug/objects/cli.o -Wl\,--plpt-deliberate-invalid-option -o /home/user/Local-test-share/out/linux/debug/bin/plpt-monitor 
+FAILURE exit=1 operation=debug (see /home/user/Local-test-share/out/linux/logs/20261113T115613Z-debug-debug-8101.log)

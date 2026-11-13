@@ -114,9 +114,12 @@ ligne de commande, historique ou variables d'environnement.
 - UTF-16 -> UTF-8 avec taille exacte, sans écrire le terminateur au-delà du buffer.
 - `GetAdaptersAddresses` pour les interfaces et adresses, y compris loopback.
 
-La vérification syntaxique contre les déclarations MinGW détecte les erreurs de
-champs et de types ; elle ne valide pas le SDK/STL Microsoft ni les comportements
-Windows. La CI Windows est la prochaine porte obligatoire.
+L'ancien contrôle syntaxique croisé est historique et son helper a été retiré.
+La migration utilise **clang++.exe, ABI/SDK/STL Microsoft et lld-link x64**, sans
+repli MinGW. Debug/Release, tests natifs et fenêtre SDL ont désormais été exécutés
+sur Windows réel en CI : voir [le rapport Windows](reports/BUILD_VALIDATION_WINDOWS.md).
+Cela ne remplace pas les tests de churn, de compte standard, DPI/IME et applications
+réelles décrits dans la roadmap.
 
 ### Linux — secondaire
 

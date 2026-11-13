@@ -1,42 +1,57 @@
-# PLPT 0.1.0-preview — guide de la preview
+# PLPT 0.1.0-preview — installation portable et utilisation
 
 ## Ce que contient cette version
 
-Un **moniteur local**, en ligne de commande et, si compilée, une interface native.
-Il observe les ports et processus du compte courant. Il ne connecte aucun invité,
-ne démarre aucun partage et ne rend pas encore votre application à distance.
+Un **moniteur local**, CLI et interface native. Il observe les ports/processus du
+compte courant, ne connecte aucun invité et ne démarre aucun partage. WebView2,
+invitations, transport chiffré, cinq testeurs et nettoyage des profils sont absents.
 
-Les fonctionnalités finales WebView2, invitations, transport chiffré, cinq testeurs
-et nettoyage des profils ne sont pas disponibles. Cette preview n'est pas une V1 LAN.
+## Construire et installer — Windows x64
 
-## Utilisation
+Les prérequis de compilation ne concernent que le développeur : voir
+[BUILD.md](BUILD.md). Après `build.bat deps --fetch`, exécuter `build.bat package`.
+Le script recompile Release, teste puis crée :
 
-- Ouvrir `plpt-desktop` : Détection locale affiche les sockets et leur attribution.
+```text
+out\windows\packages\PLPT-0.1.0-preview-windows-x64.zip
+```
+
+1. Extraire l'archive dans un dossier appartenant à votre compte, par exemple
+   `%LOCALAPPDATA%\Programs\PLPT-Preview`. Aucun droit administrateur requis.
+2. Conserver **tout** le dossier `PLPT`, notamment les DLL à côté des EXE et les
+   licences. Ne pas déplacer seulement `plpt-desktop.exe`.
+3. Ouvrir `PLPT\bin\plpt-desktop.exe`, ou lancer `plpt-monitor.exe --help` depuis
+   un terminal. Ne pas désactiver SmartScreen/antivirus si le binaire est bloqué.
+4. Pour retirer la preview : fermer ses processus puis supprimer **ce dossier
+   d'extraction uniquement**. Aucun service, règle de pare-feu ou désinstalleur ajouté.
+
+Ce ZIP de développement n'est pas signé. Aucun installateur NSIS/MSI n'est livré
+par la migration. L'exécution CI n'est pas une qualification SmartScreen, poste
+propre, installation/désinstallation complète ou redistribution Microsoft.
+
+## Linux
+
+`./build.sh package --native-ui` produit
+`out/linux/packages/PLPT-0.1.0-preview-linux-x64.tar.gz`. Extraire, conserver la
+bibliothèque SDL dans `PLPT/bin`, puis lancer `PLPT/bin/plpt-desktop` sous X11.
+Le runtime glibc/libstdc++/X11 du système reste nécessaire ; ce n'est pas un binaire
+universel pour toute distribution. Le profil dummy sandbox n'est pas distribuable.
+
+## Utiliser le moniteur
+
+- « Détection locale » affiche les sockets et leur attribution probable.
 - Filtrer par adresse, port ou nom ; cliquer une ligne pour l'inspecter.
-- « Sélection locale » et « Marquer protégé » ne sont que des états en mémoire.
-- « Actualiser » relit les tables ; une erreur reste visible et invalide les sélections.
-- `plpt-monitor --help` explique la sortie CLI. Sous Windows, un terminal UTF-8 est conseillé.
-- Un PID inconnu n'est pas une erreur à corriger en lançant systématiquement en administrateur.
+- « Sélection locale » et « Marquer protégé » sont des états locaux en mémoire.
+- « Actualiser » relit les tables ; une erreur reste visible et invalide la sélection.
+- Un PID inconnu n'est pas une raison de lancer systématiquement en administrateur.
 
-Pas de Docker, Node, Python ni navigateur supplémentaire pour utiliser **ce moniteur**.
-Les outils de compilation sont réservés au développeur. Les dépendances réelles du
-binaire Windows doivent encore être qualifiées sur une VM propre.
+Pas de Docker, Node, Python ou navigateur supplémentaire pour **utiliser le moniteur**.
+Aucune promesse d'absence d'écriture système/cache/dump, ni d'effacement physique.
 
-## Installateur Windows : état du livrable
+## Documentation
 
-La recette NSIS prévoit une installation par utilisateur dans
-`%LOCALAPPDATA%\Programs\PLPT-Preview`, sans service ni modification du pare-feu.
-Uninstall supprime les fichiers connus, pas un dossier utilisateur en récursif.
-Une preview existante doit être désinstallée avant remplacement.
-
-**L'installateur n'a pas été construit ni exécuté dans le sandbox Linux.** Aucune
-signature, acceptation SmartScreen ou qualification Windows n'est revendiquée.
-Ne pas désactiver les protections du poste pour l'installer. La distribution finale
-nécessite une licence PLPT choisie par le propriétaire et la validation Windows.
-
-## Documents techniques complets
-
-Le dépôt et l'archive CPack contiennent `docs/BUILD.md`, `docs/SECURITY.md`, les
-rapports et preuves datées. L'installateur compact, lorsqu'il sera qualifié, ne
-contient que ce guide, l'inventaire des dépendances et les licences SDL/ImGui.
-Référentiel : https://github.com/MONST-CODE/Local-test-share
+L'archive contient BUILD, SECURITY, QUICKSTART, l'inventaire de dépendances et les
+notices. Les rapports et preuves complets restent dans le dépôt :
+https://github.com/MONST-CODE/Local-test-share . La licence PLPT reste à décider par
+son propriétaire avant diffusion ; les conditions de redistribution des runtimes
+s'appliquent indépendamment des licences de notre code.

@@ -20,7 +20,7 @@ implémentés. Ne pas l'exposer comme une version LAN utilisable par des invité
 | Menace | Contrôle présent | Porte restante |
 |---|---|---|
 | PID recyclé / table partielle | Création avant/après, sélection invalidée, états Gone/Unavailable ; tests | Churn natif Windows avec Next/Vite/Docker/WSL |
-| Usurpation de port | Socket conservé, exclusivité OS, handle RAII ; tests loopback Linux | Exécution Winsock x64, pare-feu, pile QUIC réelle |
+| Usurpation de port | Socket conservé, exclusivité OS, handle RAII ; tests loopback natifs Linux **et Winsock x64** | Pare-feu, compte standard, churn applicatif et pile QUIC réelle |
 | Observateur envoie une entrée | Refus dans `model::Session`, contexte et contrôleur exclusif | Relier chaque message authentifié au moteur, tests de paquets forgés |
 | DM divulgué dans le canal général | Contrôles acteur/destinataire, réponses privées, quotas ; tests | Routage réseau authentifié, reprise, modération |
 | Message énorme ou invalide | Codec borné avant allocation ; UTF-8 et quotas dans le modèle ; fuzz smoke | Parser incrémental QUIC, backpressure, fuzz long et charge |
@@ -87,10 +87,13 @@ La libération de collections C++ ne garantit pas l'écrasement physique de leur
 allocations. SSD, journaling et pagefile rendent l'effacement absolu non garanti.
 Un besoin strict RAM-only/chiffrement temporaire exige un prototype et un ADR.
 
-L'installateur proposé est par utilisateur, sans service, auto-démarrage, règle
-pare-feu ni élévation. Son uninstall supprime des noms de fichiers connus, jamais
-une racine arbitraire en récursif. Installation, désinstallation, signature et
-SmartScreen **restent à tester sous Windows**.
+La migration livre des **archives portables**, pas un installateur NSIS/MSI.
+Elles n'ajoutent ni service, auto-démarrage, règle de pare-feu ou demande d'élévation.
+Extraction et exécution du ZIP ont été testées sur Windows natif en CI. Pour retirer
+la preview : fermer ses processus puis supprimer uniquement son dossier d'extraction.
+Le poste client standard, l'installation/désinstallation complète, la signature et
+SmartScreen **restent à qualifier** ; le manifeste asInvoker n'est pas une preuve
+que tous les tests CI ont tourné sous un compte non privilégié.
 
 ## Critères de refus de release
 

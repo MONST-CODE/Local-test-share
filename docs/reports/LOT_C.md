@@ -1,3 +1,5 @@
+> **HISTORICAL / SUPERSEDED:** this report describes the original CMake-based preview, not the current build architecture. See [DIRECT_BUILD_MIGRATION.md](DIRECT_BUILD_MIGRATION.md) and the native platform reports. Original logs remain historical evidence.
+
 # Lot C — découverte native Windows, adaptateur Linux secondaire
 
 Date : 2026-11-13. **Implémentation source + syntaxe Windows ; lot non qualifié nativement sous Windows.**

@@ -1,0 +1,6 @@
+# Native interpreters must receive the expected line endings on fresh checkouts.
+*.bat text eol=crlf
+*.sh text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+tests/fuzz/corpus/* -text

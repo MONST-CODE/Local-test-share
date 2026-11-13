@@ -1,0 +1,2 @@
+PLPT direct Linux operation=doctor mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261113T115612Z-doctor-debug-8010.log
+FAILURE: clang++ missing; install LLVM or set PLPT_CXX to its executable

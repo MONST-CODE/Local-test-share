@@ -1,68 +1,103 @@
-name: Windows-first Clang validation
+name: Direct native build qualification
 on:
-  push:
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: plpt-${{ github.workflow }}-${{ github.ref }}
+  group: plpt-direct-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   windows:
-    name: Windows x64 / clang++ / Microsoft SDK
+    name: Native Windows x64 / direct clang++
     runs-on: windows-2022
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: cmd
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Build and test Debug
-        shell: cmd
-        run: call build.bat clang-debug
-      - name: Build and test Release UI
-        shell: cmd
-        run: call build.bat clang-ui
-      - name: Stage and ZIP (not a V1 release)
-        shell: pwsh
-        run: |
-          cmake --install out/build/clang-ui --prefix out/stage-windows
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cpack --config out/build/clang-ui/CPackConfig.cmake -B out/packages
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Explicit pinned dependency provisioning
+        run: call build.bat deps --fetch
+      - name: Native SDK compiler linker and dependency doctor
+        run: call build.bat doctor --verbose
+      - name: Debug from fresh checkout
+        run: call build.bat debug --verbose
+      - name: Direct Debug tests and real Windows window
+        run: call build.bat test debug --native-ui
+      - name: Release compile
+        run: call build.bat release --verbose
+      - name: Direct Release tests and real Windows window
+        run: call build.bat test release --native-ui
+      - name: Native memory regressions
+        run: call build.bat test asan --native-ui
+      - name: Native libFuzzer smoke
+        run: call build.bat fuzz
+      - name: Failure propagation and stale-output regression
+        run: call build.bat selftest
+      - name: Remove generated outputs
+        run: call build.bat clean
+      - name: Native Release rebuild tests and portable ZIP
+        run: call build.bat package
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: windows-clang-evidence-and-preview
+          name: direct-windows-evidence
           path: |
-            out/build/clang-*/Testing/Temporary/*.log
-            out/build/clang-*/CMakeCache.txt
-            out/packages/*.zip
+            out/windows/logs/
+            out/windows/**/*.log
+            out/windows/**/test-summary.txt
+            out/windows/**/SDL3-runtime-dependencies.txt
+            out/windows/**/embedded.manifest
+            out/windows/**/desktop*.bmp
+            out/windows/packages/*.zip
           retention-days: 14
   linux:
-    name: Linux portable-core regression
-    needs: windows
+    name: Native Linux x64 / direct clang++
     runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Clang sanitizers
-        run: ./build.sh clang-asan
-      - name: Dummy-driver UI smoke and error paths under sanitizers
-        run: |
-          cmake -S . -B out/build/ui-smoke -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DPLPT_BUILD_UI=ON -DPLPT_HEADLESS_UI=ON -DPLPT_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug
-          cmake --build out/build/ui-smoke --parallel 4
-          ctest --test-dir out/build/ui-smoke --output-on-failure
-      - name: Self-contained headers and short codec fuzz run
-        run: |
-          python3 tools/check_headers.py
-          cmake --preset clang-fuzz
-          cmake --build --preset clang-fuzz --target plpt-fuzz-envelope --parallel 4
-          python3 tools/seed_fuzz_corpus.py out/fuzz/ci-corpus
-          out/build/clang-fuzz/plpt-fuzz-envelope -runs=20000 -seed=20261113 -max_len=4096 -timeout=2 out/fuzz/ci-corpus
+      - name: Initialize native OS development and display environment
+        run: sudo apt-get update && sudo apt-get install -y clang libx11-dev libxext-dev xvfb xauth
+      - name: Explicit pinned dependency provisioning
+        run: ./build.sh deps --fetch
+      - name: Native compiler linker and dependency doctor
+        run: ./build.sh doctor --verbose
+      - name: ASan UBSan memory regressions
+        run: xvfb-run -a ./build.sh test asan --native-ui
+      - name: Debug from fresh checkout
+        run: ./build.sh debug --verbose
+      - name: Direct Debug tests and X11 window
+        run: xvfb-run -a ./build.sh test debug --native-ui
+      - name: Release compile
+        run: ./build.sh release --verbose
+      - name: Direct Release tests and X11 window
+        run: xvfb-run -a ./build.sh test release --native-ui
+      - name: libFuzzer smoke
+        run: ./build.sh fuzz
+      - name: Failure propagation and stale-output regression
+        run: ./build.sh selftest
+      - name: Remove generated outputs
+        run: ./build.sh clean
+      - name: Native Release rebuild tests and portable TGZ
+        run: xvfb-run -a ./build.sh package --native-ui
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: linux-validation-logs
-          path: out/build/*/Testing/Temporary/*.log
+          name: direct-linux-evidence
+          path: |
+            out/linux/logs/
+            out/linux/**/*.log
+            out/linux/**/test-summary.txt
+            out/linux/packages/runtime-dependencies.txt
+            out/linux/**/desktop*.bmp
+            out/linux/packages/*.tar.gz
           retention-days: 14

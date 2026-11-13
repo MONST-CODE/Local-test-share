@@ -1,0 +1,1 @@
+FAILURE: SHA-256 mismatch: /home/user/Local-test-share/out/linux/tests/negative/corrupt.tar.gz expected=b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 actual=d716e02ec1b5a0a4a0c241f0f82f640516191591c831eb86866642f140afba2d (not extracted)

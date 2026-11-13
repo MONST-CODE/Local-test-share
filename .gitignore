@@ -4,8 +4,6 @@
 /_deps/
 /.cache/
 /.venv/
-/CMakeUserPresets.json
-/compile_commands.json
 /.vs/
 *.user
 *.swp

@@ -25,10 +25,15 @@ présenter comme une sécurité provisoire. Les interfaces navigateur/stockage �
 explicitement. Le rapport distingue compilation, syntaxe croisée, exécution native,
 smoke test, contrôle manuel et non-exécution.
 
-Le sandbox Linux ne change pas la priorité Windows. Il permet de vérifier les
-invariants portables et l'adaptateur secondaire, mais **les gates du maître exigent
-encore des résultats natifs Windows**. Une CI Windows est fournie sans badge de succès
-inventé ni publication automatique de release.
+Le sandbox Linux ne change pas la priorité Windows : les gates exigent des
+résultats Windows natifs, jamais une substitution par une syntaxe croisée.
+
+**Mise à jour P0 du 13 novembre 2026 :** cette preuve de build/tests natifs existe
+maintenant via `build.bat` (SDK/STL Microsoft) et `build.sh`, avec rapports
+[Windows](../reports/BUILD_VALIDATION_WINDOWS.md), [Linux](../reports/BUILD_VALIDATION_LINUX.md)
+et [migration](../reports/DIRECT_BUILD_MIGRATION.md). Aucune release automatique.
+Les groupes cœur/modèles sont des listes de sources explicites dans ces deux scripts,
+non des bibliothèques artificielles ou un moteur de build intermédiaire.
 
 ## Conséquences / risques
 

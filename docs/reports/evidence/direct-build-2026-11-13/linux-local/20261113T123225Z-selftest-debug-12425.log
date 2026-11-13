@@ -1,0 +1,9 @@
+PLPT direct Linux operation=selftest mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261113T123225Z-selftest-debug-12425.log
++ mkdir -p -- /home/user/Local-test-share/out/linux/tests/negative 
+FAILURE: SHA-256 mismatch: /home/user/Local-test-share/out/linux/tests/negative/corrupt.tar.gz expected=b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 actual=d716e02ec1b5a0a4a0c241f0f82f640516191591c831eb86866642f140afba2d (not extracted)
+Test started: intentional-exit (expected exit=0)
++ /home/user/Local-test-share/out/linux/doctor/probe --fail 
+intentional test failure: exit 23
+FAIL test=intentional-exit expected=0 actual=23 command=/home/user/Local-test-share/out/linux/doctor/probe --fail 
+SELFTEST PASS: missing compiler, compilation, linking and archive hash failures propagate; no stale successful output
+SUCCESS operation=selftest log=/home/user/Local-test-share/out/linux/logs/20261113T123225Z-selftest-debug-12425.log

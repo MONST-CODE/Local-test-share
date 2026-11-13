@@ -11,6 +11,12 @@
 #include "engine/platform/native.hpp"
 
 namespace {
+// SDL 3.4.20's X11 title conversion leaks XTextProperty.value when XTextStyle
+// cannot represent a character (conv > 0). Keep the OS title ASCII in every
+// locale; French/Unicode content is still rendered inside the window by ImGui.
+// No vendor patch or sanitizer suppression; re-evaluate on the next SDL update.
+constexpr std::string_view window_title = "PLPT - Moniteur local / preview 0.1.0";
+static_assert(std::all_of(window_title.begin(), window_title.end(), [](unsigned char c) { return c < 0x80; }));
 const ImVec4 mint{0.39F, 0.87F, 0.71F, 1};
 const ImVec4 muted{0.55F, 0.61F, 0.69F, 1};
 struct Runtime {
@@ -171,10 +177,16 @@ int main(int argc, char** argv) {
     Runtime runtime;
     if (!SDL_Init(SDL_INIT_VIDEO)) { std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
     runtime.sdl = true;
-    runtime.window = SDL_CreateWindow("PLPT — Moniteur local / preview 0.1.0", 1400, 900, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    if (SDL_GetVersion() != SDL_VERSION) {
+        std::fprintf(stderr, "SDL runtime/header version mismatch: runtime=%d headers=%d\n", SDL_GetVersion(), SDL_VERSION);
+        return 1;
+    }
+    runtime.window = SDL_CreateWindow(window_title.data(), 1400, 900, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (!runtime.window) { std::fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError()); return 1; }
     runtime.renderer = SDL_CreateRenderer(runtime.window, nullptr);
     if (!runtime.renderer) { std::fprintf(stderr, "SDL_CreateRenderer: %s\n", SDL_GetError()); return 1; }
+    if (smoke) std::printf("desktop-runtime: SDL=%d video=%s renderer=%s\n", SDL_GetVersion(),
+        SDL_GetCurrentVideoDriver(), SDL_GetRendererName(runtime.renderer));
     (void)SDL_SetRenderVSync(runtime.renderer, 1);
     IMGUI_CHECKVERSION(); ImGui::CreateContext(); runtime.imgui = true;
     auto& io = ImGui::GetIO(); io.IniFilename = nullptr; io.LogFilename = nullptr;
