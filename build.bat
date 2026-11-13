@@ -146,6 +146,7 @@ for /f "usebackq delims=" %%L in ("%~1") do (
   if not "!NOTE:~6500!"=="" goto notice_emit
 )
 :notice_emit
+if not defined NOTE (endlocal& exit /b 0)
 set "NOTE=!NOTE:~0,7000!"
 echo ::notice title=PLPT Windows evidence::!NOTE!
 endlocal
@@ -176,6 +177,8 @@ for %%F in ("%VCToolsInstallDir%include\vector" "%VCToolsInstallDir%lib\x64\libc
 )
 set "CXX="
 if defined PLPT_CXX set "CXX=%PLPT_CXX%"
+rem Prefer the official LLVM installation; VsDevCmd prepends its own bundled LLVM.
+if not defined CXX if exist "%ProgramFiles%\LLVM\bin\clang++.exe" set "CXX=%ProgramFiles%\LLVM\bin\clang++.exe"
 if not defined CXX for /f "delims=" %%I in ('where clang++.exe 2^>nul') do if not defined CXX set "CXX=%%I"
 if not defined CXX (call :problem "LLVM clang++.exe not found"& exit /b 2)
 if not exist "%CXX%" (call :problem "selected compiler does not exist: %CXX%"& exit /b 2)
@@ -184,7 +187,8 @@ if /I not "%CXXNAME%"=="clang++.exe" (call :problem "choose clang++.exe, not ano
 for %%I in ("%CXX%") do set "LLD=%%~dpIlld-link.exe"
 if not exist "%LLD%" (call :problem "matching lld-link.exe required next to clang++.exe"& exit /b 2)
 call :run "%CXX%" --version || exit /b
-call :notice_file "%CMDLOG%"
+if "%GITHUB_ACTIONS%"=="true" for %%I in ("%CMDLOG%") do echo ::notice title=PLPT compiler audit::compiler=%CXX% output=%%~fI bytes=%%~zI
+for /f "usebackq delims=" %%L in ("%CMDLOG%") do if "%GITHUB_ACTIONS%"=="true" echo ::notice title=PLPT compiler version::%%L
 findstr /I /C:"clang version" "%CMDLOG%" >nul || (call :problem "selected compiler is not LLVM Clang: %CXX%"& exit /b 2)
 call :run "%CXX%" -dumpmachine || exit /b
 findstr /I /C:"x86_64-pc-windows-msvc" "%CMDLOG%" >nul || (call :problem "compiler default target must be x86_64-pc-windows-msvc. MinGW is forbidden."& exit /b 2)
