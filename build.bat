@@ -204,6 +204,16 @@ set "DRIVER=--no-default-config --target=x86_64-w64-windows-gnu"
 set "LINK_DRIVER=%DRIVER% --ld-path="%LD%" -pthread"
 exit /b 0
 
+:check_search_entry
+rem Relative compiler-internal entries are not filesystem selections; every entry
+rem that names the selected root must still stay inside the selected root.
+set "SEARCH_ENTRY=%~1"
+if not defined SEARCH_ENTRY exit /b 0
+>"%OUT%\doctor\search-entry.txt" echo(%SEARCH_ENTRY%
+findstr /L /I /C:"%UCRT_SLASH%/" "%OUT%\doctor\search-entry.txt" >nul
+if errorlevel 1 exit /b 0
+call :path_in_ucrt "%SEARCH_ENTRY%"
+
 :path_in_ucrt_path
 rem Ignore the official compiler's nonexistent legacy GCC probe directories;
 rem every path it actually uses must still reside in the selected UCRT64 root.
@@ -250,9 +260,7 @@ call :reject_foreign_paths "%CMDLOG%" || exit /b
 set "SEARCH_DIRS="
 for /f "usebackq tokens=1,* delims==" %%A in ("%CMDLOG%") do if "%%A"=="libraries: " set "SEARCH_DIRS=%%B"
 if not defined SEARCH_DIRS (call :problem "cannot determine actual compiler library search paths"& exit /b 2)
-for %%L in ("%SEARCH_DIRS:;=" "%") do (
-  echo(%%~L| findstr /I /L /C:"%%=%UCRT_SLASH%%" >nul && call :path_in_ucrt "%%~L" || exit /b
-)
+for %%L in ("%SEARCH_DIRS:;=" "%") do (call :check_search_entry "%%~L" || exit /b)
 call :run "%CXX%" -print-prog-name=ld
 if errorlevel 1 exit /b
 set "RESOLVED_LD="
@@ -276,10 +284,12 @@ for %%F in (windows.h _mingw.h stdlib.h winsock2.h iphlpapi.h bcrypt.h) do (
 )
 call :run "%CXX%" %DRIVER% -std=c++20 -pthread -E -v -x c++ tests/build/toolchain_probe.cpp -o NUL
 if errorlevel 1 exit /b
-call :reject_foreign_paths "%CMDLOG%" || exit /b
+rem The -v log lists unused legacy GCC probe directories; only real search entries are path-checked.
+findstr /L /I /C:"windows-msvc" /C:"x86_64-pc-windows-msvc" "%CMDLOG%" >nul && (call :problem "MSVC target appeared in compiler diagnostics"& exit /b 2)
 findstr /R /C:"^ [A-Za-z]:" "%CMDLOG%" >"%LOG%.include-paths.txt"
 if errorlevel 1 (call :problem "cannot identify actual native header search paths"& exit /b 2)
 for /f "usebackq tokens=*" %%I in ("%LOG%.include-paths.txt") do (call :path_in_ucrt_path "%%I" || exit /b)
+call :reject_foreign_paths "%LOG%.include-paths.txt" || exit /b
 type "%LOG%.include-paths.txt" >>"%TOOLCHAIN_INFO%"
 call :run "%PACMAN%" -Q mingw-w64-ucrt-x86_64-clang mingw-w64-ucrt-x86_64-headers mingw-w64-ucrt-x86_64-crt mingw-w64-ucrt-x86_64-libwinpthread mingw-w64-ucrt-x86_64-binutils
 if errorlevel 1 exit /b
