@@ -1,3 +1,5 @@
+> **HISTORICAL / SUPERSEDED:** this report describes the original CMake-based preview, not the current build architecture. See [DIRECT_BUILD_MIGRATION.md](DIRECT_BUILD_MIGRATION.md) and the native platform reports. Original logs remain historical evidence.
+
 # Lot D — registre et moniteur SDL3 / Dear ImGui
 
 Date : 2026-11-13. **UI réelle et tests headless Linux ; interaction/affichage Windows non qualifiés.**

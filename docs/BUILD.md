@@ -1,246 +1,155 @@
-# Compiler, tester et empaqueter PLPT
+# Direct native compilation — authoritative build interface
 
-**Priorité : Windows x64. Compilateur : clang++ (pas clang-cl, pas g++).**
-Ce guide distingue les commandes prévues pour Windows des commandes effectivement
-exécutées dans le [rapport](reports/VALIDATION.md). Le sandbox de développement
-actuel est Linux : il ne permet pas de prétendre avoir exécuté un `.exe` Windows.
+**Owner decision: `build.bat` and `build.sh` are the only project build engines.**
+They invoke compilers, linkers and native utilities directly. No Jenga workspace,
+project generator, CMake, Ninja, Make, MSBuild, CTest, CPack, Python or PowerShell
+build orchestration is used. The old preview reports are historical, not current
+build instructions.
 
-## 1. Windows x64 — poste de développement
+## Commands
 
-### Prérequis
+| Operation | Windows | Linux |
+|---|---|---|
+| Verify/provision exact dependency archives | `build.bat deps --fetch` | `./build.sh deps --fetch` |
+| Verify toolchain and dependency hashes | `build.bat doctor --verbose` | `./build.sh doctor --verbose` |
+| Fresh Debug build | `build.bat debug` | `./build.sh debug` |
+| Fresh Release build | `build.bat release` | `./build.sh release` |
+| Compile and run Debug tests | `build.bat test` | `./build.sh test` |
+| Compile and run Release tests | `build.bat test release` | `./build.sh test release` |
+| Compile and run memory tests | `build.bat test asan` | `./build.sh test asan` |
+| Compile and run short fuzz campaign | `build.bat fuzz` | `./build.sh fuzz` |
+| Test failure propagation | `build.bat selftest` | `./build.sh selftest` |
+| Delete compiled outputs | `build.bat clean` | `./build.sh clean` |
+| Fresh Release build, tests, archive and extraction test | `build.bat package` | `./build.sh package --native-ui` |
 
-1. Windows 10/11 x64. Cible de compilation `_WIN32_WINNT=0x0A00`.
-2. LLVM officiel, **clang++ 22.1.8 visé** pour cette preview ; enregistrer la version
-   réellement utilisée. 22.1.8 a exécuté les vérifications Linux/croisées, pas une
-   qualification Windows. La CI initiale emploie le LLVM préinstallé du runner :
-   elle vérifiera la compatibilité, pas une toolchain de release déjà figée.
-3. Visual Studio 2022 Build Tools : charge de travail « développement Desktop C++ »,
-   toolset MSVC x64 et Windows SDK 10 (19041 ou plus récent). **LLVM seul ne fournit
-   ni la STL Microsoft ni les import libraries du SDK.** Il reste le compilateur ;
-   les Build Tools fournissent les headers, bibliothèques et outils de lien/ressources.
-4. CMake ≥ 3.24 et Ninja dans `PATH`.
-5. Pour créer un installateur : NSIS **3.11**. Rien de cela n'est une dépendance
-   d'exécution à installer par un invité.
+`--verbose` prints every complete command and the compiler driver's underlying
+compiler/linker diagnostics. Every invocation is recorded in a log even without
+this flag. No build operation implicitly downloads a dependency: only the explicit
+`deps --fetch` operation downloads the immutable URLs and checks their fixed hashes.
+A missing/corrupt archive is an error, never a fallback to another version.
 
-Ouvrir un terminal développeur x64, non élevé. Vérifier :
+## Windows x64 first
 
-```bat
-where clang++
-clang++ --version
-cmake --version
-ninja --version
-where link
-where rc
+Install official LLVM clang++ (18+ with a compatible Microsoft STL; the actual
+SDK/STL combination must pass the native doctor), Visual Studio C++ Build Tools
+with Windows SDK/UCRT x64, and native `curl.exe`, `tar.exe`, `certutil.exe`.
+The script may initialize `VsDevCmd.bat -arch=x64 -host_arch=x64` through vswhere.
+This initializes an environment only; it never invokes another build engine.
+
+The script selects `clang++.exe`, verifies its version/default Microsoft target,
+requires adjacent `lld-link.exe`, validates x64 SDK/STL headers/libraries and
+INCLUDE/LIB, then **compiles, links and executes a C++20/SDK/thread probe**. A MinGW
+compiler or clang-cl driver is rejected. `PLPT_CXX` can select an explicit clang++.exe.
+
+Project flags include `--target=x86_64-pc-windows-msvc`, `-std=c++20`,
+`-Wall -Wextra -Wpedantic -Werror -Wshadow`, Windows 10 API level and Unicode.
+Debug uses `-O0 -g -fms-runtime-lib=static_dbg` (/MTd intent); Release uses
+`-O2 -DNDEBUG -fms-runtime-lib=static` (/MT intent). Linking is driven directly by
+clang++/lld-link with explicit native libraries and subsystem. SDK `rc.exe` embeds
+the supplied asInvoker/PerMonitorV2 manifest as a resource; linker auto-manifests
+are disabled, and `mt.exe` verifies extraction of the embedded manifest.
+
+SDL3 **3.4.20** uses the official **VC** development ZIP (not the MinGW distribution).
+The script verifies SHA-256, extracts fresh, checks the import library/DLL machine
+with dumpbin, links `lib/x64/SDL3.lib` and copies `lib/x64/SDL3.dll` next to the UI.
+It records the DLL imports. If the official DLL needs the VC runtime, the matching
+app-local release CRT is copied from the selected Build Tools redistributable.
+Microsoft redistribution terms still apply; /MT in PLPT does not magically make a
+third-party DLL self-contained. Dear ImGui core and its SDL3/SDLRenderer3 backends
+are compiled directly into objects with the application's CRT settings.
+
+`build.bat test debug --native-ui` additionally creates and closes an actual native
+Windows SDL window using the software renderer. The log must identify `video=windows`.
+The dummy-driver test alone does not qualify a native Windows desktop.
+
+Windows memory mode uses ASan; Linux uses ASan+UBSan. Missing native compiler-rt /
+libFuzzer support reports SKIP/exit 77, not a pass. No Debug/ASan runtime is packaged
+as a Release dependency.
+
+## Linux native compilation
+
+Development prerequisites (Ubuntu example):
+
+```sh
+sudo apt-get install clang g++ libx11-dev libxext-dev curl tar openssl
+./build.sh deps --fetch
+./build.sh doctor --verbose
+./build.sh debug
+./build.sh test debug --native-ui
+./build.sh release
+./build.sh test asan --native-ui
+./build.sh fuzz
+./build.sh package --native-ui
 ```
 
-Le target attendu de clang++ sous Windows est `x86_64-pc-windows-msvc`. Ne pas mélanger
-une STL MinGW avec les import libraries MSVC. Si CMake choisit l'ABI MinGW ou le
-driver `clang-cl`, il refuse cette configuration plutôt que masquer la différence.
+`g++` supplies libstdc++ headers/libraries on these distributions; it does not
+compile PLPT. The compiler is native clang++, not a cross compiler. `PLPT_CXX` and
+`PLPT_CC` may select matching LLVM clang++/clang executables. A real compile/link/run
+probe verifies C++20 threads and the native standard library. The selected linker
+and actual compiler version are logged.
 
-### Chemin recommandé avec script
+SDL 3.4.20 has **no official Linux x64 binary development asset**. `build.sh` therefore
+contains an explicit, audited SDL C source list and literal Linux/glibc configuration.
+It directly invokes clang and links `libSDL3.so.0`; it does not call the upstream
+build machinery. Default profile: POSIX threads/time/filesystem + **X11/software**
+and the dummy driver. Optional audio/devices/GPU/dialog/process backends are disabled
+or stubbed. This is the current monitor's profile, not a streaming renderer decision.
+The shared library is genuinely the SDL runtime, not an artificial archive of PLPT modules.
 
-Depuis la racine du dépôt :
+On a display-less host, explicitly use `--headless` (dummy-only SDL) for build/test
+smoke, or initialize an X11 display with `xvfb-run -a ./build.sh test --native-ui`.
+Xvfb initializes a display environment, not a project build engine. The packaged
+profile must be X11, never the dummy-only sandbox variant. `--core-only` is an
+explicit reduced scope and cannot qualify the full desktop/package.
 
-```bat
-build.bat clang-debug
-build.bat clang-release
-build.bat clang-ui
+## Output and reliability policy
+
+```text
+out/windows/{debug,release,tests,packages,dependencies,doctor,logs}
+out/linux/{debug,release,tests,packages,dependencies,doctor,logs}
 ```
 
-Le script utilise `vswhere`/`VsDevCmd` pour charger le SDK x64 si nécessaire. Chaque
-échec de configuration, compilation ou test arrête le script. `clang-ui` est une
-configuration **Release** avec SDL3 et ImGui. Elle télécharge au build des archives
-épinglées par commit **et hash** ; aucune récupération n'a lieu au lancement du produit.
+Each configuration has `objects/`, `bin/`, dependency extractions/configuration
+and a `BUILD_SUCCEEDED` marker written only after successful linking. Models are
+linked to unit tests, not CLI/UI. There are no PLPT/ImGui static archives created
+just to simulate another build system; target object sets are explicit in the scripts.
 
-### Commandes explicites, sans wrapper
+**Every build is fresh.** The target directory, old binaries and old objects are
+removed before tool/dependency validation. This intentionally rebuilds on every
+source, public/private header, flag, dependency or toolchain change. Compiler `.d`
+files are retained for inspection, not used as an unsafe incremental cache. Build
+duration is measured (Linux seconds, Windows centiseconds). Optimization of compile
+time is deferred until these measurements justify a separately reviewed strategy.
 
-Dans un **x64 Native Tools Command Prompt** :
+An exclusive output lock prevents concurrent builds from deleting each other's
+outputs. After a forcibly terminated process, check that no build remains before
+removing a stale `.build-lock`. Logs and verified archives survive `clean`.
+Recursive cleanup is limited to fixed generated directories; reparse/symlink output
+paths are refused. Do not make `out` a junction/symlink.
 
-```bat
-cmake --preset clang-debug
-cmake --build --preset clang-debug --parallel
-ctest --preset clang-debug --output-on-failure
-out\build\clang-debug\plpt-monitor.exe
+Errors preserve native exit codes and show the failed command. Test codes 1/2 are
+only successful when explicitly expected by a negative test; sanitizer diagnostics
+still fail such tests. IPv6 unavailable is reported as SKIP and the suite returns
+77 (qualification incomplete), never a fabricated pass.
 
-cmake --preset clang-ui
-cmake --build --preset clang-ui --parallel
-ctest --preset clang-ui --output-on-failure
-out\build\clang-ui\plpt-desktop.exe
-```
+Developer-only `PLPT_EXTRA_CXXFLAGS` / `PLPT_EXTRA_LDFLAGS` permit auditing flag-change
+rebuilds and negative tests. They are logged and applied to a clean build; do not
+set these for release qualification unless their values are recorded.
 
-Équivalent sans preset :
+## Packaging
 
-```bat
-cmake -S . -B out\build\windows-manual -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Release -DPLPT_BUILD_UI=ON -DBUILD_TESTING=ON
-cmake --build out\build\windows-manual --parallel
-ctest --test-dir out\build\windows-manual --output-on-failure
-```
+`package` always recompiles Release and runs required tests first, then uses native
+tar/ZIP utilities. Archives include CLI, desktop, the SDL runtime (and any required
+Windows app-local CRT), concise docs and third-party notices. They are extracted,
+compared and executed before success is reported. No test/model executable is shipped.
 
-Liaisons Windows du cœur : `ws2_32`, `iphlpapi`, `bcrypt`. `SOCKET` n'est pas tronqué.
-Le manifeste demande `asInvoker`. Le runtime C/C++ Microsoft est sélectionné en
-statique (`MultiThreaded`, variante Debug pour Debug), comme SDL3 et ImGui, pour
-réduire les DLL à déployer. Vérifier tout de même les dépendances réelles du binaire
-Release avec `dumpbin /DEPENDENTS` : ne jamais supposer que le packaging est correct.
+These are **portable development archives**, not signed installers. The old CPack
+and unqualified NSIS recipe are retired. Windows installation/signing/SmartScreen
+and cross-distribution Linux runtime support remain separate product qualification
+questions. This migration does not authorize a new sharing feature.
 
-Le smoke test desktop de CTest force le driver SDL `dummy`/renderer `software`.
-Il prouve l'initialisation, des frames et l'arrêt, **pas** le rendu D3D, les interactions,
-les claviers IME ou les écrans Windows. Ces tests natifs restent dans la matrice.
+## Current evidence
 
-## 2. Packaging Windows
-
-### Archive portable de développement
-
-Après `build.bat clang-ui` réussi :
-
-```bat
-cmake --install out\build\clang-ui --prefix out\stage-windows
-cpack --config out\build\clang-ui\CPackConfig.cmake -B out\packages
-```
-
-L'archive ZIP contient le moniteur CLI, l'UI, la documentation et les notices tierces.
-Ne pas empaqueter un build Debug pour des testeurs. `out/` est ignoré par Git et ne
-doit pas devenir un stockage de grosses releases dans le dépôt.
-
-### Installateur NSIS, par utilisateur
-
-Dans PowerShell, après compilation Release avec UI :
-
-```powershell
-# Depuis la racine du dépôt. Aucun contournement de la stratégie d'exécution.
-.\tools\package-windows.ps1
-```
-
-Le script compile à nouveau si nécessaire, exécute CTest, prépare le staging,
-vérifie NSIS 3.11, génère l'installateur et calcule son SHA-256. Équivalent manuel :
-
-```powershell
-cmake --install out/build/clang-ui --prefix out/stage-windows
-$stage = (Resolve-Path out/stage-windows).Path
-$output = Join-Path (Get-Location) 'out/PLPT-0.1.0-preview-windows-x64-setup.exe'
-& "${env:ProgramFiles(x86)}\NSIS\makensis.exe" "/DSTAGE=$stage" "/DOUTPUT=$output" packaging/windows/plpt-preview.nsi
-if ($LASTEXITCODE -ne 0) { throw 'NSIS failed' }
-Get-FileHash -Algorithm SHA256 $output
-```
-
-Le ZIP contient la documentation complète et les preuves. L'installateur compact
-embarque seulement `QUICKSTART.md`, `DEPENDENCIES.md` et les licences SDL/ImGui.
-
-Destination prévue : `%LOCALAPPDATA%\Programs\PLPT-Preview`. Registre **HKCU**,
-raccourci de l'utilisateur courant, aucun service ni démarrage automatique,
-aucune règle pare-feu et `RequestExecutionLevel user`. Une preview existante doit
-être désinstallée avant remplacement. L'uninstall ne supprime que les fichiers
-connus : pas de `RMDir /r` sur une racine choisie par l'utilisateur.
-
-**État de ce livrable : recette fournie, NSIS non exécuté dans le sandbox Linux.**
-Il n'existe pas ici d'installateur Windows compilé, signé et testé à annoncer.
-La première release exige sur une VM Windows propre, sans outils de développement :
-
-- installation utilisateur standard sans UAC inattendu ;
-- lancement CLI/UI et vérification des dépendances DLL ;
-- tests fermeture/réinstallation/désinstallation, y compris fichiers verrouillés ;
-- aucun changement de pare-feu/service/autostart ;
-- aucun fichier utilisateur supprimé ;
-- contrôles du manifeste, signatures et empreintes.
-
-La signature Authenticode nécessite un certificat du propriétaire, conservé hors
-Git et hors chat. Ne jamais envoyer sa clé privée. Quand le certificat et la
-politique de timestamp auront été choisis, signer les exécutables **avant** de
-compiler/signer l'installateur. Les binaires actuels sont de développement, non
-signés ; la confiance SmartScreen n'est pas garantie. La licence PLPT reste à choisir.
-
-## 3. Linux — cible secondaire
-
-Sur Debian/Ubuntu (prérequis **développeur**, pas runtime invité) :
-
-```bash
-sudo apt-get install clang cmake ninja-build g++
-clang++ --version
-./build.sh clang-debug
-./out/build/clang-debug/plpt-monitor
-./build.sh clang-release
-./build.sh clang-asan
-```
-
-`g++` ci-dessus fournit la libstdc++ et ses headers sur ces distributions ; il ne
-compile **pas** PLPT. CMake refuse un compilateur GCC pour ce projet.
-Les commandes détaillées :
-
-```bash
-cmake --preset clang-debug
-cmake --build --preset clang-debug --parallel 4
-ctest --preset clang-debug -V
-```
-
-L'UI Linux normale requiert les headers de développement de son backend graphique.
-Exemple de socle X11 Ubuntu, à adapter à la distribution :
-
-```bash
-sudo apt-get install pkg-config libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev libgl1-mesa-dev
-./build.sh clang-ui
-./out/build/clang-ui/plpt-desktop
-```
-
-SDL contrôle la disponibilité des drivers. Son résumé CMake doit annoncer un
-backend utilisable sur la machine. Un build sans X11/Wayland n'est pas une UI
-Linux livrable à un utilisateur desktop.
-
-### Smoke test sans écran (celui réellement utilisé ici)
-
-```bash
-cmake -S . -B out/build/ui-smoke -G Ninja \
-  -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang \
-  -DCMAKE_BUILD_TYPE=Debug -DPLPT_BUILD_UI=ON -DPLPT_HEADLESS_UI=ON
-cmake --build out/build/ui-smoke --parallel 4
-ctest --test-dir out/build/ui-smoke -V
-SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software \
-  ./out/build/ui-smoke/plpt-desktop --smoke-test --screenshot out/desktop.bmp
-```
-
-Le BMP est une capture volontaire de **la fenêtre PLPT**, pas du bureau ni d'un
-navigateur distant. Ce mode quitte automatiquement après initialisation et frames.
-
-### Package Linux technique
-
-```bash
-cmake --install out/build/clang-release --prefix out/stage-linux
-cpack --config out/build/clang-release/CPackConfig.cmake -B out/packages
-# Vérifier seulement une archive que vous venez de construire vous-même :
-python3 tools/check_linux_package.py out/packages/PLPT-0.1.0-preview-Linux-x64.tar.gz out/build/clang-release/plpt-monitor
-```
-
-Le preset Release sans UI produit une archive TGZ du **moniteur CLI**. Ni AppImage
-ni `.deb` installable universel ne sont promis. La compatibilité glibc/libstdc++,
-les architectures et le packaging Linux final attendent la qualification Windows.
-
-## 4. Dépendances, offline et reproductibilité
-
-- Sans UI : standard library + API système uniquement.
-- UI : [inventaire](../third_party/DEPENDENCIES.md), pins dans `cmake/Desktop.cmake`.
-- Pas de vcpkg implicite, de téléchargement `latest` ou de remplacement silencieux.
-- Pour un build offline, provisionner les sources aux commits exacts et utiliser
-  `FETCHCONTENT_SOURCE_DIR_SDL3` / `FETCHCONTENT_SOURCE_DIR_IMGUI`. Cela contourne le
-  téléchargement/hash CMake : **vérifier soi-même les commits/hashes du miroir**.
-- Ne pas réutiliser un build directory entre compilateurs, SDK/ABI ou architectures.
-- CMakePresets version 5 est compatible avec CMake 3.24.
-
-Les outils du sandbox sont installés hors Git dans `/home/user/.cache/plpt-tools`.
-La configuration `PATH` effectivement utilisée est dans le rapport. Npm/Python
-servent seulement à y fournir des outils de build lorsque les assets LLVM officiels
-sont inaccessibles ; ils ne deviennent pas des dépendances runtime de PLPT.
-
-## 5. Dépannage
-
-| Symptôme | Action |
-|---|---|
-| `iostream`, `windows.h` ou `kernel32.lib` absent | Installer le SDK/STL ; ouvrir le terminal développeur x64 / utiliser build.bat |
-| CMake trouve `cl.exe` / g++ / clang-cl | Nouveau dossier de build ; `-DCMAKE_CXX_COMPILER=clang++` |
-| Mauvaise ABI Windows | LLVM pour target `x86_64-pc-windows-msvc`, pas un mélange MSYS2/MSVC |
-| SDL ne trouve pas de driver graphique | Installer les headers OS ou choisir explicitement le profil headless de test |
-| IPv6 indisponible | CTest marque le test `ipv6` SKIP (code 77), pas PASS ; qualification incomplète |
-| PID inconnu | Droits/processus changeants ; ne pas lancer automatiquement PLPT comme administrateur |
-| Téléchargement de dépendance refusé | Provisionner les archives vérifiées ; ne pas retirer `URL_HASH` |
-| Installer non signé bloqué | Ne pas désactiver la protection ; qualifier et signer avant distribution |
-
-La CI prépare une exécution Windows en premier (`windows-2022`), puis Linux avec
-`needs: windows`. Son simple fichier ne constitue pas un résultat : aucun run
-n'a été lancé depuis cette session, aucun push n'a été effectué.
+See `docs/reports/DIRECT_BUILD_MIGRATION.md`, `BUILD_VALIDATION_WINDOWS.md`,
+`BUILD_VALIDATION_LINUX.md`, and `BUILD_DEPENDENCIES.md`. Only recorded native runs
+qualify a platform; a syntax-only check or the other OS does not.

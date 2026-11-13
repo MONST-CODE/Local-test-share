@@ -1,3 +1,5 @@
+> **HISTORICAL / SUPERSEDED:** this report describes the original CMake-based preview, not the current build architecture. See [DIRECT_BUILD_MIGRATION.md](DIRECT_BUILD_MIGRATION.md) and the native platform reports. Original logs remain historical evidence.
+
 # PLPT — rapport de livraison et preuves
 
 **2026-11-13 · 0.1.0-preview · C++20 / clang++**

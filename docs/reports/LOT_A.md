@@ -1,3 +1,5 @@
+> **HISTORICAL / SUPERSEDED:** this report describes the original CMake-based preview, not the current build architecture. See [DIRECT_BUILD_MIGRATION.md](DIRECT_BUILD_MIGRATION.md) and the native platform reports. Original logs remain historical evidence.
+
 # Lot A — Reconnaissance et décision de périmètre
 
 Date : 2026-11-13 (UTC). Référence : document maître v1.0, §26.1–26.3.
