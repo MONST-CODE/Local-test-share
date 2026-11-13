@@ -37,7 +37,8 @@ for %%D in ("%ROOT%\out" "%OUT%" "%OUT%\logs" "%OUT%\dependencies" "%OUT%\debug"
 if not exist "%OUT%\logs" mkdir "%OUT%\logs"
 if not exist "%OUT%\logs" (call :problem "cannot create logs"& exit /b 1)
 set "LOG=%OUT%\logs\%ACTION%-%MODE%-%RANDOM%-%RANDOM%.log"
-set "CMDLOG=%LOG%.command.txt"
+set "CMDLOG="
+set "PLPT_COMMAND_INDEX=0"
 >"%LOG%" echo PLPT direct Windows operation=%ACTION% mode=%MODE% started=%DATE% %TIME%
 mkdir "%OUT%\.build-lock" >nul 2>nul
 if not "%errorlevel%"=="0" (call :problem "another build owns %OUT%\.build-lock. Remove only after verifying no build is running."& exit /b 1)
@@ -109,6 +110,13 @@ if not exist "%~1" (call :problem "cannot create output: %~1"& exit /b 1)
 exit /b 0
 
 :run
+rem Each invocation gets a NEW capture file: never read stale output or reuse a
+rem file handle inherited by a background child of a native environment initializer.
+set /a PLPT_COMMAND_INDEX+=1 >nul
+set "CMDLOG=%LOG%.command-%PLPT_COMMAND_INDEX%.txt"
+if exist "%CMDLOG%" (call :problem "refusing stale command capture: %CMDLOG%"& exit /b 1)
+>"%CMDLOG%" type nul
+if not exist "%CMDLOG%" (call :problem "cannot create command capture: %CMDLOG%"& exit /b 1)
 rem Capture each process without a pipeline masking its status. Print diagnostics afterwards.
 >>"%LOG%" echo + %*
 if "%VERBOSE%"=="1" echo + %*
@@ -162,10 +170,11 @@ set "VSROOT="
 for /f "usebackq delims=" %%I in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSROOT=%%I"
 if not defined VSROOT (call :problem "no compatible C++ Build Tools installation"& exit /b 2)
 rem Environment initialization only. No project generator or other build engine is invoked.
-call "%VSROOT%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >"%CMDLOG%" 2>&1
+set "SDKLOG=%LOG%.sdk.txt"
+call "%VSROOT%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >"%SDKLOG%" 2>&1
 set "RC=%errorlevel%"
-type "%CMDLOG%"
-type "%CMDLOG%" >>"%LOG%"
+type "%SDKLOG%"
+type "%SDKLOG%" >>"%LOG%"
 if not "%RC%"=="0" exit /b %RC%
 :sdk_ready
 if /I not "%VSCMD_ARG_TGT_ARCH%"=="x64" (call :problem "SDK environment must target x64"& exit /b 2)
@@ -190,8 +199,7 @@ for %%I in ("%CXX%") do set "LLD=%%~dpIlld-link.exe"
 if not exist "%LLD%" (call :problem "matching lld-link.exe required next to clang++.exe"& exit /b 2)
 call :run "%CXX%" --version
 if errorlevel 1 exit /b
-if "%GITHUB_ACTIONS%"=="true" for %%I in ("%CMDLOG%") do echo ::notice title=PLPT compiler audit::compiler=%CXX% output=%%~fI bytes=%%~zI
-for /f "usebackq delims=" %%L in ("%CMDLOG%") do if "%GITHUB_ACTIONS%"=="true" echo ::notice title=PLPT compiler version::%%L
+call :notice_file "%CMDLOG%"
 findstr /I /C:"clang version" "%CMDLOG%" >nul || (call :problem "selected compiler is not LLVM Clang: %CXX%"& exit /b 2)
 call :run "%CXX%" -dumpmachine
 if errorlevel 1 exit /b
@@ -204,6 +212,7 @@ if not defined CLANG_MAJOR (call :problem "cannot determine Clang version"& exit
 if %CLANG_MAJOR% LSS 18 (call :problem "LLVM Clang 18 or newer required; SDK compatibility is probed natively"& exit /b 2)
 call :run "%LLD%" --version
 if errorlevel 1 exit /b
+call :notice_file "%CMDLOG%"
 set "RCEXE="
 set "DUMPBIN="
 set "MTEXE="
