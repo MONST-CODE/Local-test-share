@@ -112,7 +112,9 @@ exit /b 0
 rem Capture each process without a pipeline masking its status. Print diagnostics afterwards.
 >>"%LOG%" echo + %*
 if "%VERBOSE%"=="1" echo + %*
-%* >"%CMDLOG%" 2>&1
+rem Group the command so redirection belongs to the complete native invocation.
+rem CALL sites must not append conditional operators to this variadic subroutine.
+(%*) >"%CMDLOG%" 2>&1
 set "RC=%errorlevel%"
 type "%CMDLOG%"
 type "%CMDLOG%" >>"%LOG%"
@@ -186,18 +188,22 @@ for %%I in ("%CXX%") do set "CXXNAME=%%~nxI"
 if /I not "%CXXNAME%"=="clang++.exe" (call :problem "choose clang++.exe, not another driver"& exit /b 2)
 for %%I in ("%CXX%") do set "LLD=%%~dpIlld-link.exe"
 if not exist "%LLD%" (call :problem "matching lld-link.exe required next to clang++.exe"& exit /b 2)
-call :run "%CXX%" --version || exit /b
+call :run "%CXX%" --version
+if errorlevel 1 exit /b
 if "%GITHUB_ACTIONS%"=="true" for %%I in ("%CMDLOG%") do echo ::notice title=PLPT compiler audit::compiler=%CXX% output=%%~fI bytes=%%~zI
 for /f "usebackq delims=" %%L in ("%CMDLOG%") do if "%GITHUB_ACTIONS%"=="true" echo ::notice title=PLPT compiler version::%%L
 findstr /I /C:"clang version" "%CMDLOG%" >nul || (call :problem "selected compiler is not LLVM Clang: %CXX%"& exit /b 2)
-call :run "%CXX%" -dumpmachine || exit /b
+call :run "%CXX%" -dumpmachine
+if errorlevel 1 exit /b
 findstr /I /C:"x86_64-pc-windows-msvc" "%CMDLOG%" >nul || (call :problem "compiler default target must be x86_64-pc-windows-msvc. MinGW is forbidden."& exit /b 2)
-call :run "%CXX%" -dumpversion || exit /b
+call :run "%CXX%" -dumpversion
+if errorlevel 1 exit /b
 set "CLANG_MAJOR="
 for /f "usebackq tokens=1 delims=." %%V in ("%CMDLOG%") do set "CLANG_MAJOR=%%V"
 if not defined CLANG_MAJOR (call :problem "cannot determine Clang version"& exit /b 2)
 if %CLANG_MAJOR% LSS 18 (call :problem "LLVM Clang 18 or newer required; SDK compatibility is probed natively"& exit /b 2)
-call :run "%LLD%" --version || exit /b
+call :run "%LLD%" --version
+if errorlevel 1 exit /b
 set "RCEXE="
 set "DUMPBIN="
 set "MTEXE="
@@ -212,15 +218,18 @@ if not defined DUMPBIN (call :problem "MSVC dumpbin.exe missing"& exit /b 2)
 >>"%LOG%" echo LIB=%LIB%
 if "%GITHUB_ACTIONS%"=="true" echo ::notice title=PLPT Windows SDK::SDK=%WindowsSDKVersion% VC=%VCToolsVersion% compiler=%CXX% linker=%LLD%
 if not exist "%OUT%\doctor" mkdir "%OUT%\doctor"
-call :run "%CXX%" --target=x86_64-pc-windows-msvc -std=c++20 -fms-runtime-lib=static -fuse-ld=lld -DWIN32_LEAN_AND_MEAN -DNOMINMAX -D_WIN32_WINNT=0x0A00 -Wall -Wextra -Wpedantic -Werror tests/build/toolchain_probe.cpp -o "%OUT%\doctor\probe.exe" -lkernel32 -lbcrypt || exit /b
+call :run "%CXX%" --target=x86_64-pc-windows-msvc -std=c++20 -fms-runtime-lib=static -fuse-ld=lld -DWIN32_LEAN_AND_MEAN -DNOMINMAX -D_WIN32_WINNT=0x0A00 -Wall -Wextra -Wpedantic -Werror tests/build/toolchain_probe.cpp -o "%OUT%\doctor\probe.exe" -lkernel32 -lbcrypt
+if errorlevel 1 exit /b
 if not exist "%OUT%\doctor\probe.exe" (call :problem "toolchain probe output missing"& exit /b 1)
-call :run "%OUT%\doctor\probe.exe" || exit /b
+call :run "%OUT%\doctor\probe.exe"
+if errorlevel 1 exit /b
 call :notice_file "%CMDLOG%"
 exit /b 0
 
 :verify
 if not exist "%~1" (call :problem "missing archive %~1. Run build.bat deps --fetch or provision that exact pinned file."& exit /b 2)
-call :run certutil.exe -hashfile "%~1" SHA256 || exit /b
+call :run certutil.exe -hashfile "%~1" SHA256
+if errorlevel 1 exit /b
 findstr /I /X /C:"%~2" "%CMDLOG%" >nul
 if not "%errorlevel%"=="0" (call :problem "SHA-256 mismatch for %~1. Archive NOT extracted."& exit /b 1)
 echo SHA256 OK %~2 %~1
@@ -244,7 +253,8 @@ goto dependencies
 
 :fetch_one
 if exist "%~2" (call :verify "%~2" "%~3"& exit /b)
-call :run curl.exe --fail --location --show-error --proto "=https" --tlsv1.2 --output "%~2.part" "%~1" || exit /b
+call :run curl.exe --fail --location --show-error --proto "=https" --tlsv1.2 --output "%~2.part" "%~1"
+if errorlevel 1 exit /b
 call :verify "%~2.part" "%~3" || exit /b
 move /y "%~2.part" "%~2" >nul
 exit /b %errorlevel%
@@ -277,7 +287,8 @@ exit /b 0
 set "SOURCE=%~1"
 set "OBJECT=%DIR%\objects\%SOURCE:/=_%.obj"
 echo Compilation: %SOURCE%
-call :run "%CXX%" %VFLAG% %COMMON_FLAGS% %PROFILE_FLAGS% %SAN% %WARNINGS% %PLPT_EXTRA_CXXFLAGS% -I "%ROOT%" %UI_INCLUDES% -MMD -MP -MF "%OBJECT%.d" -c "%SOURCE%" -o "%OBJECT%" || exit /b
+call :run "%CXX%" %VFLAG% %COMMON_FLAGS% %PROFILE_FLAGS% %SAN% %WARNINGS% %PLPT_EXTRA_CXXFLAGS% -I "%ROOT%" %UI_INCLUDES% -MMD -MP -MF "%OBJECT%.d" -c "%SOURCE%" -o "%OBJECT%"
+if errorlevel 1 exit /b
 if not exist "%OBJECT%" (call :problem "compiler returned success without object %OBJECT%"& exit /b 1)
 exit /b 0
 
@@ -293,7 +304,8 @@ exit /b 0
 set "GUI_SOURCE=%~1"
 set "GUI_OBJECT=%DIR%\objects\imgui_%GUI_SOURCE:/=_%.obj"
 echo Compilation ImGui: %GUI_SOURCE%
-call :run "%CXX%" %VFLAG% %COMMON_FLAGS% %PROFILE_FLAGS% %SAN% -I "%IMGUI_ROOT%" -I "%IMGUI_ROOT%\backends" -I "%SDL_ROOT%\include" -MMD -MP -MF "%GUI_OBJECT%.d" -c "%IMGUI_ROOT%\%GUI_SOURCE%" -o "%GUI_OBJECT%" || exit /b
+call :run "%CXX%" %VFLAG% %COMMON_FLAGS% %PROFILE_FLAGS% %SAN% -I "%IMGUI_ROOT%" -I "%IMGUI_ROOT%\backends" -I "%SDL_ROOT%\include" -MMD -MP -MF "%GUI_OBJECT%.d" -c "%IMGUI_ROOT%\%GUI_SOURCE%" -o "%GUI_OBJECT%"
+if errorlevel 1 exit /b
 if not exist "%GUI_OBJECT%" (call :problem "missing ImGui object %GUI_OBJECT%"& exit /b 1)
 set "GUI_OBJECTS=%GUI_OBJECTS% "%GUI_OBJECT%""
 exit /b 0
@@ -301,18 +313,21 @@ exit /b 0
 :link
 rem LINK_OBJECTS is an explicit target set, never a directory wildcard.
 echo Linking: %~1
-call :run "%CXX%" %VFLAG% --target=x86_64-pc-windows-msvc -fuse-ld=lld %LINK_FLAGS% %SAN% %LINK_OBJECTS% "%DIR%\application.res" %NATIVE_LIBS% %LINK_EXTRA% -Xlinker /MACHINE:X64 -Xlinker /INCREMENTAL:NO -Xlinker /WX -Xlinker /MANIFEST:NO -Xlinker /SUBSYSTEM:%~2 %PLPT_EXTRA_LDFLAGS% -o "%BIN%\%~1.exe" || exit /b
+call :run "%CXX%" %VFLAG% --target=x86_64-pc-windows-msvc -fuse-ld=lld %LINK_FLAGS% %SAN% %LINK_OBJECTS% "%DIR%\application.res" %NATIVE_LIBS% %LINK_EXTRA% -Xlinker /MACHINE:X64 -Xlinker /INCREMENTAL:NO -Xlinker /WX -Xlinker /MANIFEST:NO -Xlinker /SUBSYSTEM:%~2 %PLPT_EXTRA_LDFLAGS% -o "%BIN%\%~1.exe"
+if errorlevel 1 exit /b
 if not exist "%BIN%\%~1.exe" (call :problem "linker returned success without executable"& exit /b 1)
 exit /b 0
 
 :sanitizer_runtime
 if not "%MODE%"=="asan" exit /b 0
-call :run "%CXX%" -print-resource-dir || exit /b
+call :run "%CXX%" -print-resource-dir
+if errorlevel 1 exit /b
 set "RESOURCE_DIR="
 for /f "usebackq delims=" %%I in ("%CMDLOG%") do set "RESOURCE_DIR=%%I"
 set "ASAN_DLL=%RESOURCE_DIR%\lib\windows\clang_rt.asan_dynamic-x86_64.dll"
 if not exist "%ASAN_DLL%" (echo SKIP: Windows compiler-rt ASan runtime unavailable. Qualification incomplete.& exit /b 77)
-call :run copy /y "%ASAN_DLL%" "%BIN%\" || exit /b
+call :run copy /y "%ASAN_DLL%" "%BIN%\"
+if errorlevel 1 exit /b
 exit /b 0
 
 :build_project
@@ -328,7 +343,8 @@ call :dependencies || exit /b
 call :configure_flags || exit /b
 call :sanitizer_runtime || exit /b
 >"%DIR%\application.rc" echo 1 24 "%ROOT:\=/%/packaging/windows/app.manifest"
-call :run "%RCEXE%" /nologo /fo "%DIR%\application.res" "%DIR%\application.rc" || exit /b
+call :run "%RCEXE%" /nologo /fo "%DIR%\application.res" "%DIR%\application.rc"
+if errorlevel 1 exit /b
 if not exist "%DIR%\application.res" (call :problem "resource compiler did not create manifest resource"& exit /b 1)
 echo Compilation started: %MODE% - deterministic fresh objects, no cache
 set "CORE_OBJECTS="
@@ -353,18 +369,23 @@ exit /b 0
 
 :desktop
 mkdir "%DIR%\vendor\sdl" "%DIR%\vendor\imgui"
-call :run tar.exe -xf "%SDL_ARCHIVE%" -C "%DIR%\vendor\sdl" --strip-components=1 || exit /b
-call :run tar.exe -xzf "%IMGUI_ARCHIVE%" -C "%DIR%\vendor\imgui" --strip-components=1 || exit /b
+call :run tar.exe -xf "%SDL_ARCHIVE%" -C "%DIR%\vendor\sdl" --strip-components=1
+if errorlevel 1 exit /b
+call :run tar.exe -xzf "%IMGUI_ARCHIVE%" -C "%DIR%\vendor\imgui" --strip-components=1
+if errorlevel 1 exit /b
 set "SDL_ROOT=%DIR%\vendor\sdl"
 set "IMGUI_ROOT=%DIR%\vendor\imgui"
 for %%F in ("%SDL_ROOT%\include\SDL3\SDL.h" "%SDL_ROOT%\lib\x64\SDL3.lib" "%SDL_ROOT%\lib\x64\SDL3.dll" "%IMGUI_ROOT%\imgui.cpp") do (
   if not exist "%%~F" (call :problem "pinned dependency layout missing file %%~F"& exit /b 1)
 )
-call :run "%DUMPBIN%" /nologo /headers "%SDL_ROOT%\lib\x64\SDL3.lib" || exit /b
+call :run "%DUMPBIN%" /nologo /headers "%SDL_ROOT%\lib\x64\SDL3.lib"
+if errorlevel 1 exit /b
 findstr /I /C:"8664 machine" "%CMDLOG%" >nul || (call :problem "SDL3 import library is not x64 Microsoft COFF"& exit /b 1)
-call :run "%DUMPBIN%" /nologo /headers "%SDL_ROOT%\lib\x64\SDL3.dll" || exit /b
+call :run "%DUMPBIN%" /nologo /headers "%SDL_ROOT%\lib\x64\SDL3.dll"
+if errorlevel 1 exit /b
 findstr /I /C:"8664 machine" "%CMDLOG%" >nul || (call :problem "SDL3 DLL is not x64 PE"& exit /b 1)
-call :run copy /y "%SDL_ROOT%\lib\x64\SDL3.dll" "%BIN%\SDL3.dll" || exit /b
+call :run copy /y "%SDL_ROOT%\lib\x64\SDL3.dll" "%BIN%\SDL3.dll"
+if errorlevel 1 exit /b
 call :runtime_dependencies || exit /b
 for %%S in (%IMGUI_SOURCES%) do (call :gui_one "%%S" || exit /b)
 set "UI_INCLUDES=-isystem "%SDL_ROOT%\include" -isystem "%IMGUI_ROOT%" -isystem "%IMGUI_ROOT%\backends""
@@ -374,22 +395,26 @@ set "LINK_OBJECTS=%CORE_OBJECTS% %GUI_OBJECTS% "%OBJECT%""
 set "LINK_EXTRA="%SDL_ROOT%\lib\x64\SDL3.lib""
 call :link plpt-desktop WINDOWS || exit /b
 set "LINK_EXTRA="
-call :run "%DUMPBIN%" /nologo /dependents "%BIN%\plpt-desktop.exe" || exit /b
-call :run "%MTEXE%" -nologo -inputresource:"%BIN%\plpt-desktop.exe";#1 -out:"%DIR%\embedded.manifest" || exit /b
+call :run "%DUMPBIN%" /nologo /dependents "%BIN%\plpt-desktop.exe"
+if errorlevel 1 exit /b
+call :run "%MTEXE%" -nologo -inputresource:"%BIN%\plpt-desktop.exe";#1 -out:"%DIR%\embedded.manifest"
+if errorlevel 1 exit /b
 findstr /C:"asInvoker" "%DIR%\embedded.manifest" >nul || (call :problem "asInvoker manifest missing"& exit /b 1)
 findstr /C:"PerMonitorV2" "%DIR%\embedded.manifest" >nul || (call :problem "DPI manifest missing"& exit /b 1)
 if "%GITHUB_ACTIONS%"=="true" echo ::notice title=PLPT Windows::PASS x64 COFF SDL3 import/DLL and embedded asInvoker/PerMonitorV2 manifest
 exit /b 0
 
 :runtime_dependencies
-call :run "%DUMPBIN%" /nologo /dependents "%BIN%\SDL3.dll" || exit /b
+call :run "%DUMPBIN%" /nologo /dependents "%BIN%\SDL3.dll"
+if errorlevel 1 exit /b
 copy /y "%CMDLOG%" "%DIR%\SDL3-runtime-dependencies.txt" >nul
 rem Official SDL DLL may use its own dynamic CRT. Never assume application's /MT removes it.
 findstr /I /C:"VCRUNTIME140" /C:"MSVCP140" "%CMDLOG%" >nul
 if not "%errorlevel%"=="0" goto runtime_recorded
 set "CRT_DIR=%VCToolsRedistDir%x64\Microsoft.VC143.CRT"
 if not exist "%CRT_DIR%\vcruntime140.dll" (call :problem "official SDL DLL requires VC runtime; app-local redistributable not found in %CRT_DIR%"& exit /b 2)
-call :run copy /y "%CRT_DIR%\*.dll" "%BIN%\" || exit /b
+call :run copy /y "%CRT_DIR%\*.dll" "%BIN%\"
+if errorlevel 1 exit /b
 >>"%DIR%\SDL3-runtime-dependencies.txt" echo App-local CRT copied from %CRT_DIR%. See Microsoft redistribution terms.
 :runtime_recorded
 call :notice_file "%DIR%\SDL3-runtime-dependencies.txt"
@@ -412,7 +437,8 @@ exit /b 0
 :header_one
 >"%DIR%\header-probe.cpp" echo #include "%~1"
 echo Independent header: %~1
-call :run "%CXX%" %VFLAG% %COMMON_FLAGS% %PROFILE_FLAGS% %WARNINGS% -I "%ROOT%" -fsyntax-only "%DIR%\header-probe.cpp" || exit /b
+call :run "%CXX%" %VFLAG% %COMMON_FLAGS% %PROFILE_FLAGS% %WARNINGS% -I "%ROOT%" -fsyntax-only "%DIR%\header-probe.cpp"
+if errorlevel 1 exit /b
 set /a HEADER_COUNT+=1 >nul
 exit /b 0
 
@@ -521,11 +547,13 @@ set "UI_INCLUDES="
 call :cpp engine/protocol/envelope.cpp || exit /b
 set "FUZZ_OBJECTS="%OBJECT%""
 call :cpp tests/fuzz/envelope_fuzz.cpp || exit /b
-call :run "%CXX%" %VFLAG% --target=x86_64-pc-windows-msvc -fuse-ld=lld %LINK_FLAGS% -fsanitize=address,fuzzer %FUZZ_OBJECTS% "%OBJECT%" -o "%BIN%\plpt-fuzz-envelope.exe" || exit /b
+call :run "%CXX%" %VFLAG% --target=x86_64-pc-windows-msvc -fuse-ld=lld %LINK_FLAGS% -fsanitize=address,fuzzer %FUZZ_OBJECTS% "%OBJECT%" -o "%BIN%\plpt-fuzz-envelope.exe"
+if errorlevel 1 exit /b
 if not exist "%BIN%\plpt-fuzz-envelope.exe" (call :problem "fuzzer output missing"& exit /b 1)
 copy /y tests\fuzz\corpus\hello "%DIR%\corpus\hello" >nul || exit /b
 copy /y tests\fuzz\corpus\chat "%DIR%\corpus\chat" >nul || exit /b
-call :run "%BIN%\plpt-fuzz-envelope.exe" -runs=20000 -seed=20261113 -max_len=4096 -timeout=2 "%DIR%\corpus" || exit /b
+call :run "%BIN%\plpt-fuzz-envelope.exe" -runs=20000 -seed=20261113 -max_len=4096 -timeout=2 "%DIR%\corpus"
+if errorlevel 1 exit /b
 if "%GITHUB_ACTIONS%"=="true" echo ::notice title=PLPT Windows::PASS native libFuzzer plus ASan, 20000 executions
 exit /b 0
 
@@ -541,23 +569,43 @@ call :tests || exit /b
 set "STAGE=%OUT%\packages\stage"
 call :fresh "%STAGE%" || exit /b
 mkdir "%STAGE%\PLPT\bin" "%STAGE%\PLPT\docs" "%STAGE%\PLPT\licenses"
-call :run copy /y "%BIN%\plpt-monitor.exe" "%STAGE%\PLPT\bin\" || exit /b
-call :run copy /y "%BIN%\plpt-desktop.exe" "%STAGE%\PLPT\bin\" || exit /b
-call :run copy /y "%BIN%\*.dll" "%STAGE%\PLPT\bin\" || exit /b
-for %%F in (README.md docs\BUILD.md docs\SECURITY.md docs\QUICKSTART.md third_party\DEPENDENCIES.md) do (call :run copy /y "%%F" "%STAGE%\PLPT\docs\" || exit /b)
-for %%F in (SDL3.txt ImGui.txt Bundled-notices.txt) do (call :run copy /y "third_party\licenses\%%F" "%STAGE%\PLPT\licenses\" || exit /b)
+call :run copy /y "%BIN%\plpt-monitor.exe" "%STAGE%\PLPT\bin\"
+if errorlevel 1 exit /b
+call :run copy /y "%BIN%\plpt-desktop.exe" "%STAGE%\PLPT\bin\"
+if errorlevel 1 exit /b
+call :run copy /y "%BIN%\*.dll" "%STAGE%\PLPT\bin\"
+if errorlevel 1 exit /b
+for %%F in (README.md docs\BUILD.md docs\SECURITY.md docs\QUICKSTART.md third_party\DEPENDENCIES.md) do (
+  call :run copy /y "%%F" "%STAGE%\PLPT\docs\"
+  if errorlevel 1 exit /b
+)
+for %%F in (SDL3.txt ImGui.txt Bundled-notices.txt) do (
+  call :run copy /y "third_party\licenses\%%F" "%STAGE%\PLPT\licenses\"
+  if errorlevel 1 exit /b
+)
 set "ARCHIVE=%OUT%\packages\PLPT-0.1.0-preview-windows-x64.zip"
-call :run tar.exe -a -cf "%ARCHIVE%" -C "%STAGE%" PLPT || exit /b
-call :run certutil.exe -hashfile "%ARCHIVE%" SHA256 || exit /b
+call :run tar.exe -a -cf "%ARCHIVE%" -C "%STAGE%" PLPT
+if errorlevel 1 exit /b
+call :run certutil.exe -hashfile "%ARCHIVE%" SHA256
+if errorlevel 1 exit /b
 call :notice_file "%CMDLOG%"
 call :fresh "%OUT%\packages\check" || exit /b
-call :run tar.exe -xf "%ARCHIVE%" -C "%OUT%\packages\check" || exit /b
-for %%F in (plpt-monitor.exe plpt-desktop.exe SDL3.dll) do (call :run fc.exe /b "%BIN%\%%F" "%OUT%\packages\check\PLPT\bin\%%F" || exit /b)
-for %%F in (SDL3.txt ImGui.txt Bundled-notices.txt) do (call :run fc.exe /b "third_party\licenses\%%F" "%OUT%\packages\check\PLPT\licenses\%%F" || exit /b)
-call :run "%OUT%\packages\check\PLPT\bin\plpt-monitor.exe" --version || exit /b
+call :run tar.exe -xf "%ARCHIVE%" -C "%OUT%\packages\check"
+if errorlevel 1 exit /b
+for %%F in (plpt-monitor.exe plpt-desktop.exe SDL3.dll) do (
+  call :run fc.exe /b "%BIN%\%%F" "%OUT%\packages\check\PLPT\bin\%%F"
+  if errorlevel 1 exit /b
+)
+for %%F in (SDL3.txt ImGui.txt Bundled-notices.txt) do (
+  call :run fc.exe /b "third_party\licenses\%%F" "%OUT%\packages\check\PLPT\licenses\%%F"
+  if errorlevel 1 exit /b
+)
+call :run "%OUT%\packages\check\PLPT\bin\plpt-monitor.exe" --version
+if errorlevel 1 exit /b
 set "SDL_VIDEODRIVER=windows"
 set "SDL_RENDER_DRIVER=software"
-call :run "%OUT%\packages\check\PLPT\bin\plpt-desktop.exe" --smoke-test || exit /b
+call :run "%OUT%\packages\check\PLPT\bin\plpt-desktop.exe" --smoke-test
+if errorlevel 1 exit /b
 if "%GITHUB_ACTIONS%"=="true" echo ::notice title=PLPT Windows::PASS Release ZIP extracted and executed using native Windows video
 exit /b 0
 

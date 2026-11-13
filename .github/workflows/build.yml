@@ -83,6 +83,8 @@ jobs:
         run: ./build.sh deps --fetch
       - name: Native compiler linker and dependency doctor
         run: ./build.sh doctor --verbose
+      - name: ASan UBSan memory regressions
+        run: xvfb-run -a ./build.sh test asan --native-ui
       - name: Debug from fresh checkout
         run: ./build.sh debug --verbose
       - name: Direct Debug tests and X11 window
@@ -91,8 +93,6 @@ jobs:
         run: ./build.sh release --verbose
       - name: Direct Release tests and X11 window
         run: xvfb-run -a ./build.sh test release --native-ui
-      - name: ASan UBSan memory regressions
-        run: xvfb-run -a ./build.sh test asan --native-ui
       - name: libFuzzer smoke
         run: ./build.sh fuzz
       - name: Failure propagation and stale-output regression
