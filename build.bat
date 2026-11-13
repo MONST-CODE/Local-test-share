@@ -27,7 +27,7 @@ exit /b 2
 if /I "%ACTION%"=="release" set "MODE=release"
 if /I "%ACTION%"=="package" set "MODE=release"
 if /I "%ACTION%"=="asan" set "MODE=asan"
-if /I "%ACTION%"=="fuzz" set "MODE=asan"
+if /I "%ACTION%"=="fuzz" set "MODE=fuzz"
 set "VALID="
 for %%A in (debug release test asan fuzz clean package doctor deps selftest ide-check help) do if /I "%ACTION%"=="%%A" set "VALID=1"
 if not defined VALID (call :problem "unknown operation %ACTION%"& exit /b 2)
@@ -321,11 +321,27 @@ for %%F in ("%UCRT%\bin\*asan_dynamic-x86_64*.dll") do set "ASAN_DLL=%%~fF"
 for %%F in ("%RESOURCE_DIR%\lib\windows\*asan_dynamic-x86_64*.a") do set "ASAN_LIB=%%~fF"
 for %%F in ("%RESOURCE_DIR%\lib\windows\*fuzzer-x86_64*.a") do set "FUZZ_LIB=%%~fF"
 if defined ASAN_DLL if defined ASAN_LIB set "ASAN_AVAILABLE=true"
-if "%ASAN_AVAILABLE%"=="true" if defined FUZZ_LIB set "FUZZ_AVAILABLE=true"
 >>"%TOOLCHAIN_INFO%" echo asan-dll=%ASAN_DLL%; asan-import-lib=%ASAN_LIB%; fuzzer-lib=%FUZZ_LIB%
+set "FUZZ_LINK_SAN=-fsanitize=fuzzer"
+if "%ASAN_AVAILABLE%"=="true" set "FUZZ_LINK_SAN=-fsanitize=address,fuzzer"
+>>"%TOOLCHAIN_INFO%" echo fuzzer-link-flags=%FUZZ_LINK_SAN%
+rem Archive presence is not capability. Build and execute the real two-step
+rem recipe so "available=true" always means a fuzzer binary really ran here.
+set "EXPECT_FAILURE_SAVED=%PLPT_EXPECT_FAILURE%"
+set "PLPT_EXPECT_FAILURE=1"
+if defined FUZZ_LIB call :run "%CXX%" %LINK_DRIVER% -std=c++20 -O1 -g -fno-omit-frame-pointer -fsanitize=fuzzer-no-link -c tests/build/fuzzer_capability_probe.cpp -o "%OUT%\doctor\fuzzer-probe.o"
+if not exist "%OUT%\doctor\fuzzer-probe.o" set "FUZZ_LIB="
+if defined FUZZ_LIB call :run "%CXX%" %LINK_DRIVER% -std=c++20 -O1 -g %FUZZ_LINK_SAN% "%OUT%\doctor\fuzzer-probe.o" -o "%OUT%\doctor\fuzzer-probe.exe"
+if not exist "%OUT%\doctor\fuzzer-probe.exe" set "FUZZ_LIB="
+if defined FUZZ_LIB call :run "%OUT%\doctor\fuzzer-probe.exe" -runs=1 -seed=1 -max_len=64
+if errorlevel 1 set "FUZZ_LIB="
+if defined FUZZ_LIB (>>"%TOOLCHAIN_INFO%" echo fuzzer-probe=PASS compiled linked and executed 1 run& type "%CMDLOG%" >>"%TOOLCHAIN_INFO%") else >>"%TOOLCHAIN_INFO%" echo fuzzer-probe=NOT-RUNNING; fuzz stays SKIP, see the retained command log
+set "PLPT_EXPECT_FAILURE=%EXPECT_FAILURE_SAVED%"
+set "EXPECT_FAILURE_SAVED="
+if defined FUZZ_LIB set "FUZZ_AVAILABLE=true"
 >>"%TOOLCHAIN_INFO%" echo ASan available=%ASAN_AVAILABLE%; libFuzzer available=%FUZZ_AVAILABLE%
 if "%ASAN_AVAILABLE%"=="false" echo SKIP capability: UCRT64 ASan runtime not installed. Not a memory-test PASS.
-if "%FUZZ_AVAILABLE%"=="false" echo SKIP capability: UCRT64 libFuzzer runtime not installed. Not a fuzz-test PASS.
+if "%FUZZ_AVAILABLE%"=="false" echo SKIP capability: native UCRT64 libFuzzer probe did not build, link and run. Not a fuzz-test PASS.
 if /I "%ACTION%"=="doctor" if defined GITHUB_OUTPUT (
   >>"%GITHUB_OUTPUT%" echo "asan=%ASAN_AVAILABLE%"
   >>"%GITHUB_OUTPUT%" echo "fuzz=%FUZZ_AVAILABLE%"
@@ -473,6 +489,12 @@ if "%MODE%"=="asan" (
   set "PROFILE_FLAGS=-O1 -g"
   set "SAN=-fsanitize=address -fno-omit-frame-pointer"
 )
+rem Fuzzing is not conditional on ASan: libFuzzer links and runs on its own.
+rem ASan is added back by the fuzz operation when this toolchain really has it.
+if "%MODE%"=="fuzz" (
+  set "PROFILE_FLAGS=-O1 -g"
+  set "SAN=-fno-omit-frame-pointer"
+)
 set "VFLAG="
 if "%VERBOSE%"=="1" set "VFLAG=-v"
 set "COMMON_FLAGS=%DRIVER% -std=c++20 -pthread -DWIN32_LEAN_AND_MEAN -DNOMINMAX -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00"
@@ -516,7 +538,13 @@ rem All links use the same clang++ driver and GNU ld from this installation.
 if not exist "%OUT%\doctor\probe.exe" call :toolchain || exit /b
 echo Linking: %~1
 set "SUBSYSTEM=-mconsole"
-if /I "%~2"=="WINDOWS" set "SUBSYSTEM=-mwindows"
+rem Windows-subsystem binaries define UNICODE, so SDL3's header-only entry
+rem implementation provides wWinMain(), not ANSI WinMain(). The MinGW CRT
+rem startup only calls wWinMain when -municode selects crtexewin_w.o; plain
+rem -mwindows selects crtexewin.o and dies with "undefined reference to WinMain".
+rem SDL's own SDL_RunApp then rebuilds a real UTF-8 argc/argv from the command
+rem line, so argument handling stays identical for the smoke tests.
+if /I "%~2"=="WINDOWS" set "SUBSYSTEM=-mwindows -municode"
 call :run "%CXX%" %VFLAG% %LINK_DRIVER% %PROFILE_FLAGS% %SAN% %LINK_OBJECTS% "%DIR%\application.o" %NATIVE_LIBS% %LINK_EXTRA% %SUBSYSTEM% -Wl,--no-undefined,--fatal-warnings,--dynamicbase,--nxcompat %NEGATIVE_LINK% -o "%BIN%\%~1.exe"
 if errorlevel 1 exit /b
 if not exist "%BIN%\%~1.exe" (call :problem "linker returned success without executable"& exit /b 1)
@@ -788,7 +816,7 @@ call :expect ui-native-windows 0 "video=windows renderer=software" || exit /b
 exit /b 0
 
 :fuzz
-set "MODE=asan"
+set "MODE=fuzz"
 set "CORE_ONLY=1"
 set "DIR=%OUT%\tests\fuzz"
 call :fresh "%DIR%" || exit /b
@@ -797,13 +825,14 @@ mkdir "%BIN%" "%DIR%\objects" "%DIR%\corpus"
 call :toolchain || exit /b
 call :configure_flags || exit /b
 call :sanitizer_runtime || exit /b
-if "%FUZZ_AVAILABLE%"=="false" (echo SKIP: native UCRT64 libFuzzer unavailable; NOT PASS& exit /b 77)
+if "%FUZZ_AVAILABLE%"=="false" (echo SKIP: native UCRT64 libFuzzer probe did not run; NOT PASS& exit /b 77)
+if "%ASAN_AVAILABLE%"=="true" (set "SAN=%SAN% -fsanitize=address") else echo NOTE: this UCRT64 clang++ has no ASan runtime; fuzzing runs without address instrumentation, never reported as a memory-test PASS.
 set "SAN=%SAN% -fsanitize=fuzzer-no-link"
 set "UI_INCLUDES="
 call :cpp engine/protocol/envelope.cpp || exit /b
 set "FUZZ_OBJECTS="%OBJECT%""
 call :cpp tests/fuzz/envelope_fuzz.cpp || exit /b
-call :run "%CXX%" %VFLAG% %LINK_DRIVER% %PROFILE_FLAGS% -fsanitize=address,fuzzer %FUZZ_OBJECTS% "%OBJECT%" -o "%BIN%\plpt-fuzz-envelope.exe"
+call :run "%CXX%" %VFLAG% %LINK_DRIVER% %PROFILE_FLAGS% %FUZZ_LINK_SAN% %FUZZ_OBJECTS% "%OBJECT%" -o "%BIN%\plpt-fuzz-envelope.exe"
 if errorlevel 1 exit /b
 if not exist "%BIN%\plpt-fuzz-envelope.exe" (call :problem "fuzzer output missing"& exit /b 1)
 call :runtime_dependencies || exit /b
@@ -811,7 +840,11 @@ copy /y tests\fuzz\corpus\hello "%DIR%\corpus\hello" >nul || exit /b
 copy /y tests\fuzz\corpus\chat "%DIR%\corpus\chat" >nul || exit /b
 call :run "%BIN%\plpt-fuzz-envelope.exe" -runs=20000 -seed=20261113 -max_len=4096 -timeout=2 "%DIR%\corpus"
 if errorlevel 1 exit /b
-if "%GITHUB_ACTIONS%"=="true" echo ::notice title=PLPT Windows::PASS native libFuzzer plus ASan, 20000 executions
+set "FUZZ_NOTICE=PASS native libFuzzer without ASan (not installed in this UCRT64 clang++), 20000 executions"
+if "%ASAN_AVAILABLE%"=="true" set "FUZZ_NOTICE=PASS native libFuzzer plus ASan, 20000 executions"
+>>"%DIR%\fuzz-summary.txt" echo %FUZZ_NOTICE%
+>>"%DIR%\fuzz-summary.txt" echo link-flags=%FUZZ_LINK_SAN% compile-flags=%SAN%
+if "%GITHUB_ACTIONS%"=="true" echo ::notice title=PLPT Windows::%FUZZ_NOTICE%
 exit /b 0
 
 :package
