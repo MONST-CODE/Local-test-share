@@ -1,0 +1,16 @@
+/build*/
+/out/
+/dist/
+/_deps/
+/.cache/
+/.venv/
+/CMakeUserPresets.json
+/compile_commands.json
+/.vs/
+*.user
+*.swp
+*.dmp
+*.pdb
+*.ilk
+__pycache__/
+# Les tests/packagers écrivent sous out/, jamais les jetons ni les profils ici.

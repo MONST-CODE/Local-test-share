@@ -1,0 +1,25 @@
+# Tests d'erreurs SDL réels, sans interaction ni écran. Pas de fichiers créés.
+if(NOT DEFINED PLPT_DESKTOP)
+  message(FATAL_ERROR "PLPT_DESKTOP required")
+endif()
+function(run_case name code driver pattern)
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E env
+    "SDL_VIDEODRIVER=${driver}" "SDL_RENDER_DRIVER=software" "${PLPT_DESKTOP}" ${ARGN}
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 15)
+  if(NOT "${result}" STREQUAL "${code}" OR NOT "${output}${errors}" MATCHES "${pattern}")
+    message(FATAL_ERROR "${name}: expected exit ${code} / ${pattern}, got ${result}\n${output}${errors}")
+  endif()
+  if("${output}${errors}" MATCHES "AddressSanitizer|LeakSanitizer|UndefinedBehaviorSanitizer|runtime error:")
+    message(FATAL_ERROR "${name}: sanitizer diagnostic\n${output}${errors}")
+  endif()
+  message(STATUS "PASS ${name}: exit ${result}")
+endfunction()
+run_case(unknown-argument 2 dummy "Usage:" --not-a-plpt-option)
+run_case(missing-screenshot-argument 2 dummy "Usage:" --smoke-test --screenshot)
+run_case(capture-requires-smoke 2 dummy "--smoke-test" --screenshot never-created.bmp)
+run_case(video-driver-unavailable 1 plpt-invalid-video-driver "SDL_Init:" --smoke-test)
+# L'exécutable est un fichier, jamais un dossier dans lequel écrire un BMP.
+run_case(screenshot-write-failure 1 dummy "SDL_IOFromFile:" --smoke-test --screenshot "${PLPT_DESKTOP}/not-a-directory.bmp")
+if(UNIX AND EXISTS "/dev/full")
+  run_case(screenshot-disk-full 1 dummy "SDL_(SaveBMP_IO|CloseIO):" --smoke-test --screenshot /dev/full)
+endif()

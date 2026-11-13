@@ -1,0 +1,3 @@
+Usage: ./build.sh [clang-debug|clang-release|clang-ui|clang-asan]
+
+exit=2

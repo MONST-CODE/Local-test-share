@@ -1,0 +1,15 @@
+PASS: TGZ paths contained; only the requested Release CLI is packaged; docs present.
+PASS: extracted binary matches the tested Release binary exactly.
+Extracted binary: PLPT 0.1.0-preview / local monitor / no sharing
+Live inventory: 8 groupe(s) de services observés. Un PID inconnu reste inconnu.
+PASS: no plpt::model:: symbols in the monitor binary.
+SHA256 cf790522f1ec7afd39b39e8abba4db601193cc750e77a13cfced69f8e133c3f4 out/packages/PLPT-0.1.0-preview-Linux-x64.tar.gz
+Archive bytes: 290071
+Dependencies (local Linux binary, not a universal Linux release):
+	linux-vdso.so.1 (0x00007ffc12b0e000)
+	libstdc++.so.6 => /lib/x86_64-linux-gnu/libstdc++.so.6 (0x00007f3123000000)
+	libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007f312331a000)
+	libgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007f31232fa000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f3122e1e000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007f3123428000)
+

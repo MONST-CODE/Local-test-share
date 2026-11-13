@@ -1,0 +1,41 @@
+Windows x64 syntax only / Clang + MinGW declarations / no execution
+/home/user/.cache/plpt-tools/llvm/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ --target=x86_64-w64-windows-gnu -std=c++20 -fsyntax-only -nostdinc++ -Wall -Wextra -Wpedantic -Werror -Wshadow -I /home/user/Local-test-share -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_HAS_NO_VENDOR_AVAILABILITY_ANNOTATIONS -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_PSTL_BACKEND_SERIAL -D_LIBCPP_ABI_VERSION=1 -D_LIBCPP_ABI_NAMESPACE=__1 -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG -D_WIN32_WINNT=0x0A00 -DWIN32_LEAN_AND_MEAN -DNOMINMAX -DUNICODE -D_UNICODE -isystem /home/user/.cache/plpt-tools/zig/ziglang/lib/libcxx/include -isystem /home/user/.cache/plpt-tools/zig/ziglang/lib/libcxxabi/include -isystem /home/user/.cache/plpt-tools/zig/ziglang/lib/libc/include/any-windows-any -isystem /home/user/.cache/plpt-tools/sources/SDL-f00dc919ca35b9756316e86c4777392de442f9b2/include -isystem /home/user/.cache/plpt-tools/sources/imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859 -isystem /home/user/.cache/plpt-tools/sources/imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859/backends
+CHECK engine/core/random.cpp
+CHECK engine/diagnostics/audit.cpp
+CHECK engine/discovery/monitor.cpp
+In file included from /home/user/Local-test-share/engine/discovery/monitor.cpp:1:
+/home/user/Local-test-share/engine/discovery/monitor.hpp:38:19: error: no type named 'stop_token' in namespace 'std'
+   38 |     void run(std::stop_token);
+      |              ~~~~~^
+/home/user/Local-test-share/engine/discovery/monitor.hpp:45:10: error: no type named 'jthread' in namespace 'std'; did you mean 'thread'?
+   45 |     std::jthread worker_; // détruit avant les primitives de synchronisation.
+      |     ~~~~~^~~~~~~
+      |          thread
+/home/user/.cache/plpt-tools/zig/ziglang/lib/libcxx/include/__thread/thread.h:147:33: note: 'thread' declared here
+  147 | class _LIBCPP_EXPORTED_FROM_ABI thread {
+      |                                 ^
+/home/user/Local-test-share/engine/discovery/monitor.cpp:26:20: error: no member named 'jthread' in namespace 'std'; did you mean 'thread'?
+   26 |     worker_ = std::jthread([this](std::stop_token stop) { run(stop); });
+      |                    ^~~~~~~
+/home/user/.cache/plpt-tools/zig/ziglang/lib/libcxx/include/__thread/thread.h:147:33: note: 'thread' declared here
+  147 | class _LIBCPP_EXPORTED_FROM_ABI thread {
+      |                                 ^
+/home/user/Local-test-share/engine/discovery/monitor.cpp:26:40: error: no type named 'stop_token' in namespace 'std'
+   26 |     worker_ = std::jthread([this](std::stop_token stop) { run(stop); });
+      |                                   ~~~~~^
+/home/user/Local-test-share/engine/discovery/monitor.cpp:26:51: error: unused parameter 'stop' [-Werror,-Wunused-parameter]
+   26 |     worker_ = std::jthread([this](std::stop_token stop) { run(stop); });
+      |                                                   ^
+/home/user/Local-test-share/engine/discovery/monitor.cpp:29:13: error: no member named 'request_stop' in 'std::thread'
+   29 |     worker_.request_stop();
+      |     ~~~~~~~ ^
+/home/user/Local-test-share/engine/discovery/monitor.cpp:53:24: error: no type named 'stop_token' in namespace 'std'
+   53 | void Monitor::run(std::stop_token stop) {
+      |                   ~~~~~^
+7 errors generated.
+Traceback (most recent call last):
+  File "/home/user/Local-test-share/tools/check_windows_syntax.py", line 36, in <module>
+    subprocess.run(flags + [str(f)], cwd=root, check=True)
+  File "/usr/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/user/.cache/plpt-tools/llvm/node_modules/llvm-runtime-clang-linux-x64/bin/clang++', '--target=x86_64-w64-windows-gnu', '-std=c++20', '-fsyntax-only', '-nostdinc++', '-Wall', '-Wextra', '-Wpedantic', '-Werror', '-Wshadow', '-I', '/home/user/Local-test-share', '-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS', '-D_LIBCPP_HAS_NO_VENDOR_AVAILABILITY_ANNOTATIONS', '-D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS', '-D_LIBCPP_PSTL_BACKEND_SERIAL', '-D_LIBCPP_ABI_VERSION=1', '-D_LIBCPP_ABI_NAMESPACE=__1', '-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG', '-D_WIN32_WINNT=0x0A00', '-DWIN32_LEAN_AND_MEAN', '-DNOMINMAX', '-DUNICODE', '-D_UNICODE', '-isystem', '/home/user/.cache/plpt-tools/zig/ziglang/lib/libcxx/include', '-isystem', '/home/user/.cache/plpt-tools/zig/ziglang/lib/libcxxabi/include', '-isystem', '/home/user/.cache/plpt-tools/zig/ziglang/lib/libc/include/any-windows-any', '-isystem', '/home/user/.cache/plpt-tools/sources/SDL-f00dc919ca35b9756316e86c4777392de442f9b2/include', '-isystem', '/home/user/.cache/plpt-tools/sources/imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859', '-isystem', '/home/user/.cache/plpt-tools/sources/imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859/backends', '/home/user/Local-test-share/engine/discovery/monitor.cpp']' returned non-zero exit status 1.

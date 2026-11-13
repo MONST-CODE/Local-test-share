@@ -1,0 +1,4 @@
+[1/4] Building CXX object CMakeFiles/plpt_core.dir/engine/service_registry/registry.cpp.o
+[2/4] Building CXX object CMakeFiles/plpt_core.dir/engine/discovery/monitor.cpp.o
+[3/4] Linking CXX static library libplpt_core.a
+[4/4] Linking CXX executable plpt-fuzz-envelope

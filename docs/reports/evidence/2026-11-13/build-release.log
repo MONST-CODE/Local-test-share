@@ -1,0 +1,9 @@
+[1/9] Building CXX object CMakeFiles/plpt-monitor.dir/app/host_shell/main.cpp.o
+[2/9] Building CXX object CMakeFiles/plpt_core.dir/engine/service_registry/registry.cpp.o
+[3/9] Building CXX object CMakeFiles/plpt_core.dir/engine/discovery/monitor.cpp.o
+[4/9] Linking CXX static library libplpt_core.a
+[5/9] Linking CXX executable plpt-monitor
+[6/9] Building CXX object CMakeFiles/plpt-platform-tests.dir/tests/integration/platform_tests.cpp.o
+[7/9] Linking CXX executable plpt-platform-tests
+[8/9] Building CXX object CMakeFiles/plpt-unit-tests.dir/tests/unit/test_main.cpp.o
+[9/9] Linking CXX executable plpt-unit-tests

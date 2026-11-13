@@ -1,0 +1,45 @@
+[1/20] Building CXX object CMakeFiles/plpt_core.dir/engine/core/random.cpp.o
+[2/20] Building CXX object CMakeFiles/plpt_core.dir/engine/diagnostics/audit.cpp.o
+[3/20] Building CXX object CMakeFiles/plpt_core.dir/engine/discovery/terminal_classifier.cpp.o
+[4/20] Building CXX object CMakeFiles/plpt_core.dir/engine/discovery/process_tree.cpp.o
+[5/20] Building CXX object CMakeFiles/plpt_core.dir/engine/port_allocator/port_allocator.cpp.o
+[6/20] Building CXX object CMakeFiles/plpt_core.dir/engine/service_registry/registry.cpp.o
+[7/20] Building CXX object CMakeFiles/plpt_core.dir/engine/discovery/monitor.cpp.o
+[8/20] Building CXX object CMakeFiles/plpt-monitor.dir/app/host_shell/main.cpp.o
+[9/20] Building CXX object CMakeFiles/plpt_core.dir/engine/platform/linux/linux_platform.cpp.o
+[10/20] Linking CXX static library libplpt_core.a
+[11/20] Linking CXX executable plpt-monitor
+[12/20] Building CXX object CMakeFiles/plpt_models.dir/engine/resource_manager/resource.cpp.o
+[13/20] Building CXX object CMakeFiles/plpt_models.dir/engine/protocol/envelope.cpp.o
+[14/20] Building CXX object CMakeFiles/plpt_models.dir/engine/session/session.cpp.o
+[15/20] Building CXX object CMakeFiles/plpt_models.dir/engine/messaging/messaging.cpp.o
+[16/20] Linking CXX static library libplpt_models.a
+[17/20] Building CXX object CMakeFiles/plpt-platform-tests.dir/tests/integration/platform_tests.cpp.o
+[18/20] Linking CXX executable plpt-platform-tests
+[19/20] Building CXX object CMakeFiles/plpt-unit-tests.dir/tests/unit/test_main.cpp.o
+FAILED: CMakeFiles/plpt-unit-tests.dir/tests/unit/test_main.cpp.o 
+/home/user/.cache/plpt-tools/llvm/node_modules/llvm-runtime-clang-linux-x64/bin/clang++  -I/home/user/Local-test-share -g -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -MD -MT CMakeFiles/plpt-unit-tests.dir/tests/unit/test_main.cpp.o -MF CMakeFiles/plpt-unit-tests.dir/tests/unit/test_main.cpp.o.d -o CMakeFiles/plpt-unit-tests.dir/tests/unit/test_main.cpp.o -c /home/user/Local-test-share/tests/unit/test_main.cpp
+/home/user/Local-test-share/tests/unit/test_main.cpp:73:126: error: missing field 'warnings' initializer [-Werror,-Wmissing-field-initializers]
+   73 |     Observation<SocketRecord> snapshot{{listener(3000), listener(3001), listener(3002, ProcessId{3}, TransportProtocol::Udp)}};
+      |                                                                                                                              ^
+/home/user/Local-test-share/tests/unit/test_main.cpp:95:56: error: missing field 'warnings' initializer [-Werror,-Wmissing-field-initializers]
+   95 |     Observation<SocketRecord> snapshot{{listener(3000)}};
+      |                                                        ^
+/home/user/Local-test-share/tests/unit/test_main.cpp:116:70: error: missing field 'warnings' initializer [-Werror,-Wmissing-field-initializers]
+  116 |     Observation<SocketRecord> snapshot{{listener(3000, std::nullopt)}};
+      |                                                                      ^
+/home/user/Local-test-share/tests/unit/test_main.cpp:231:21: error: loop variable 's' creates a copy from type 'std::basic_string<char> const' [-Werror,-Wrange-loop-construct]
+  231 |     for (const auto s : {std::string("\0", 1), std::string("\xC0\xAF"), std::string("\xED\xA0\x80"),
+      |                     ^
+/home/user/Local-test-share/tests/unit/test_main.cpp:231:10: note: use reference type 'std::basic_string<char> const &' to prevent copying
+  231 |     for (const auto s : {std::string("\0", 1), std::string("\xC0\xAF"), std::string("\xED\xA0\x80"),
+      |          ^~~~~~~~~~~~~~
+      |                     &
+/home/user/Local-test-share/tests/unit/test_main.cpp:298:94: error: missing field 'warnings' initializer [-Werror,-Wmissing-field-initializers]
+  298 |         Observation<ProcessRecord> out{{process(3, 0, "test", reuse && call > 1 ? 12U : 11U)}};
+      |                                                                                              ^
+/home/user/Local-test-share/tests/unit/test_main.cpp:305:77: error: missing field 'warnings' initializer [-Werror,-Wmissing-field-initializers]
+  305 |         return Result<Observation<SocketRecord>>::success({{listener(32123)}});
+      |                                                                             ^
+6 errors generated.
+ninja: build stopped: subcommand failed.

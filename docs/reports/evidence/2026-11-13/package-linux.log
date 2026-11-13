@@ -1,0 +1,5 @@
+CPack: Create package using TGZ
+CPack: Install projects
+CPack: - Install project: PLPT []
+CPack: Create package
+CPack: - package: /home/user/Local-test-share/out/packages/PLPT-0.1.0-preview-Linux-x64.tar.gz generated.

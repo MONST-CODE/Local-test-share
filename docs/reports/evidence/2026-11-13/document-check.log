@@ -1,0 +1,2 @@
+PASS: 18 Markdown files, all local link targets exist (anchors/external URLs not checked).
+PASS: CMakePresets JSON and Windows manifest XML parse.

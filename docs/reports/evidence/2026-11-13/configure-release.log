@@ -1,0 +1,9 @@
+Preset CMake variables:
+
+  BUILD_TESTING="ON"
+  CMAKE_BUILD_TYPE="Release"
+  CMAKE_CXX_COMPILER="clang++"
+
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Local-test-share/out/build/clang-release
