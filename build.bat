@@ -126,6 +126,8 @@ set "CMDLOG=%LOG%.command-%PLPT_COMMAND_INDEX%.txt"
 if exist "%CMDLOG%" (call :problem "refusing stale command capture: %CMDLOG%"& exit /b 1)
 >"%CMDLOG%" type nul
 if not exist "%CMDLOG%" (call :problem "cannot create command capture: %CMDLOG%"& exit /b 1)
+>"%CMDLOG%.command" echo %*
+type "%CMDLOG%.command" >>"%CMDLOG%"
 rem Capture each process without a pipeline masking its status. Print diagnostics afterwards.
 >>"%LOG%" echo + %*
 if "%VERBOSE%"=="1" echo + %*
@@ -308,8 +310,19 @@ type "%CMDLOG%" >>"%TOOLCHAIN_INFO%"
 >>"%TOOLCHAIN_INFO%" echo probe-exit-code=PASS native C++20/x64/thread/BCrypt, no MSVC headers
 set "ASAN_AVAILABLE=false"
 set "FUZZ_AVAILABLE=false"
-if exist "%UCRT%\bin\libclang_rt.asan_dynamic-x86_64.dll" if exist "%RESOURCE_DIR%\lib\windows\libclang_rt.asan_dynamic-x86_64.dll.a" set "ASAN_AVAILABLE=true"
-if "%ASAN_AVAILABLE%"=="true" if exist "%RESOURCE_DIR%\lib\windows\libclang_rt.fuzzer-x86_64.a" set "FUZZ_AVAILABLE=true"
+set "ASAN_DLL="
+set "ASAN_LIB="
+set "FUZZ_LIB="
+>>"%TOOLCHAIN_INFO%" echo compiler-rt-runtime-bin:
+if exist "%UCRT%\bin\*clang_rt*" (dir /b "%UCRT%\bin\*clang_rt*" >>"%TOOLCHAIN_INFO%") else >>"%TOOLCHAIN_INFO%" echo none
+>>"%TOOLCHAIN_INFO%" echo compiler-rt-resource-libs:
+if exist "%RESOURCE_DIR%\lib\windows\*" (dir /b "%RESOURCE_DIR%\lib\windows\*" >>"%TOOLCHAIN_INFO%") else >>"%TOOLCHAIN_INFO%" echo none
+for %%F in ("%UCRT%\bin\*asan_dynamic-x86_64*.dll") do set "ASAN_DLL=%%~fF"
+for %%F in ("%RESOURCE_DIR%\lib\windows\*asan_dynamic-x86_64*.a") do set "ASAN_LIB=%%~fF"
+for %%F in ("%RESOURCE_DIR%\lib\windows\*fuzzer-x86_64*.a") do set "FUZZ_LIB=%%~fF"
+if defined ASAN_DLL if defined ASAN_LIB set "ASAN_AVAILABLE=true"
+if "%ASAN_AVAILABLE%"=="true" if defined FUZZ_LIB set "FUZZ_AVAILABLE=true"
+>>"%TOOLCHAIN_INFO%" echo asan-dll=%ASAN_DLL%; asan-import-lib=%ASAN_LIB%; fuzzer-lib=%FUZZ_LIB%
 >>"%TOOLCHAIN_INFO%" echo ASan available=%ASAN_AVAILABLE%; libFuzzer available=%FUZZ_AVAILABLE%
 if "%ASAN_AVAILABLE%"=="false" echo SKIP capability: UCRT64 ASan runtime not installed. Not a memory-test PASS.
 if "%FUZZ_AVAILABLE%"=="false" echo SKIP capability: UCRT64 libFuzzer runtime not installed. Not a fuzz-test PASS.
@@ -492,7 +505,7 @@ exit /b 0
 set "GUI_SOURCE=%~1"
 set "GUI_OBJECT=%DIR%\objects\imgui_%GUI_SOURCE:/=_%.o"
 echo Compilation ImGui: %GUI_SOURCE%
-call :run "%CXX%" %VFLAG% %COMMON_FLAGS% %PROFILE_FLAGS% %SAN% -I "%IMGUI_ROOT%" -I "%UCRT%\include" -MMD -MP -MF "%GUI_OBJECT%.d" -c "%IMGUI_ROOT%\%GUI_SOURCE%" -o "%GUI_OBJECT%"
+call :run "%CXX%" %VFLAG% %COMMON_FLAGS% %PROFILE_FLAGS% %SAN% -isystem "%IMGUI_ROOT%" -MMD -MP -MF "%GUI_OBJECT%.d" -c "%IMGUI_ROOT%\%GUI_SOURCE%" -o "%GUI_OBJECT%"
 if errorlevel 1 exit /b
 if not exist "%GUI_OBJECT%" (call :problem "missing ImGui object %GUI_OBJECT%"& exit /b 1)
 set "GUI_OBJECTS=%GUI_OBJECTS% "%GUI_OBJECT%""
@@ -559,7 +572,7 @@ exit /b 0
 call :run copy /y "%UCRT%\bin\SDL3.dll" "%BIN%\SDL3.dll"
 if errorlevel 1 exit /b
 for %%S in (%IMGUI_SOURCES%) do (call :gui_one "%%S" || exit /b)
-set "UI_INCLUDES=-isystem "%UCRT%\include" -isystem "%IMGUI_ROOT%" -isystem "%IMGUI_ROOT%\backends""
+set "UI_INCLUDES=-isystem "%IMGUI_ROOT%" -isystem "%IMGUI_ROOT%\backends""
 call :cpp app/desktop_ui/main.cpp || exit /b
 set "UI_INCLUDES="
 set "LINK_OBJECTS=%CORE_OBJECTS% %GUI_OBJECTS% "%OBJECT%""
