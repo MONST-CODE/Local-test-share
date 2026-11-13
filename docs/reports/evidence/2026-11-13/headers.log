@@ -1,0 +1,21 @@
+HEADER engine/browser/browser.hpp
+HEADER engine/core/clock.hpp
+HEADER engine/core/random.hpp
+HEADER engine/core/result.hpp
+HEADER engine/core/text.hpp
+HEADER engine/core/types.hpp
+HEADER engine/diagnostics/audit.hpp
+HEADER engine/discovery/monitor.hpp
+HEADER engine/discovery/process_tree.hpp
+HEADER engine/discovery/terminal_classifier.hpp
+HEADER engine/messaging/messaging.hpp
+HEADER engine/platform/linux/linux_platform.hpp
+HEADER engine/platform/native.hpp
+HEADER engine/platform/platform.hpp
+HEADER engine/port_allocator/port_allocator.hpp
+HEADER engine/protocol/envelope.hpp
+HEADER engine/resource_manager/resource.hpp
+HEADER engine/service_registry/registry.hpp
+HEADER engine/session/session.hpp
+HEADER engine/transport/transport.hpp
+PASS: 20 independent headers

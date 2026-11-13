@@ -1,0 +1,13 @@
+-- The CXX compiler identification is GNU 12.2.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/g++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+CMake Error at CMakeLists.txt:4 (message):
+  PLPT requires LLVM clang++ (C++20).  Set CMAKE_CXX_COMPILER=clang++.
+
+
+-- Configuring incomplete, errors occurred!
+
+exit=1

@@ -1,0 +1,56 @@
+Internal ctest changing into directory: /home/user/Local-test-share/out/build/clang-asan
+Test project /home/user/Local-test-share/out/build/clang-asan
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.56 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.55 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.57 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.55 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.57 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.43 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.49 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.51 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.56 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.47 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.53 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.52 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.40 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.49 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.54 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.51 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.53 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.48 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.42 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.52 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.51 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.79 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.79 sec
+    Start 1: unit
+    Test #1: unit .............................   Passed    0.52 sec
+    Start 1: unit
+1/1 Test #1: unit .............................   Passed    0.45 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =  13.27 sec

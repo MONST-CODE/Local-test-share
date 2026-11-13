@@ -1,0 +1,118 @@
+Internal ctest changing into directory: /home/user/Local-test-share/out/build/ui-asan
+UpdateCTestConfiguration  from :/home/user/Local-test-share/out/build/ui-asan/DartConfiguration.tcl
+Parse Config file:/home/user/Local-test-share/out/build/ui-asan/DartConfiguration.tcl
+UpdateCTestConfiguration  from :/home/user/Local-test-share/out/build/ui-asan/DartConfiguration.tcl
+Parse Config file:/home/user/Local-test-share/out/build/ui-asan/DartConfiguration.tcl
+Test project /home/user/Local-test-share/out/build/ui-asan
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 1
+    Start 1: unit
+
+1: Test command: /home/user/Local-test-share/out/build/ui-asan/plpt-unit-tests
+1: Working Directory: /home/user/Local-test-share/out/build/ui-asan
+1: Test timeout computed to be: 60
+1: [PASS] result_invariants
+1: [PASS] exact_classifier_and_ancestry
+1: [PASS] cycles_missing_and_reused_pid
+1: [PASS] registry_grouping_and_no_auto_share
+1: [PASS] registry_churn_and_incomplete
+1: [PASS] unknown_owner_cannot_retain_selection
+1: [PASS] state_expiry_and_cleanup
+1: [PASS] closing_revokes_without_waiting_for_expiry
+1: [PASS] roles_contexts_control_and_revocation
+1: [PASS] five_model_guests_and_capacity
+1: [PASS] messages_dm_privacy_and_read_receipts
+1: [PASS] messages_quotas_and_feedback_redaction
+1: [PASS] text_validation
+1: [PASS] protocol_golden_and_bounds
+1: [PASS] protocol_deterministic_mutations
+1: [PASS] estimates_are_bounded
+1: [PASS] audit_is_opt_in_typed_and_bounded
+1: [PASS] unavailable_backends_fail_closed
+1: [PASS] observation_brackets_process_identity
+1: [PASS] observation_keeps_first_snapshot_warning
+1: [PASS] partial_registry_history_is_bounded
+1: [PASS] partial_process_inventory_invalidates_selection
+1: [PASS] registry_capacity_failure_invalidates_selection
+1: [PASS] worker_publishes_immutable_snapshots
+1: [PASS] worker_invalidates_selection_on_partial_or_error
+1: [PASS] worker_command_queue_is_bounded
+1: unit: 26 cases, 12449 checks, 0 failures (0 failed cases)
+1/7 Test #1: unit .............................   Passed    0.43 sec
+test 2
+    Start 2: platform
+
+2: Test command: /home/user/Local-test-share/out/build/ui-asan/plpt-platform-tests
+2: Working Directory: /home/user/Local-test-share/out/build/ui-asan
+2: Test timeout computed to be: 60
+2: [PASS] entropy_os
+2: [PASS] ipv4_allocation
+2: [PASS] ipv4_native_tables_and_process
+2: [PASS] interface_addresses
+2: [PASS] proc_parsers_and_fixtures
+2: [PASS] repeated_allocation_releases_fds
+2: platform: 6 cases, 284 checks, 0 failures (0 failed cases)
+2/7 Test #2: platform .........................   Passed    0.06 sec
+test 3
+    Start 3: ipv6
+
+3: Test command: /home/user/Local-test-share/out/build/ui-asan/plpt-platform-tests "--ipv6"
+3: Working Directory: /home/user/Local-test-share/out/build/ui-asan
+3: Test timeout computed to be: 60
+3: [PASS] ipv6_allocation
+3: [PASS] ipv6_native_tables_and_process
+3: ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+3/7 Test #3: ipv6 .............................   Passed    0.05 sec
+test 4
+    Start 4: cli-version
+
+4: Test command: /home/user/Local-test-share/out/build/ui-asan/plpt-monitor "--version"
+4: Working Directory: /home/user/Local-test-share/out/build/ui-asan
+4: Test timeout computed to be: 60
+4: PLPT 0.1.0-preview / local monitor / no sharing
+4/7 Test #4: cli-version ......................   Passed    0.02 sec
+test 5
+    Start 5: cli-arguments
+
+5: Test command: /home/user/.cache/plpt-tools/python/cmake/data/bin/cmake "-DPLPT_MONITOR=/home/user/Local-test-share/out/build/ui-asan/plpt-monitor" "-P" "/home/user/Local-test-share/tests/cli_contract.cmake"
+5: Working Directory: /home/user/Local-test-share/out/build/ui-asan
+5: Test timeout computed to be: 60
+5: -- PASS help: exit 0
+5: -- PASS version: exit 0
+5: -- PASS unknown: exit 2
+5: -- PASS extra-argument: exit 2
+5: -- PASS ambiguous: exit 2
+5/7 Test #5: cli-arguments ....................   Passed    0.08 sec
+test 6
+    Start 6: desktop-smoke
+
+6: Test command: /home/user/Local-test-share/out/build/ui-asan/plpt-desktop "--smoke-test"
+6: Working Directory: /home/user/Local-test-share/out/build/ui-asan
+6: Environment variables: 
+6:  SDL_VIDEODRIVER=dummy
+6:  SDL_RENDER_DRIVER=software
+6: Test timeout computed to be: 30
+6: desktop-smoke: 8 frames, snapshot=1, services=8, sharing=disabled
+6/7 Test #6: desktop-smoke ....................   Passed    0.99 sec
+test 7
+    Start 7: desktop-errors
+
+7: Test command: /home/user/.cache/plpt-tools/python/cmake/data/bin/cmake "-DPLPT_DESKTOP=/home/user/Local-test-share/out/build/ui-asan/plpt-desktop" "-P" "/home/user/Local-test-share/tests/desktop_errors.cmake"
+7: Working Directory: /home/user/Local-test-share/out/build/ui-asan
+7: Test timeout computed to be: 60
+7: -- PASS unknown-argument: exit 2
+7: -- PASS missing-screenshot-argument: exit 2
+7: -- PASS capture-requires-smoke: exit 2
+7: -- PASS video-driver-unavailable: exit 1
+7: -- PASS screenshot-write-failure: exit 1
+7: -- PASS screenshot-disk-full: exit 1
+7/7 Test #7: desktop-errors ...................   Passed    1.91 sec
+
+100% tests passed, 0 tests failed out of 7
+
+Total Test time (real) =   3.54 sec

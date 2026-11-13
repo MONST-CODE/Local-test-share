@@ -1,0 +1,68 @@
+name: Windows-first Clang validation
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: plpt-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    name: Windows x64 / clang++ / Microsoft SDK
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Build and test Debug
+        shell: cmd
+        run: call build.bat clang-debug
+      - name: Build and test Release UI
+        shell: cmd
+        run: call build.bat clang-ui
+      - name: Stage and ZIP (not a V1 release)
+        shell: pwsh
+        run: |
+          cmake --install out/build/clang-ui --prefix out/stage-windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cpack --config out/build/clang-ui/CPackConfig.cmake -B out/packages
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: windows-clang-evidence-and-preview
+          path: |
+            out/build/clang-*/Testing/Temporary/*.log
+            out/build/clang-*/CMakeCache.txt
+            out/packages/*.zip
+          retention-days: 14
+  linux:
+    name: Linux portable-core regression
+    needs: windows
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Clang sanitizers
+        run: ./build.sh clang-asan
+      - name: Dummy-driver UI smoke and error paths under sanitizers
+        run: |
+          cmake -S . -B out/build/ui-smoke -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DPLPT_BUILD_UI=ON -DPLPT_HEADLESS_UI=ON -DPLPT_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug
+          cmake --build out/build/ui-smoke --parallel 4
+          ctest --test-dir out/build/ui-smoke --output-on-failure
+      - name: Self-contained headers and short codec fuzz run
+        run: |
+          python3 tools/check_headers.py
+          cmake --preset clang-fuzz
+          cmake --build --preset clang-fuzz --target plpt-fuzz-envelope --parallel 4
+          python3 tools/seed_fuzz_corpus.py out/fuzz/ci-corpus
+          out/build/clang-fuzz/plpt-fuzz-envelope -runs=20000 -seed=20261113 -max_len=4096 -timeout=2 out/fuzz/ci-corpus
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: linux-validation-logs
+          path: out/build/*/Testing/Temporary/*.log
+          retention-days: 14

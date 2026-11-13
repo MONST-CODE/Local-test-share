@@ -1,0 +1,178 @@
+Internal ctest changing into directory: /home/user/Local-test-share/out/build/ui-asan
+UpdateCTestConfiguration  from :/home/user/Local-test-share/out/build/ui-asan/DartConfiguration.tcl
+Parse Config file:/home/user/Local-test-share/out/build/ui-asan/DartConfiguration.tcl
+UpdateCTestConfiguration  from :/home/user/Local-test-share/out/build/ui-asan/DartConfiguration.tcl
+Parse Config file:/home/user/Local-test-share/out/build/ui-asan/DartConfiguration.tcl
+Test project /home/user/Local-test-share/out/build/ui-asan
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 1
+    Start 1: unit
+
+1: Test command: /home/user/Local-test-share/out/build/ui-asan/plpt-unit-tests
+1: Working Directory: /home/user/Local-test-share/out/build/ui-asan
+1: Test timeout computed to be: 60
+1: [PASS] result_invariants
+1: [PASS] exact_classifier_and_ancestry
+1: [PASS] cycles_missing_and_reused_pid
+1: [PASS] registry_grouping_and_no_auto_share
+1: [PASS] registry_churn_and_incomplete
+1: [PASS] unknown_owner_cannot_retain_selection
+1: [PASS] state_expiry_and_cleanup
+1: [PASS] closing_revokes_without_waiting_for_expiry
+1: [PASS] roles_contexts_control_and_revocation
+1: [PASS] five_model_guests_and_capacity
+1: [PASS] messages_dm_privacy_and_read_receipts
+1: [PASS] messages_quotas_and_feedback_redaction
+1: [PASS] text_validation
+1: [PASS] protocol_golden_and_bounds
+1: [PASS] protocol_deterministic_mutations
+1: [PASS] estimates_are_bounded
+1: [PASS] audit_is_opt_in_typed_and_bounded
+1: [PASS] unavailable_backends_fail_closed
+1: [PASS] observation_brackets_process_identity
+1: [PASS] observation_keeps_first_snapshot_warning
+1: [PASS] partial_registry_history_is_bounded
+1: [PASS] partial_process_inventory_invalidates_selection
+1: [PASS] registry_capacity_failure_invalidates_selection
+1: [PASS] worker_publishes_immutable_snapshots
+1: [PASS] worker_invalidates_selection_on_partial_or_error
+1: [PASS] worker_command_queue_is_bounded
+1: unit: 26 cases, 12449 checks, 0 failures (0 failed cases)
+1/7 Test #1: unit .............................   Passed    0.37 sec
+test 2
+    Start 2: platform
+
+2: Test command: /home/user/Local-test-share/out/build/ui-asan/plpt-platform-tests
+2: Working Directory: /home/user/Local-test-share/out/build/ui-asan
+2: Test timeout computed to be: 60
+2: [PASS] entropy_os
+2: [PASS] ipv4_allocation
+2: [PASS] ipv4_native_tables_and_process
+2: [PASS] interface_addresses
+2: [PASS] proc_parsers_and_fixtures
+2: [PASS] repeated_allocation_releases_fds
+2: platform: 6 cases, 284 checks, 0 failures (0 failed cases)
+2/7 Test #2: platform .........................   Passed    0.03 sec
+test 3
+    Start 3: ipv6
+
+3: Test command: /home/user/Local-test-share/out/build/ui-asan/plpt-platform-tests "--ipv6"
+3: Working Directory: /home/user/Local-test-share/out/build/ui-asan
+3: Test timeout computed to be: 60
+3: [PASS] ipv6_allocation
+3: [PASS] ipv6_native_tables_and_process
+3: ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+3/7 Test #3: ipv6 .............................   Passed    0.03 sec
+test 4
+    Start 4: cli-version
+
+4: Test command: /home/user/Local-test-share/out/build/ui-asan/plpt-monitor "--version"
+4: Working Directory: /home/user/Local-test-share/out/build/ui-asan
+4: Test timeout computed to be: 60
+4: PLPT 0.1.0-preview / local monitor / no sharing
+4/7 Test #4: cli-version ......................   Passed    0.01 sec
+test 5
+    Start 5: cli-arguments
+
+5: Test command: /home/user/.cache/plpt-tools/python/cmake/data/bin/cmake "-DPLPT_MONITOR=/home/user/Local-test-share/out/build/ui-asan/plpt-monitor" "-P" "/home/user/Local-test-share/tests/cli_contract.cmake"
+5: Working Directory: /home/user/Local-test-share/out/build/ui-asan
+5: Test timeout computed to be: 60
+5: -- PASS help: exit 0
+5: -- PASS version: exit 0
+5: -- PASS unknown: exit 2
+5: -- PASS extra-argument: exit 2
+5: -- PASS ambiguous: exit 2
+5/7 Test #5: cli-arguments ....................   Passed    0.04 sec
+test 6
+    Start 6: desktop-smoke
+
+6: Test command: /home/user/Local-test-share/out/build/ui-asan/plpt-desktop "--smoke-test"
+6: Working Directory: /home/user/Local-test-share/out/build/ui-asan
+6: Environment variables: 
+6:  SDL_VIDEODRIVER=dummy
+6:  SDL_RENDER_DRIVER=software
+6: Test timeout computed to be: 30
+6: desktop-smoke: 8 frames, snapshot=1, services=8, sharing=disabled
+6/7 Test #6: desktop-smoke ....................   Passed    0.89 sec
+test 7
+    Start 7: desktop-errors
+
+7: Test command: /home/user/.cache/plpt-tools/python/cmake/data/bin/cmake "-DPLPT_DESKTOP=/home/user/Local-test-share/out/build/ui-asan/plpt-desktop" "-P" "/home/user/Local-test-share/tests/desktop_errors.cmake"
+7: Working Directory: /home/user/Local-test-share/out/build/ui-asan
+7: Test timeout computed to be: 60
+7: -- PASS unknown-argument: exit 2
+7: -- PASS missing-screenshot-argument: exit 2
+7: -- PASS capture-requires-smoke: exit 2
+7: -- PASS video-driver-unavailable: exit 1
+7: CMake Error at /home/user/Local-test-share/tests/desktop_errors.cmake:13 (message):
+7:   screenshot-write-failure: sanitizer diagnostic
+7: 
+7:   SDL_SaveBMP: Couldn't open
+7:   /home/user/Local-test-share/out/build/ui-asan/plpt-desktop/not-a-directory.bmp:
+7:   Not a directory
+7: 
+7: 
+7: 
+7:   =================================================================
+7: 
+7:   ==9355==ERROR: LeakSanitizer: detected memory leaks
+7: 
+7: 
+7: 
+7:   Direct leak of 296 byte(s) in 1 object(s) allocated from:
+7: 
+7:       #0 0x5588840dec47 in malloc /home/runner/work/llvm-runtime/llvm-runtime/build/_deps/github+llvm+llvm-project-src/compiler-rt/lib/asan/asan_malloc_linux.cpp:67:3
+7:       #1 0x55888434f4c4 in real_malloc /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/stdlib/SDL_malloc.c:6334:54
+7:       #2 0x55888434f6e7 in SDL_malloc_REAL /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/stdlib/SDL_malloc.c:6459:11
+7:       #3 0x55888437fbdc in SDL_CreateSurface_REAL /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/video/SDL_surface.c:221:30
+7:       #4 0x558884384643 in SDL_ConvertSurfaceRectAndColorspace /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/video/SDL_surface.c:1930:19
+7:       #5 0x55888438319b in SDL_ConvertSurfaceRect /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/video/SDL_surface.c:2333:12
+7:       #6 0x55888438310e in SDL_ConvertSurface_REAL /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/video/SDL_surface.c:2338:12
+7:       #7 0x558884359da9 in InitBMPSaveState /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/video/SDL_bmp.c:659:39
+7:       #8 0x55888435a69c in SDL_SaveBMP_REAL /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/video/SDL_bmp.c:933:10
+7:       #9 0x5588842ddc30 in SDL_SaveBMP /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/dynapi/SDL_dynapi_procs.h:806:1
+7:       #10 0x5588841300a4 in main /home/user/Local-test-share/app/desktop_ui/main.cpp:242:36
+7:       #11 0x7fb66ba45249  (/lib/x86_64-linux-gnu/libc.so.6+0x27249) (BuildId: 93ac61ec5a8eb1396f9fbd350e3169a558528a40)
+7: 
+7:   
+7: 
+7:   Indirect leak of 3780104 byte(s) in 1 object(s) allocated from:
+7: 
+7:       #0 0x5588840dec47 in malloc /home/runner/work/llvm-runtime/llvm-runtime/build/_deps/github+llvm+llvm-project-src/compiler-rt/lib/asan/asan_malloc_linux.cpp:67:3
+7:       #1 0x55888434f4c4 in real_malloc /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/stdlib/SDL_malloc.c:6334:54
+7:       #2 0x55888434f6e7 in SDL_malloc_REAL /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/stdlib/SDL_malloc.c:6459:11
+7:       #3 0x558884352fb6 in SDL_aligned_alloc_REAL /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/stdlib/SDL_stdlib.c:540:26
+7:       #4 0x55888437fcb2 in SDL_CreateSurface_REAL /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/video/SDL_surface.c:236:31
+7:       #5 0x558884384643 in SDL_ConvertSurfaceRectAndColorspace /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/video/SDL_surface.c:1930:19
+7:       #6 0x55888438319b in SDL_ConvertSurfaceRect /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/video/SDL_surface.c:2333:12
+7:       #7 0x55888438310e in SDL_ConvertSurface_REAL /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/video/SDL_surface.c:2338:12
+7:       #8 0x558884359da9 in InitBMPSaveState /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/video/SDL_bmp.c:659:39
+7:       #9 0x55888435a69c in SDL_SaveBMP_REAL /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/video/SDL_bmp.c:933:10
+7:       #10 0x5588842ddc30 in SDL_SaveBMP /home/user/Local-test-share/out/build/ui-asan/_deps/sdl3-src/src/dynapi/SDL_dynapi_procs.h:806:1
+7:       #11 0x5588841300a4 in main /home/user/Local-test-share/app/desktop_ui/main.cpp:242:36
+7:       #12 0x7fb66ba45249  (/lib/x86_64-linux-gnu/libc.so.6+0x27249) (BuildId: 93ac61ec5a8eb1396f9fbd350e3169a558528a40)
+7: 
+7:   
+7: 
+7:   SUMMARY: AddressSanitizer: 3780400 byte(s) leaked in 2 allocation(s).
+7: 
+7: Call Stack (most recent call first):
+7:   /home/user/Local-test-share/tests/desktop_errors.cmake:22 (run_case)
+7: 
+7: 
+7/7 Test #7: desktop-errors ...................***Failed    0.97 sec
+
+86% tests passed, 1 tests failed out of 7
+
+Total Test time (real) =   2.34 sec
+
+The following tests FAILED:
+	  7 - desktop-errors (Failed)
+Errors while running CTest
+Output from these tests are in: /home/user/Local-test-share/out/build/ui-asan/Testing/Temporary/LastTest.log
+Use "--rerun-failed --output-on-failure" to re-run the failed cases verbosely.

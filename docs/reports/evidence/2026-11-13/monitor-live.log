@@ -1,0 +1,12 @@
+PLPT — moniteur local 0.1.0-preview
+Aucun partage actif. Aucun listener PLPT ouvert.
+PROTO	ADRESSE	PORT	PID	PROCESSUS	ORIGINE PROBABLE	CONFIANCE	ÉTAT
+TCP	0.0.0.0%0	111	?	inconnu	origine inconnue	inconnue	Détecté
+TCP	::%0	111	?	inconnu	origine inconnue	inconnue	Détecté
+TCP	::%0	22	?	inconnu	origine inconnue	inconnue	Détecté
+TCP	::%0	49983	?	inconnu	origine inconnue	inconnue	Détecté
+UDP	0.0.0.0%0	111	?	inconnu	origine inconnue	inconnue	Détecté
+UDP	127.0.0.1%0	323	?	inconnu	origine inconnue	inconnue	Détecté
+UDP	::1%0	323	?	inconnu	origine inconnue	inconnue	Détecté
+UDP	::%0	111	?	inconnu	origine inconnue	inconnue	Détecté
+8 groupe(s) de services observés. Un PID inconnu reste inconnu.

@@ -1,0 +1,29 @@
+UTC 2026-11-13T03:20:12Z
+arena/9d0968ca-local-test-share
+8845b2dd05e38321fcb78ddd6d42cb3d597788f7
+Linux 6.1.158+ #1 SMP PREEMPT_DYNAMIC Mon May 11 18:48:24 UTC 2026 x86_64 GNU/Linux
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+NAME="Debian GNU/Linux"
+VERSION_ID="12"
+VERSION="12 (bookworm)"
+VERSION_CODENAME=bookworm
+ID=debian
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+clang version 22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/.cache/plpt-tools/llvm/node_modules/llvm-runtime-clang-linux-x64/bin
+Configuration file: /home/user/.cache/plpt-tools/llvm/node_modules/llvm-runtime-clang-linux-x64/etc/clang/clang++.cfg
+cmake version 3.31.6
+
+CMake suite maintained and supported by Kitware (kitware.com/cmake).
+1.11.1.git.kitware.jobserver-1
+Python 3.11.2
+glibc 2.36
+g++ (Debian 12.2.0-14+deb12u1) 12.2.0
+25e6fac9e2ddf081ccdfe6d0a8542a12ea2406499cbf840b3aee581373b47b39  docs/ARCHITECTURE_MASTER.md
+25e6fac9e2ddf081ccdfe6d0a8542a12ea2406499cbf840b3aee581373b47b39  /tmp/arena-coding-uploads/Document_maitre_architecture_PLPT.md
+e6a9c4e75de8fe719f922dddc208627f77754a502909f457a1355981f20c21e0  /home/user/.cache/plpt-tools/sources/SDL.tar.gz
+b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114  /home/user/.cache/plpt-tools/sources/imgui.tar.gz

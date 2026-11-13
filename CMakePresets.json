@@ -1,0 +1,30 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "clang-debug",
+      "displayName": "Windows first / Clang C++20 / Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": { "CMAKE_CXX_COMPILER": "clang++", "CMAKE_BUILD_TYPE": "Debug", "BUILD_TESTING": "ON" }
+    },
+    { "name": "clang-release", "inherits": "clang-debug", "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" } },
+    { "name": "clang-ui", "inherits": "clang-release", "cacheVariables": { "PLPT_BUILD_UI": "ON", "CMAKE_C_COMPILER": "clang" } },
+    { "name": "clang-asan", "inherits": "clang-debug", "cacheVariables": { "PLPT_SANITIZE": "ON" }, "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" } },
+    { "name": "clang-fuzz", "inherits": "clang-asan", "cacheVariables": { "PLPT_BUILD_FUZZER": "ON" } }
+  ],
+  "buildPresets": [
+    { "name": "clang-debug", "configurePreset": "clang-debug" },
+    { "name": "clang-release", "configurePreset": "clang-release" },
+    { "name": "clang-ui", "configurePreset": "clang-ui" },
+    { "name": "clang-asan", "configurePreset": "clang-asan" },
+    { "name": "clang-fuzz", "configurePreset": "clang-fuzz" }
+  ],
+  "testPresets": [
+    { "name": "clang-debug", "configurePreset": "clang-debug", "output": { "outputOnFailure": true } },
+    { "name": "clang-release", "configurePreset": "clang-release", "output": { "outputOnFailure": true } },
+    { "name": "clang-ui", "configurePreset": "clang-ui", "output": { "outputOnFailure": true } },
+    { "name": "clang-asan", "configurePreset": "clang-asan", "output": { "outputOnFailure": true } }
+  ]
+}
