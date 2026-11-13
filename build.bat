@@ -817,6 +817,8 @@ call :run copy /y packaging\README.md "%STAGE%\PLPT\README.md"
 if errorlevel 1 exit /b
 call :run copy /y docs\reports\BUILD_DEPENDENCIES.md "%STAGE%\PLPT\docs\reports\"
 if errorlevel 1 exit /b
+call :run copy /y docs\reports\UCRT64_WINDOWS_VALIDATION.md "%STAGE%\PLPT\docs\reports\"
+if errorlevel 1 exit /b
 call :run copy /y "%BIN%\plpt-monitor.exe" "%STAGE%\PLPT\bin\"
 if errorlevel 1 exit /b
 call :run copy /y "%BIN%\plpt-desktop.exe" "%STAGE%\PLPT\bin\"
@@ -852,8 +854,10 @@ for %%F in ("%STAGE%\PLPT\bin\*.exe" "%STAGE%\PLPT\bin\*.dll") do (
 )
 call :run fc.exe /b packaging\README.md "%OUT%\packages\check\PLPT\README.md"
 if errorlevel 1 exit /b
-call :run fc.exe /b docs\reports\BUILD_DEPENDENCIES.md "%OUT%\packages\check\PLPT\docs\reports\BUILD_DEPENDENCIES.md"
-if errorlevel 1 exit /b
+for %%F in (BUILD_DEPENDENCIES.md UCRT64_WINDOWS_VALIDATION.md) do (
+  call :run fc.exe /b "docs\reports\%%F" "%OUT%\packages\check\PLPT\docs\reports\%%F"
+  if errorlevel 1 exit /b
+)
 for %%F in (SDL3.txt ImGui.txt Bundled-notices.txt) do (
   call :run fc.exe /b "third_party\licenses\%%F" "%OUT%\packages\check\PLPT\licenses\%%F"
   if errorlevel 1 exit /b
