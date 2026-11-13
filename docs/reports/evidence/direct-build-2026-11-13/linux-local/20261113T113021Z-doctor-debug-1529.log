@@ -1,0 +1,23 @@
+PLPT direct Linux operation=doctor mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261113T113021Z-doctor-debug-1529.log
+CXX=/home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++
+CC=/home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang
+clang version 22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin
+Configuration file: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/etc/clang/clang++.cfg
+native linker: /usr/bin/ld
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ --version 
+clang version 22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin
+Configuration file: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/etc/clang/clang++.cfg
++ mkdir -p /home/user/Local-test-share/out/linux/doctor 
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -pthread tests/build/toolchain_probe.cpp -o /home/user/Local-test-share/out/linux/doctor/probe 
++ /home/user/Local-test-share/out/linux/doctor/probe 
+toolchain-probe: native Linux x64, clang=22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1), C++=202002, pointer=8
+libstdc++ headers: 20220819
+SHA256 OK e6a9c4e75de8fe719f922dddc208627f77754a502909f457a1355981f20c21e0 /home/user/Local-test-share/out/linux/dependencies/SDL-f00dc919ca35b9756316e86c4777392de442f9b2.tar.gz
+SHA256 OK b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 /home/user/Local-test-share/out/linux/dependencies/imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859.tar.gz
+SUCCESS operation=doctor log=/home/user/Local-test-share/out/linux/logs/20261113T113021Z-doctor-debug-1529.log

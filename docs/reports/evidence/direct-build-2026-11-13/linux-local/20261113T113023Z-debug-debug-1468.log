@@ -1,0 +1,45 @@
+PLPT direct Linux operation=debug mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261113T113023Z-debug-debug-1468.log
++ mkdir -p -- /home/user/Local-test-share/out/linux/debug 
++ mkdir -p /home/user/Local-test-share/out/linux/debug/bin /home/user/Local-test-share/out/linux/debug/objects 
+CXX=/home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++
+CC=/home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang
+clang version 22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin
+Configuration file: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/etc/clang/clang++.cfg
+native linker: /usr/bin/ld
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ --version 
+clang version 22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin
+Configuration file: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/etc/clang/clang++.cfg
++ mkdir -p /home/user/Local-test-share/out/linux/doctor 
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -pthread tests/build/toolchain_probe.cpp -o /home/user/Local-test-share/out/linux/doctor/probe 
++ /home/user/Local-test-share/out/linux/doctor/probe 
+toolchain-probe: native Linux x64, clang=22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1), C++=202002, pointer=8
+libstdc++ headers: 20220819
+Compilation started: debug, clean deterministic objects (no cache)
+Compilation: engine/core/random.cpp
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I /home/user/Local-test-share -O0 -g -MMD -MP -MF /home/user/Local-test-share/out/linux/debug/objects/engine_core_random.cpp.o.d -c engine/core/random.cpp -o /home/user/Local-test-share/out/linux/debug/objects/engine_core_random.cpp.o 
+Compilation: engine/diagnostics/audit.cpp
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I /home/user/Local-test-share -O0 -g -MMD -MP -MF /home/user/Local-test-share/out/linux/debug/objects/engine_diagnostics_audit.cpp.o.d -c engine/diagnostics/audit.cpp -o /home/user/Local-test-share/out/linux/debug/objects/engine_diagnostics_audit.cpp.o 
+Compilation: engine/discovery/process_tree.cpp
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I /home/user/Local-test-share -O0 -g -MMD -MP -MF /home/user/Local-test-share/out/linux/debug/objects/engine_discovery_process_tree.cpp.o.d -c engine/discovery/process_tree.cpp -o /home/user/Local-test-share/out/linux/debug/objects/engine_discovery_process_tree.cpp.o 
+Compilation: engine/discovery/terminal_classifier.cpp
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I /home/user/Local-test-share -O0 -g -MMD -MP -MF /home/user/Local-test-share/out/linux/debug/objects/engine_discovery_terminal_classifier.cpp.o.d -c engine/discovery/terminal_classifier.cpp -o /home/user/Local-test-share/out/linux/debug/objects/engine_discovery_terminal_classifier.cpp.o 
+Compilation: engine/discovery/monitor.cpp
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I /home/user/Local-test-share -O0 -g -MMD -MP -MF /home/user/Local-test-share/out/linux/debug/objects/engine_discovery_monitor.cpp.o.d -c engine/discovery/monitor.cpp -o /home/user/Local-test-share/out/linux/debug/objects/engine_discovery_monitor.cpp.o 
+Compilation: engine/service_registry/registry.cpp
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I /home/user/Local-test-share -O0 -g -MMD -MP -MF /home/user/Local-test-share/out/linux/debug/objects/engine_service_registry_registry.cpp.o.d -c engine/service_registry/registry.cpp -o /home/user/Local-test-share/out/linux/debug/objects/engine_service_registry_registry.cpp.o 
+Compilation: engine/port_allocator/port_allocator.cpp
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I /home/user/Local-test-share -O0 -g -MMD -MP -MF /home/user/Local-test-share/out/linux/debug/objects/engine_port_allocator_port_allocator.cpp.o.d -c engine/port_allocator/port_allocator.cpp -o /home/user/Local-test-share/out/linux/debug/objects/engine_port_allocator_port_allocator.cpp.o 
+Compilation: engine/platform/linux/linux_platform.cpp
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I /home/user/Local-test-share -O0 -g -MMD -MP -MF /home/user/Local-test-share/out/linux/debug/objects/engine_platform_linux_linux_platform.cpp.o.d -c engine/platform/linux/linux_platform.cpp -o /home/user/Local-test-share/out/linux/debug/objects/engine_platform_linux_linux_platform.cpp.o 
+Compilation: app/host_shell/main.cpp
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I /home/user/Local-test-share -O0 -g -MMD -MP -MF /home/user/Local-test-share/out/linux/debug/objects/cli.o.d -c app/host_shell/main.cpp -o /home/user/Local-test-share/out/linux/debug/objects/cli.o 
+Linking: /home/user/Local-test-share/out/linux/debug/bin/plpt-monitor
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -O0 -g -pthread /home/user/Local-test-share/out/linux/debug/objects/engine_core_random.cpp.o /home/user/Local-test-share/out/linux/debug/objects/engine_diagnostics_audit.cpp.o /home/user/Local-test-share/out/linux/debug/objects/engine_discovery_process_tree.cpp.o /home/user/Local-test-share/out/linux/debug/objects/engine_discovery_terminal_classifier.cpp.o /home/user/Local-test-share/out/linux/debug/objects/engine_discovery_monitor.cpp.o /home/user/Local-test-share/out/linux/debug/objects/engine_service_registry_registry.cpp.o /home/user/Local-test-share/out/linux/debug/objects/engine_port_allocator_port_allocator.cpp.o /home/user/Local-test-share/out/linux/debug/objects/engine_platform_linux_linux_platform.cpp.o /home/user/Local-test-share/out/linux/debug/objects/cli.o -o /home/user/Local-test-share/out/linux/debug/bin/plpt-monitor 
+BUILD SUCCESS mode=debug elapsed_seconds=9 (compilation including validation/extraction; tests not included)
+SUCCESS operation=debug log=/home/user/Local-test-share/out/linux/logs/20261113T113023Z-debug-debug-1468.log

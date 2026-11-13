@@ -3,9 +3,18 @@
 Le scénario directeur du maître reste prioritaire. Les modèles secondaires ne
 justifient pas de contourner une dépendance critique ou un test Windows.
 
+## 0. P0 — architecture de build direct
+
+Seuls `build.bat` et `build.sh` sont autoritaires. La qualification native
+Windows/Linux (Debug/Release, tests, mémoire/fuzz, UI, échecs, nettoyage/rebuild et
+packages) est décrite dans [le rapport de migration](reports/DIRECT_BUILD_MIGRATION.md).
+Cette migration n'ajoute aucune fonction de partage et ne clôt pas les portes
+fonctionnelles/humaines ci-dessous.
+
 ## 1. Fermer les portes B/C/D sous Windows
 
-- Exécuter Debug/Release/SDL3 avec clang++ + SDK/STL Microsoft, sans admin.
+- Debug/Release/SDL3 + SDK/STL Microsoft sont validés sur runner natif ; reproduire
+  sur un poste client avec compte standard, sans élévation.
 - Vérifier TCP4/6, UDP4/6, PPID, accès refusés, Unicode, PID recyclés et rapid churn.
 - Tester Next.js, Vite, Flask, lancement PowerShell/CMD/IDE et Docker Desktop/WSL2
   (proxy reconnu comme incertain ; pas d'accès Docker ajouté en douce).

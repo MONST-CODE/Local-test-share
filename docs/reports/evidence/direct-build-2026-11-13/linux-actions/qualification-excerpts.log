@@ -1,0 +1,229 @@
+# Native linux recorded Actions annotations
+# Run 43426058514 / head 13fd4642f629bc2ca6182e663fa487ee1d9da113
+# Full raw metadata is in qualification-annotations.json; no synthetic test output.
+
+PLPT Linux
+dependency SHA256 e6a9c4e75de8fe719f922dddc208627f77754a502909f457a1355981f20c21e0 SDL-f00dc919ca35b9756316e86c4777392de442f9b2.tar.gz
+
+PLPT Linux
+dependency SHA256 b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859.tar.gz
+
+PLPT Linux
+compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
+
+PLPT Linux
+native environment: + uname -srvmo 
+Linux 7.0.0-1017-azure #17~24.04.1-Ubuntu SMP PREEMPT Thu Sep 24 18:46:57 UTC 2026 x86_64 GNU/Linux
++ getconf GNU_LIBC_VERSION 
+glibc 2.39
++ /usr/bin/ld --version 
+GNU ld (GNU Binutils for Ubuntu) 2.42
+Copyright (C) 2024 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or (at your option) a later version.
+This program has absolutely no warranty.
++ /home/runner/work/Local-test-share/Local-test-share/out/linux/doctor/probe 
+toolchain-probe: native Linux x64, clang=18.1.3 (1ubuntu1), C++=202002, pointer=8
+libstdc++ headers: 20240908
++ dpkg-query -W -f=\$\{Package\}\ \$\{Version\}\\n libc6 libstdc++6 libx11-6 libxext6 
+libc6 2.39-0ubuntu8.9
+libstdc++6 14.2.0-4ubuntu2~24.04.1
+libx11-6 2:1.8.7-1ubuntu0.1
+libxext6 2:1.3.4-1build2
+
+PLPT Linux
+compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
+
+PLPT Linux
+PASS 20 independent native headers
+
+PLPT Linux
+BUILD SUCCESS mode=asan elapsed_seconds=98 headless=0 core_only=0
+
+PLPT Linux
+Native Linux tests mode=asan
+PASS unit exit=0
+unit: 26 cases, 12449 checks, 0 failures (0 failed cases)
+PASS platform exit=0
+platform: 6 cases, 286 checks, 0 failures (0 failed cases)
+PASS ipv6 exit=0
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS cli-help exit=0
+PASS cli-version exit=0
+PASS cli-unknown exit=2
+PASS cli-extra exit=2
+PASS cli-ambiguous exit=2
+PASS ui-smoke exit=0
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-unknown exit=2
+PASS ui-missing-argument exit=2
+PASS ui-capture-requires-smoke exit=2
+PASS ui-driver-error exit=1
+PASS ui-file-error exit=1
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-disk-full exit=1
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-native-x11 exit=0
+desktop-runtime: SDL=3004020 video=x11 renderer=software
+TEST SUMMARY passed=16 skipped=0 mode=asan
+
+PLPT Linux
+compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
+
+PLPT Linux
+BUILD SUCCESS mode=debug elapsed_seconds=64 headless=0 core_only=0
+
+PLPT Linux
+compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
+
+PLPT Linux
+PASS 20 independent native headers
+
+PLPT Linux
+BUILD SUCCESS mode=debug elapsed_seconds=79 headless=0 core_only=0
+
+PLPT Linux
+Native Linux tests mode=debug
+PASS unit exit=0
+unit: 26 cases, 12449 checks, 0 failures (0 failed cases)
+PASS platform exit=0
+platform: 6 cases, 286 checks, 0 failures (0 failed cases)
+PASS ipv6 exit=0
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS cli-help exit=0
+PASS cli-version exit=0
+PASS cli-unknown exit=2
+PASS cli-extra exit=2
+PASS cli-ambiguous exit=2
+PASS ui-smoke exit=0
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-unknown exit=2
+PASS ui-missing-argument exit=2
+PASS ui-capture-requires-smoke exit=2
+PASS ui-driver-error exit=1
+PASS ui-file-error exit=1
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-disk-full exit=1
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-native-x11 exit=0
+desktop-runtime: SDL=3004020 video=x11 renderer=software
+TEST SUMMARY passed=16 skipped=0 mode=debug
+
+PLPT Linux
+compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
+
+PLPT Linux
+BUILD SUCCESS mode=release elapsed_seconds=88 headless=0 core_only=0
+
+PLPT Linux
+compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
+
+PLPT Linux
+PASS 20 independent native headers
+
+PLPT Linux
+BUILD SUCCESS mode=release elapsed_seconds=104 headless=0 core_only=0
+
+PLPT Linux
+Native Linux tests mode=release
+PASS unit exit=0
+unit: 26 cases, 12449 checks, 0 failures (0 failed cases)
+PASS platform exit=0
+platform: 6 cases, 286 checks, 0 failures (0 failed cases)
+PASS ipv6 exit=0
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS cli-help exit=0
+PASS cli-version exit=0
+PASS cli-unknown exit=2
+PASS cli-extra exit=2
+PASS cli-ambiguous exit=2
+PASS ui-smoke exit=0
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-unknown exit=2
+PASS ui-missing-argument exit=2
+PASS ui-capture-requires-smoke exit=2
+PASS ui-driver-error exit=1
+PASS ui-file-error exit=1
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-disk-full exit=1
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-native-x11 exit=0
+desktop-runtime: SDL=3004020 video=x11 renderer=software
+TEST SUMMARY passed=16 skipped=0 mode=release
+
+PLPT Linux
+compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
+
+PLPT Linux
+PASS native libFuzzer + ASan/UBSan: 20000 executions
+
+PLPT Linux
+failed test intentional-exit: intentional test failure: exit 23
+
+--- tail ---
+intentional test failure: exit 23
+
+PLPT Linux
+SELFTEST PASS: compiler/compile/link/hash failure propagation
+
+PLPT Linux
+compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
+
+PLPT Linux
+PASS 20 independent native headers
+
+PLPT Linux
+BUILD SUCCESS mode=release elapsed_seconds=104 headless=0 core_only=0
+
+PLPT Linux
+Native Linux tests mode=release
+PASS unit exit=0
+unit: 26 cases, 12449 checks, 0 failures (0 failed cases)
+PASS platform exit=0
+platform: 6 cases, 286 checks, 0 failures (0 failed cases)
+PASS ipv6 exit=0
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS cli-help exit=0
+PASS cli-version exit=0
+PASS cli-unknown exit=2
+PASS cli-extra exit=2
+PASS cli-ambiguous exit=2
+PASS ui-smoke exit=0
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-unknown exit=2
+PASS ui-missing-argument exit=2
+PASS ui-capture-requires-smoke exit=2
+PASS ui-driver-error exit=1
+PASS ui-file-error exit=1
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-disk-full exit=1
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-native-x11 exit=0
+desktop-runtime: SDL=3004020 video=x11 renderer=software
+TEST SUMMARY passed=16 skipped=0 mode=release
+
+PLPT Linux
+PACKAGE SHA256 67fc3199ec0a1657299ceb75949f498bda88736e450baf676ea235fa55ce859f  /home/runner/work/Local-test-share/Local-test-share/out/linux/packages/PLPT-0.1.0-preview-linux-x64.tar.gz
+
+PLPT Linux
+runtime dependencies: 	linux-vdso.so.1 (0x00007f6627d9d000)
+	libSDL3.so.0 => /home/runner/work/Local-test-share/Local-test-share/out/linux/packages/check/PLPT/bin/libSDL3.so.0 (0x00007f6627a00000)
+	libstdc++.so.6 => /lib/x86_64-linux-gnu/libstdc++.so.6 (0x00007f6627600000)
+	libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007f6627917000)
+	libgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007f6627c67000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f6627200000)
+	libX11.so.6 => /lib/x86_64-linux-gnu/libX11.so.6 (0x00007f66274c2000)
+	libXext.so.6 => /lib/x86_64-linux-gnu/libXext.so.6 (0x00007f6627c51000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007f6627d9f000)
+	libxcb.so.1 => /lib/x86_64-linux-gnu/libxcb.so.1 (0x00007f6627c28000)
+	libXau.so.6 => /lib/x86_64-linux-gnu/libXau.so.6 (0x00007f6627c22000)
+	libXdmcp.so.6 => /lib/x86_64-linux-gnu/libXdmcp.so.6 (0x00007f6627c1a000)
+	libbsd.so.0 => /lib/x86_64-linux-gnu/libbsd.so.0 (0x00007f6627901000)
+	libmd.so.0 => /lib/x86_64-linux-gnu/libmd.so.0 (0x00007f66278f2000)
+
+PLPT Linux
+PASS native Release package extracted and executed
+
+
+Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683, actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+

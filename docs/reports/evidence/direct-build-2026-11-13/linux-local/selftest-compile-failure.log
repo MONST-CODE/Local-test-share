@@ -1,0 +1,21 @@
+PLPT direct Linux operation=debug mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261113T115612Z-debug-debug-8024.log
+CXX=/home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++
+CC=/home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang
+clang version 22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin
+Configuration file: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/etc/clang/clang++.cfg
+native linker: /usr/bin/ld
+clang version 22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin
+Configuration file: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/etc/clang/clang++.cfg
+toolchain-probe: native Linux x64, clang=22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1), C++=202002, pointer=8
+libstdc++ headers: 20220819
+Compilation started: debug, clean deterministic objects (no cache)
+Compilation: engine/core/random.cpp
+clang++: error: unknown argument: '-fplpt-deliberate-invalid-option'
+Command exit 1: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I /home/user/Local-test-share -O0 -g -fplpt-deliberate-invalid-option -MMD -MP -MF /home/user/Local-test-share/out/linux/debug/objects/engine_core_random.cpp.o.d -c engine/core/random.cpp -o /home/user/Local-test-share/out/linux/debug/objects/engine_core_random.cpp.o 
+FAILURE exit=1 operation=debug (see /home/user/Local-test-share/out/linux/logs/20261113T115612Z-debug-debug-8024.log)

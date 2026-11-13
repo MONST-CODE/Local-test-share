@@ -1,0 +1,77 @@
+PLPT direct Linux operation=fuzz mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261113T115037Z-fuzz-debug-6286.log
++ mkdir -p -- /home/user/Local-test-share/out/linux/tests/fuzz 
+CXX=/home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++
+CC=/home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang
+clang version 22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin
+Configuration file: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/etc/clang/clang++.cfg
+native linker: /usr/bin/ld
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ --version 
+clang version 22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin
+Configuration file: /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/etc/clang/clang++.cfg
++ mkdir -p /home/user/Local-test-share/out/linux/doctor 
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -pthread tests/build/toolchain_probe.cpp -o /home/user/Local-test-share/out/linux/doctor/probe 
++ /home/user/Local-test-share/out/linux/doctor/probe 
+toolchain-probe: native Linux x64, clang=22.1.8 (https://github.com/llvm/llvm-project.git ca7933e47d3a3451d81e72ac174dcb5aa28b59d1), C++=202002, pointer=8
+libstdc++ headers: 20220819
+Compilation: engine/protocol/envelope.cpp
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I /home/user/Local-test-share -O0 -g -fsanitize=address\,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -fsanitize=fuzzer-no-link -MMD -MP -MF /home/user/Local-test-share/out/linux/tests/fuzz/objects/envelope.o.d -c engine/protocol/envelope.cpp -o /home/user/Local-test-share/out/linux/tests/fuzz/objects/envelope.o 
+Compilation: tests/fuzz/envelope_fuzz.cpp
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I /home/user/Local-test-share -O0 -g -fsanitize=address\,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -fsanitize=fuzzer-no-link -MMD -MP -MF /home/user/Local-test-share/out/linux/tests/fuzz/objects/fuzz.o.d -c tests/fuzz/envelope_fuzz.cpp -o /home/user/Local-test-share/out/linux/tests/fuzz/objects/fuzz.o 
+Linking: /home/user/Local-test-share/out/linux/tests/fuzz/bin/plpt-fuzz-envelope
++ /home/user/.cache/plpt-direct-tools/node_modules/llvm-runtime-clang-linux-x64/bin/clang++ -O0 -g -fsanitize=address\,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -pthread -fsanitize=fuzzer /home/user/Local-test-share/out/linux/tests/fuzz/objects/envelope.o /home/user/Local-test-share/out/linux/tests/fuzz/objects/fuzz.o -o /home/user/Local-test-share/out/linux/tests/fuzz/bin/plpt-fuzz-envelope 
++ cp tests/fuzz/corpus/hello tests/fuzz/corpus/chat /home/user/Local-test-share/out/linux/tests/fuzz/corpus/ 
++ /home/user/Local-test-share/out/linux/tests/fuzz/bin/plpt-fuzz-envelope -runs=20000 -seed=20261113 -max_len=4096 -timeout=2 -artifact_prefix=/home/user/Local-test-share/out/linux/tests/fuzz/ /home/user/Local-test-share/out/linux/tests/fuzz/corpus 
+INFO: Running with entropic power schedule (0xFF, 100).
+INFO: Seed: 20261113
+INFO: Loaded 1 modules   (1588 inline 8-bit counters): 1588 [0x55b7bb88a280, 0x55b7bb88a8b4), 
+INFO: Loaded 1 PC tables (1588 PCs): 1588 [0x55b7bb88a8b8,0x55b7bb890bf8), 
+INFO:        2 files found in /home/user/Local-test-share/out/linux/tests/fuzz/corpus
+INFO: seed corpus: files: 2 min: 56b max: 58b total: 114b rss: 31Mb
+#3	INITED cov: 424 ft: 459 corp: 2/114b exec/s: 0 rss: 33Mb
+	NEW_FUNC[1/52]: 0x55b7bb8065d8 in plpt::Result<void>::failure(plpt::Error) /home/user/Local-test-share/engine/protocol/../core/result.hpp:46
+	NEW_FUNC[2/52]: 0x55b7bb806960 in std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>::basic_string<std::allocator<char>>(char const*, std::allocator<char> const&) /usr/lib/gcc/x86_64-linux-gnu/12/../../../../include/c++/12/bits/basic_string.h:636
+#4	NEW    cov: 543 ft: 661 corp: 3/170b lim: 58 exec/s: 0 rss: 34Mb L: 56/58 MS: 1 ChangeByte-
+#6	NEW    cov: 545 ft: 722 corp: 4/228b lim: 58 exec/s: 0 rss: 34Mb L: 58/58 MS: 2 CopyPart-CopyPart-
+#8	NEW    cov: 546 ft: 727 corp: 5/265b lim: 58 exec/s: 0 rss: 34Mb L: 37/58 MS: 2 ShuffleBytes-EraseBytes-
+#10	NEW    cov: 548 ft: 734 corp: 6/323b lim: 58 exec/s: 0 rss: 34Mb L: 58/58 MS: 2 CopyPart-ChangeBinInt-
+#13	REDUCE cov: 548 ft: 734 corp: 6/322b lim: 58 exec/s: 0 rss: 34Mb L: 57/58 MS: 3 CrossOver-CopyPart-CrossOver-
+#31	NEW    cov: 549 ft: 740 corp: 7/379b lim: 58 exec/s: 0 rss: 34Mb L: 57/58 MS: 3 ChangeBinInt-ChangeBit-CrossOver-
+#38	REDUCE cov: 549 ft: 740 corp: 7/378b lim: 58 exec/s: 0 rss: 34Mb L: 36/58 MS: 2 ShuffleBytes-EraseBytes-
+#72	NEW    cov: 554 ft: 748 corp: 8/436b lim: 58 exec/s: 0 rss: 34Mb L: 58/58 MS: 4 ChangeBinInt-ChangeBit-CopyPart-ChangeBinInt-
+#128	NEW    cov: 555 ft: 750 corp: 9/494b lim: 58 exec/s: 0 rss: 35Mb L: 58/58 MS: 1 ChangeByte-
+#167	REDUCE cov: 555 ft: 750 corp: 9/492b lim: 58 exec/s: 0 rss: 35Mb L: 56/58 MS: 4 ChangeByte-ChangeBinInt-EraseBytes-CopyPart-
+#169	REDUCE cov: 555 ft: 750 corp: 9/467b lim: 58 exec/s: 0 rss: 35Mb L: 11/58 MS: 2 ShuffleBytes-CrossOver-
+#266	REDUCE cov: 555 ft: 750 corp: 9/466b lim: 58 exec/s: 0 rss: 35Mb L: 10/58 MS: 2 InsertByte-EraseBytes-
+#272	NEW    cov: 557 ft: 752 corp: 10/522b lim: 58 exec/s: 0 rss: 35Mb L: 56/58 MS: 1 ChangeBit-
+#303	NEW    cov: 558 ft: 753 corp: 11/578b lim: 58 exec/s: 0 rss: 35Mb L: 56/58 MS: 1 ChangeByte-
+#347	REDUCE cov: 558 ft: 753 corp: 11/577b lim: 58 exec/s: 0 rss: 35Mb L: 9/58 MS: 4 ChangeByte-ChangeByte-ChangeBinInt-EraseBytes-
+#391	REDUCE cov: 558 ft: 753 corp: 11/576b lim: 58 exec/s: 0 rss: 36Mb L: 56/58 MS: 4 ChangeBit-CopyPart-CopyPart-EraseBytes-
+#439	NEW    cov: 559 ft: 754 corp: 12/634b lim: 58 exec/s: 0 rss: 36Mb L: 58/58 MS: 3 CopyPart-ChangeBinInt-ChangeByte-
+#495	NEW    cov: 561 ft: 756 corp: 13/692b lim: 58 exec/s: 0 rss: 36Mb L: 58/58 MS: 1 ChangeBit-
+#931	REDUCE cov: 561 ft: 756 corp: 13/689b lim: 58 exec/s: 0 rss: 38Mb L: 6/58 MS: 1 EraseBytes-
+#965	REDUCE cov: 561 ft: 756 corp: 13/687b lim: 58 exec/s: 0 rss: 38Mb L: 4/58 MS: 4 ShuffleBytes-ChangeASCIIInt-InsertByte-EraseBytes-
+#1016	REDUCE cov: 561 ft: 756 corp: 13/685b lim: 58 exec/s: 0 rss: 38Mb L: 2/58 MS: 1 EraseBytes-
+#1108	NEW    cov: 562 ft: 757 corp: 14/743b lim: 58 exec/s: 0 rss: 38Mb L: 58/58 MS: 2 ShuffleBytes-CrossOver-
+#1134	REDUCE cov: 562 ft: 757 corp: 14/742b lim: 58 exec/s: 0 rss: 39Mb L: 1/58 MS: 1 EraseBytes-
+#1440	NEW    cov: 563 ft: 758 corp: 15/800b lim: 58 exec/s: 0 rss: 39Mb L: 58/58 MS: 1 ChangeBit-
+#1645	NEW    cov: 565 ft: 761 corp: 16/858b lim: 58 exec/s: 0 rss: 39Mb L: 58/58 MS: 5 ShuffleBytes-CopyPart-ShuffleBytes-ChangeBinInt-ChangeBinInt-
+#1656	NEW    cov: 565 ft: 762 corp: 17/916b lim: 58 exec/s: 0 rss: 40Mb L: 58/58 MS: 1 ChangeBit-
+#1776	REDUCE cov: 565 ft: 762 corp: 17/914b lim: 58 exec/s: 0 rss: 40Mb L: 56/58 MS: 5 CrossOver-ChangeBinInt-ChangeBit-CopyPart-EraseBytes-
+#3138	NEW    cov: 566 ft: 763 corp: 18/972b lim: 68 exec/s: 0 rss: 40Mb L: 58/58 MS: 2 ShuffleBytes-ChangeBit-
+#5149	NEW    cov: 566 ft: 764 corp: 19/1030b lim: 86 exec/s: 0 rss: 41Mb L: 58/58 MS: 1 CrossOver-
+#5931	NEW    cov: 567 ft: 765 corp: 20/1088b lim: 92 exec/s: 0 rss: 41Mb L: 58/58 MS: 2 ChangeBinInt-CrossOver-
+#6572	NEW    cov: 568 ft: 766 corp: 21/1146b lim: 98 exec/s: 0 rss: 41Mb L: 58/58 MS: 1 ChangeBinInt-
+#6974	NEW    cov: 568 ft: 767 corp: 22/1204b lim: 98 exec/s: 0 rss: 41Mb L: 58/58 MS: 2 CrossOver-ShuffleBytes-
+#9207	REDUCE cov: 568 ft: 767 corp: 22/1202b lim: 116 exec/s: 0 rss: 42Mb L: 56/58 MS: 3 InsertByte-InsertByte-CrossOver-
+#10578	NEW    cov: 569 ft: 768 corp: 23/1260b lim: 128 exec/s: 0 rss: 42Mb L: 58/58 MS: 1 ChangeBit-
+#10925	NEW    cov: 569 ft: 769 corp: 24/1318b lim: 128 exec/s: 0 rss: 42Mb L: 58/58 MS: 2 ChangeByte-ChangeBit-
+#19412	REDUCE cov: 569 ft: 769 corp: 24/1316b lim: 212 exec/s: 0 rss: 44Mb L: 56/58 MS: 2 CopyPart-EraseBytes-
+#20000	DONE   cov: 569 ft: 769 corp: 24/1316b lim: 212 exec/s: 0 rss: 44Mb
+Done 20000 runs in 0 second(s)
+SUCCESS operation=fuzz log=/home/user/Local-test-share/out/linux/logs/20261113T115037Z-fuzz-debug-6286.log

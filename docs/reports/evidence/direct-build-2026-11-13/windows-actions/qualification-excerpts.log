@@ -1,0 +1,410 @@
+# Native windows recorded Actions annotations
+# Run 43426058514 / head 13fd4642f629bc2ca6182e663fa487ee1d9da113
+# Full raw metadata is in qualification-annotations.json; no synthetic test output.
+
+PLPT Windows dependency
+SHA256 1ec3009655ee37b1f73e52b3b120acc5afd8abaf9532f3303b1bf1dfe91b5969 SDL3-devel-3.4.20-VC.zip
+
+PLPT Windows dependency
+SHA256 b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859.tar.gz
+
+PLPT Windows evidence
+clang version 20.1.8
+Target: x86_64-pc-windows-msvc
+Thread model: posix
+InstalledDir: C:\Program Files\LLVM\bin
+LLD 20.1.8
+SDK=10.0.26100.0\ VC=14.44.35207 compiler=C:\Program Files\LLVM\bin\clang++.exe linker=C:\Program Files\LLVM\bin\lld-link.exe
+toolchain-probe: native Windows x64, Microsoft ABI, clang=20.1.8 , MSVC=1944, STL=143, C++=202002
+
+
+PLPT Windows evidence
+clang version 20.1.8
+Target: x86_64-pc-windows-msvc
+Thread model: posix
+InstalledDir: C:\Program Files\LLVM\bin
+LLD 20.1.8
+SDK=10.0.26100.0\ VC=14.44.35207 compiler=C:\Program Files\LLVM\bin\clang++.exe linker=C:\Program Files\LLVM\bin\lld-link.exe
+toolchain-probe: native Windows x64, Microsoft ABI, clang=20.1.8 , MSVC=1944, STL=143, C++=202002
+
+
+PLPT Windows evidence
+Dump of file D:\a\Local-test-share\Local-test-share\out\windows\debug\bin\SDL3.dll
+File Type: DLL
+  Image has the following dependencies:
+    SETUPAPI.dll
+    WINMM.dll
+    IMM32.dll
+    VERSION.dll
+    KERNEL32.dll
+    USER32.dll
+    GDI32.dll
+    ADVAPI32.dll
+    SHELL32.dll
+    ole32.dll
+    OLEAUT32.dll
+  Summary
+       11000 .data
+        1000 .fptable
+       1D000 .pdata
+       AD000 .rdata
+        3000 .reloc
+        1000 .rsrc
+      1DE000 .text
+
+
+PLPT Windows
+PASS x64 COFF SDL3 import/DLL and embedded asInvoker/PerMonitorV2 manifest
+
+PLPT Windows
+BUILD SUCCESS mode=debug elapsed_centiseconds=2641 core_only=0
+
+PLPT Windows evidence
+clang version 20.1.8
+Target: x86_64-pc-windows-msvc
+Thread model: posix
+InstalledDir: C:\Program Files\LLVM\bin
+LLD 20.1.8
+SDK=10.0.26100.0\ VC=14.44.35207 compiler=C:\Program Files\LLVM\bin\clang++.exe linker=C:\Program Files\LLVM\bin\lld-link.exe
+toolchain-probe: native Windows x64, Microsoft ABI, clang=20.1.8 , MSVC=1944, STL=143, C++=202002
+
+
+PLPT Windows evidence
+Dump of file D:\a\Local-test-share\Local-test-share\out\windows\tests\debug\bin\SDL3.dll
+File Type: DLL
+  Image has the following dependencies:
+    SETUPAPI.dll
+    WINMM.dll
+    IMM32.dll
+    VERSION.dll
+    KERNEL32.dll
+    USER32.dll
+    GDI32.dll
+    ADVAPI32.dll
+    SHELL32.dll
+    ole32.dll
+    OLEAUT32.dll
+  Summary
+       11000 .data
+        1000 .fptable
+       1D000 .pdata
+       AD000 .rdata
+        3000 .reloc
+        1000 .rsrc
+      1DE000 .text
+
+
+PLPT Windows
+PASS x64 COFF SDL3 import/DLL and embedded asInvoker/PerMonitorV2 manifest
+
+PLPT Windows
+PASS 21 independent native headers
+
+PLPT Windows
+BUILD SUCCESS mode=debug elapsed_centiseconds=4276 core_only=0
+
+PLPT Windows evidence
+Native Windows tests mode=debug
+PASS unit exit=0 mode=debug
+unit: 26 cases, 12449 checks, 0 failures (0 failed cases)
+PASS platform exit=0 mode=debug
+platform: 4 cases, 58 checks, 0 failures (0 failed cases)
+PASS ipv6 exit=0 mode=debug
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS cli-help exit=0 mode=debug
+PASS cli-version exit=0 mode=debug
+PASS cli-unknown exit=2 mode=debug
+PASS cli-extra exit=2 mode=debug
+PASS cli-ambiguous exit=2 mode=debug
+PASS ui-smoke exit=0 mode=debug
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-unknown exit=2 mode=debug
+PASS ui-missing-argument exit=2 mode=debug
+PASS ui-capture-requires-smoke exit=2 mode=debug
+PASS ui-driver-error exit=1 mode=debug
+PASS ui-file-error exit=1 mode=debug
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-native-windows exit=0 mode=debug
+desktop-runtime: SDL=3004020 video=windows renderer=software
+TEST SUMMARY passed=15 skipped=0 mode=debug
+
+
+PLPT Windows evidence
+clang version 20.1.8
+Target: x86_64-pc-windows-msvc
+Thread model: posix
+InstalledDir: C:\Program Files\LLVM\bin
+LLD 20.1.8
+SDK=10.0.26100.0\ VC=14.44.35207 compiler=C:\Program Files\LLVM\bin\clang++.exe linker=C:\Program Files\LLVM\bin\lld-link.exe
+toolchain-probe: native Windows x64, Microsoft ABI, clang=20.1.8 , MSVC=1944, STL=143, C++=202002
+
+
+PLPT Windows evidence
+Dump of file D:\a\Local-test-share\Local-test-share\out\windows\release\bin\SDL3.dll
+File Type: DLL
+  Image has the following dependencies:
+    SETUPAPI.dll
+    WINMM.dll
+    IMM32.dll
+    VERSION.dll
+    KERNEL32.dll
+    USER32.dll
+    GDI32.dll
+    ADVAPI32.dll
+    SHELL32.dll
+    ole32.dll
+    OLEAUT32.dll
+  Summary
+       11000 .data
+        1000 .fptable
+       1D000 .pdata
+       AD000 .rdata
+        3000 .reloc
+        1000 .rsrc
+      1DE000 .text
+
+
+PLPT Windows
+PASS x64 COFF SDL3 import/DLL and embedded asInvoker/PerMonitorV2 manifest
+
+PLPT Windows
+BUILD SUCCESS mode=release elapsed_centiseconds=2882 core_only=0
+
+PLPT Windows evidence
+clang version 20.1.8
+Target: x86_64-pc-windows-msvc
+Thread model: posix
+InstalledDir: C:\Program Files\LLVM\bin
+LLD 20.1.8
+SDK=10.0.26100.0\ VC=14.44.35207 compiler=C:\Program Files\LLVM\bin\clang++.exe linker=C:\Program Files\LLVM\bin\lld-link.exe
+toolchain-probe: native Windows x64, Microsoft ABI, clang=20.1.8 , MSVC=1944, STL=143, C++=202002
+
+
+PLPT Windows evidence
+Dump of file D:\a\Local-test-share\Local-test-share\out\windows\tests\release\bin\SDL3.dll
+File Type: DLL
+  Image has the following dependencies:
+    SETUPAPI.dll
+    WINMM.dll
+    IMM32.dll
+    VERSION.dll
+    KERNEL32.dll
+    USER32.dll
+    GDI32.dll
+    ADVAPI32.dll
+    SHELL32.dll
+    ole32.dll
+    OLEAUT32.dll
+  Summary
+       11000 .data
+        1000 .fptable
+       1D000 .pdata
+       AD000 .rdata
+        3000 .reloc
+        1000 .rsrc
+      1DE000 .text
+
+
+PLPT Windows
+PASS x64 COFF SDL3 import/DLL and embedded asInvoker/PerMonitorV2 manifest
+
+PLPT Windows
+PASS 21 independent native headers
+
+PLPT Windows
+BUILD SUCCESS mode=release elapsed_centiseconds=4973 core_only=0
+
+PLPT Windows evidence
+Native Windows tests mode=release
+PASS unit exit=0 mode=release
+unit: 26 cases, 12449 checks, 0 failures (0 failed cases)
+PASS platform exit=0 mode=release
+platform: 4 cases, 58 checks, 0 failures (0 failed cases)
+PASS ipv6 exit=0 mode=release
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS cli-help exit=0 mode=release
+PASS cli-version exit=0 mode=release
+PASS cli-unknown exit=2 mode=release
+PASS cli-extra exit=2 mode=release
+PASS cli-ambiguous exit=2 mode=release
+PASS ui-smoke exit=0 mode=release
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-unknown exit=2 mode=release
+PASS ui-missing-argument exit=2 mode=release
+PASS ui-capture-requires-smoke exit=2 mode=release
+PASS ui-driver-error exit=1 mode=release
+PASS ui-file-error exit=1 mode=release
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-native-windows exit=0 mode=release
+desktop-runtime: SDL=3004020 video=windows renderer=software
+TEST SUMMARY passed=15 skipped=0 mode=release
+
+
+PLPT Windows evidence
+clang version 20.1.8
+Target: x86_64-pc-windows-msvc
+Thread model: posix
+InstalledDir: C:\Program Files\LLVM\bin
+LLD 20.1.8
+SDK=10.0.26100.0\ VC=14.44.35207 compiler=C:\Program Files\LLVM\bin\clang++.exe linker=C:\Program Files\LLVM\bin\lld-link.exe
+toolchain-probe: native Windows x64, Microsoft ABI, clang=20.1.8 , MSVC=1944, STL=143, C++=202002
+
+
+PLPT Windows evidence
+Dump of file D:\a\Local-test-share\Local-test-share\out\windows\tests\asan\bin\SDL3.dll
+File Type: DLL
+  Image has the following dependencies:
+    SETUPAPI.dll
+    WINMM.dll
+    IMM32.dll
+    VERSION.dll
+    KERNEL32.dll
+    USER32.dll
+    GDI32.dll
+    ADVAPI32.dll
+    SHELL32.dll
+    ole32.dll
+    OLEAUT32.dll
+  Summary
+       11000 .data
+        1000 .fptable
+       1D000 .pdata
+       AD000 .rdata
+        3000 .reloc
+        1000 .rsrc
+      1DE000 .text
+
+
+PLPT Windows
+PASS x64 COFF SDL3 import/DLL and embedded asInvoker/PerMonitorV2 manifest
+
+PLPT Windows
+PASS 21 independent native headers
+
+PLPT Windows
+BUILD SUCCESS mode=asan elapsed_centiseconds=6914 core_only=0
+
+PLPT Windows evidence
+Native Windows tests mode=asan
+PASS unit exit=0 mode=asan
+unit: 26 cases, 12449 checks, 0 failures (0 failed cases)
+PASS platform exit=0 mode=asan
+platform: 4 cases, 58 checks, 0 failures (0 failed cases)
+PASS ipv6 exit=0 mode=asan
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS cli-help exit=0 mode=asan
+PASS cli-version exit=0 mode=asan
+PASS cli-unknown exit=2 mode=asan
+PASS cli-extra exit=2 mode=asan
+PASS cli-ambiguous exit=2 mode=asan
+PASS ui-smoke exit=0 mode=asan
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-unknown exit=2 mode=asan
+PASS ui-missing-argument exit=2 mode=asan
+PASS ui-capture-requires-smoke exit=2 mode=asan
+PASS ui-driver-error exit=1 mode=asan
+PASS ui-file-error exit=1 mode=asan
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-native-windows exit=0 mode=asan
+desktop-runtime: SDL=3004020 video=windows renderer=software
+TEST SUMMARY passed=15 skipped=0 mode=asan
+
+
+PLPT Windows evidence
+clang version 20.1.8
+Target: x86_64-pc-windows-msvc
+Thread model: posix
+InstalledDir: C:\Program Files\LLVM\bin
+LLD 20.1.8
+SDK=10.0.26100.0\ VC=14.44.35207 compiler=C:\Program Files\LLVM\bin\clang++.exe linker=C:\Program Files\LLVM\bin\lld-link.exe
+toolchain-probe: native Windows x64, Microsoft ABI, clang=20.1.8 , MSVC=1944, STL=143, C++=202002
+
+
+PLPT Windows
+PASS native libFuzzer plus ASan, 20000 executions
+
+PLPT Windows
+SELFTEST PASS compiler/compile/link/hash/exit-code propagation
+
+PLPT Windows evidence
+clang version 20.1.8
+Target: x86_64-pc-windows-msvc
+Thread model: posix
+InstalledDir: C:\Program Files\LLVM\bin
+LLD 20.1.8
+SDK=10.0.26100.0\ VC=14.44.35207 compiler=C:\Program Files\LLVM\bin\clang++.exe linker=C:\Program Files\LLVM\bin\lld-link.exe
+toolchain-probe: native Windows x64, Microsoft ABI, clang=20.1.8 , MSVC=1944, STL=143, C++=202002
+
+
+PLPT Windows evidence
+Dump of file D:\a\Local-test-share\Local-test-share\out\windows\release\bin\SDL3.dll
+File Type: DLL
+  Image has the following dependencies:
+    SETUPAPI.dll
+    WINMM.dll
+    IMM32.dll
+    VERSION.dll
+    KERNEL32.dll
+    USER32.dll
+    GDI32.dll
+    ADVAPI32.dll
+    SHELL32.dll
+    ole32.dll
+    OLEAUT32.dll
+  Summary
+       11000 .data
+        1000 .fptable
+       1D000 .pdata
+       AD000 .rdata
+        3000 .reloc
+        1000 .rsrc
+      1DE000 .text
+
+
+PLPT Windows
+PASS x64 COFF SDL3 import/DLL and embedded asInvoker/PerMonitorV2 manifest
+
+PLPT Windows
+PASS 21 independent native headers
+
+PLPT Windows
+BUILD SUCCESS mode=release elapsed_centiseconds=5147 core_only=0
+
+PLPT Windows evidence
+Native Windows tests mode=release
+PASS unit exit=0 mode=release
+unit: 26 cases, 12449 checks, 0 failures (0 failed cases)
+PASS platform exit=0 mode=release
+platform: 4 cases, 58 checks, 0 failures (0 failed cases)
+PASS ipv6 exit=0 mode=release
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS cli-help exit=0 mode=release
+PASS cli-version exit=0 mode=release
+PASS cli-unknown exit=2 mode=release
+PASS cli-extra exit=2 mode=release
+PASS cli-ambiguous exit=2 mode=release
+PASS ui-smoke exit=0 mode=release
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-unknown exit=2 mode=release
+PASS ui-missing-argument exit=2 mode=release
+PASS ui-capture-requires-smoke exit=2 mode=release
+PASS ui-driver-error exit=1 mode=release
+PASS ui-file-error exit=1 mode=release
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-native-windows exit=0 mode=release
+desktop-runtime: SDL=3004020 video=windows renderer=software
+TEST SUMMARY passed=15 skipped=0 mode=release
+
+
+PLPT Windows evidence
+SHA256 hash of D:\a\Local-test-share\Local-test-share\out\windows\packages\PLPT-0.1.0-preview-windows-x64.zip:
+d6b6bc4c1bbbc3708272904c5801356a58b643d2aac5f778ed3616e539d9664f
+CertUtil: -hashfile command completed successfully.
+
+
+PLPT Windows
+PASS Release ZIP extracted and executed using native Windows video
+
+
+Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683, actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+

@@ -3,6 +3,11 @@
 Date: 2026-11-13. Only `build.bat` / `build.sh` own dependency identities, source
 lists and integration flags. No generated dependency project or implicit download.
 
+Final native qualification: [run 43426058514](https://github.com/MONST-CODE/Local-test-share/actions/runs/43426058514),
+code/scripts **13fd4642f629bc2ca6182e663fa487ee1d9da113**, both jobs successful.
+This ledger's subsequent evidence refresh changes documentation only, not dependency
+pins, compiler inputs or package logic. Reported package hashes identify that run.
+
 ## Immutable identities and layouts
 
 | Dependency | Archive URL | SHA-256 |
@@ -32,9 +37,12 @@ After stripping the archive root, expected files are `vendor/sdl/include/SDL3/SD
 `vendor/sdl/lib/x64/SDL3.lib`, `vendor/sdl/lib/x64/SDL3.dll`. `dumpbin /headers`
 checks Microsoft COFF/PE x64, `/dependents` records runtime requirements. The DLL
 is copied next to the executable; application startup rejects a header/runtime
-SDL version mismatch. These checks **passed on native Windows** in run
-[43423683934](https://github.com/MONST-CODE/Local-test-share/actions/runs/43423683934),
-including Debug/Release/ASan execution and an extracted Release ZIP.
+SDL version mismatch. These checks **passed on native Windows** in final run
+[43426058514](https://github.com/MONST-CODE/Local-test-share/actions/runs/43426058514),
+including Debug/Release/ASan execution and an extracted Release ZIP. The source
+checkout retains hashes, versions, x64/manifest checks and actual imported DLLs in
+`docs/reports/evidence/direct-build-2026-11-13/windows-actions/qualification-annotations.json`.
+An earlier complete pass at bf89e8e/run 43423683934 is retained separately.
 
 Observed toolchain: **LLVM clang++ / LLD 20.1.8**, Microsoft target
 `x86_64-pc-windows-msvc`, **SDK 10.0.26100.0**, **VC Tools 14.44.35207**, probe
@@ -72,6 +80,16 @@ System runtime libraries are not bundled: glibc/libm, libstdc++/libgcc_s, libX11
 libXext and their OS-managed dependencies. The package is tied to its host ABI,
 not advertised as a universal static Linux binary. LGPL/GCC runtime exception and
 X11 licenses remain applicable. `ldd` output is recorded by package validation.
+
+Actual final native environment: Ubuntu 24.04 x86-64, Clang **18.1.3 (1ubuntu1)**,
+GNU ld **2.42**, glibc **2.39**. Observed OS packages: libc6 **2.39-0ubuntu8.9**,
+libstdc++6 **14.2.0-4ubuntu2~24.04.1**, libX11 **2:1.8.7-1ubuntu0.1**, libXext
+**2:1.3.4-1build2**. These are recorded environment versions, **not new immutable
+OS-package pins**; hosted images/apt can change. The package's `$ORIGIN` lookup
+resolved its own `bin/libSDL3.so.0`; remaining libraries came from the system,
+including XCB/Xau/Xdmcp/bsd/md transitively. The source checkout retains exact runtime
+resolution and probe output in
+`docs/reports/evidence/direct-build-2026-11-13/linux-actions/qualification-annotations.json`.
 
 ## Development tools, not runtime requirements for users
 

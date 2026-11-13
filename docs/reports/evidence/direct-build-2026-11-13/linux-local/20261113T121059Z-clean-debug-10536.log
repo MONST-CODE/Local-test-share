@@ -1,0 +1,6 @@
+PLPT direct Linux operation=clean mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261113T121059Z-clean-debug-10536.log
++ rm -rf -- /home/user/Local-test-share/out/linux/debug 
++ rm -rf -- /home/user/Local-test-share/out/linux/tests 
++ rm -rf -- /home/user/Local-test-share/out/linux/doctor 
+CLEAN SUCCESS: compiled outputs removed; verified archives and logs retained
+SUCCESS operation=clean log=/home/user/Local-test-share/out/linux/logs/20261113T121059Z-clean-debug-10536.log

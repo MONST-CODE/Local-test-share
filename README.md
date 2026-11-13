@@ -68,7 +68,10 @@ avec les résultats **réellement exécutés** séparés :
 [Windows](docs/reports/BUILD_VALIDATION_WINDOWS.md) ·
 [Linux](docs/reports/BUILD_VALIDATION_LINUX.md) ·
 [dépendances](docs/reports/BUILD_DEPENDENCIES.md).
-Une CI écrite n'est pas une CI passée ; une vérification croisée ne valide pas Windows.
+La **qualification P0 native Windows et Linux a réussi** au commit `13fd464` :
+[exécution 43426058514](https://github.com/MONST-CODE/Local-test-share/actions/runs/43426058514),
+Debug/Release, tests mémoire/fuzz, fenêtre native, nettoyage/rebuild et packages.
+Cela ne vaut ni validation humaine du produit ni qualification d'une fonction de partage.
 Les anciens [lots et résultats](docs/reports/VALIDATION.md) sont explicitement
 historiques et ne qualifient pas la nouvelle architecture de build.
 

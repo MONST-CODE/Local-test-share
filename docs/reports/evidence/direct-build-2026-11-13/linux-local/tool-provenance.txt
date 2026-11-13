@@ -1,0 +1,17 @@
+# Sandbox-only LLVM provisioning integrity
+Registry metadata plus actual file SHA-512 (no lifecycle scripts):
+
+llvm-runtime-clang-linux-x64@22.1.8
+https://registry.npmjs.org/llvm-runtime-clang-linux-x64/-/llvm-runtime-clang-linux-x64-22.1.8.tgz
+sha512-2/Oz+mc85zq0cxZI3oE/uvW+luhdZEtLtMf0E6yC8pjyLLj+nTBv8kvF+Bjy8DUJ5QnGh3SZV2T2WlXb0G1MDA==
+MATCH actual tarball bytes vs npm registry metadata
+
+llvm-runtime-lld-linux-x64@22.1.8
+https://registry.npmjs.org/llvm-runtime-lld-linux-x64/-/llvm-runtime-lld-linux-x64-22.1.8.tgz
+sha512-NtJGDyi1FAcF69Q8brAAkJuYt2g9k5m961pOX/Imx6qqJz4CAYrp1ibuX2Jg4gmNkc7Gd6xVqYXWHtndvTg7wA==
+MATCH actual tarball bytes vs npm registry metadata
+
+llvm-runtime-resources-linux@22.1.8
+https://registry.npmjs.org/llvm-runtime-resources-linux/-/llvm-runtime-resources-linux-22.1.8.tgz
+sha512-FTTpWqturS3fDmCsKo7glaCNFSWFY0bG44BCNdbhABYdkJ5R3pFnQtJob3IKkTJkLsC8KH+DvIeJfzEiNGDSvA==
+MATCH actual tarball bytes vs npm registry metadata
