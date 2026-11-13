@@ -1,5 +1,5 @@
 # Readable projection of 32 real check annotations
-# Run 43456570072 (head 498d18d9855488d903a563438c6798385ab15bb2) — Native Linux x64 / direct clang++ — check-run 131992341961
+# Run 43464600922 (head 6f2811d81f9ef16c2b044b016c5b369d7969ba4f) — Native Linux x64 / direct clang++ — check-run 132020224464
 # Reversed into execution order; message text is quoted verbatim, not fabricated.
 # Excerpts only: complete step logs live in the uploaded evidence artifact.
 
@@ -39,7 +39,7 @@ compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
 PASS 20 independent native headers
 
 == [notice] PLPT Linux
-BUILD SUCCESS mode=asan elapsed_seconds=103 headless=0 core_only=0
+BUILD SUCCESS mode=asan elapsed_seconds=155 headless=0 core_only=0
 
 == [notice] PLPT Linux
 Native Linux tests mode=asan
@@ -72,7 +72,7 @@ TEST SUMMARY passed=16 skipped=0 mode=asan
 compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
 
 == [notice] PLPT Linux
-BUILD SUCCESS mode=debug elapsed_seconds=63 headless=0 core_only=0
+BUILD SUCCESS mode=debug elapsed_seconds=107 headless=0 core_only=0
 
 == [notice] PLPT Linux
 compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
@@ -81,7 +81,7 @@ compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
 PASS 20 independent native headers
 
 == [notice] PLPT Linux
-BUILD SUCCESS mode=debug elapsed_seconds=80 headless=0 core_only=0
+BUILD SUCCESS mode=debug elapsed_seconds=130 headless=0 core_only=0
 
 == [notice] PLPT Linux
 Native Linux tests mode=debug
@@ -114,7 +114,7 @@ TEST SUMMARY passed=16 skipped=0 mode=debug
 compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
 
 == [notice] PLPT Linux
-BUILD SUCCESS mode=release elapsed_seconds=93 headless=0 core_only=0
+BUILD SUCCESS mode=release elapsed_seconds=137 headless=0 core_only=0
 
 == [notice] PLPT Linux
 compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
@@ -123,7 +123,7 @@ compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
 PASS 20 independent native headers
 
 == [notice] PLPT Linux
-BUILD SUCCESS mode=release elapsed_seconds=111 headless=0 core_only=0
+BUILD SUCCESS mode=release elapsed_seconds=162 headless=0 core_only=0
 
 == [notice] PLPT Linux
 Native Linux tests mode=release
@@ -174,7 +174,7 @@ compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
 PASS 20 independent native headers
 
 == [notice] PLPT Linux
-BUILD SUCCESS mode=release elapsed_seconds=112 headless=0 core_only=0
+BUILD SUCCESS mode=release elapsed_seconds=162 headless=0 core_only=0
 
 == [notice] PLPT Linux
 Native Linux tests mode=release
@@ -204,23 +204,23 @@ desktop-runtime: SDL=3004020 video=x11 renderer=software
 TEST SUMMARY passed=16 skipped=0 mode=release
 
 == [notice] PLPT Linux
-PACKAGE SHA256 683558bd8bc657045f3f96cba3c895cce4fd230a2b0d0b49f9975a5fa6891628  /home/runner/work/Local-test-share/Local-test-share/out/linux/packages/PLPT-0.1.0-preview-linux-x64.tar.gz
+PACKAGE SHA256 4ed6bbd81290b79b832b306336984a6baed2d434bce9a5f17098c0518c422a9e  /home/runner/work/Local-test-share/Local-test-share/out/linux/packages/PLPT-0.1.0-preview-linux-x64.tar.gz
 
 == [notice] PLPT Linux
-runtime dependencies: 	linux-vdso.so.1 (0x00007ff53b864000)
-	libSDL3.so.0 => /home/runner/work/Local-test-share/Local-test-share/out/linux/packages/check/PLPT/bin/libSDL3.so.0 (0x00007ff53b400000)
-	libstdc++.so.6 => /lib/x86_64-linux-gnu/libstdc++.so.6 (0x00007ff53b000000)
-	libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007ff53b673000)
-	libgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007ff53b645000)
-	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007ff53ac00000)
-	libX11.so.6 => /lib/x86_64-linux-gnu/libX11.so.6 (0x00007ff53b2c2000)
-	libXext.so.6 => /lib/x86_64-linux-gnu/libXext.so.6 (0x00007ff53b62f000)
-	/lib64/ld-linux-x86-64.so.2 (0x00007ff53b866000)
-	libxcb.so.1 => /lib/x86_64-linux-gnu/libxcb.so.1 (0x00007ff53b299000)
-	libXau.so.6 => /lib/x86_64-linux-gnu/libXau.so.6 (0x00007ff53b629000)
-	libXdmcp.so.6 => /lib/x86_64-linux-gnu/libXdmcp.so.6 (0x00007ff53b621000)
-	libbsd.so.0 => /lib/x86_64-linux-gnu/libbsd.so.0 (0x00007ff53b283000)
-	libmd.so.0 => /lib/x86_64-linux-gnu/libmd.so.0 (0x00007ff53b610000)
+runtime dependencies: 	linux-vdso.so.1 (0x00007f7740755000)
+	libSDL3.so.0 => /home/runner/work/Local-test-share/Local-test-share/out/linux/packages/check/PLPT/bin/libSDL3.so.0 (0x00007f7740400000)
+	libstdc++.so.6 => /lib/x86_64-linux-gnu/libstdc++.so.6 (0x00007f7740000000)
+	libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007f7740317000)
+	libgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007f774061f000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f773fc00000)
+	libX11.so.6 => /lib/x86_64-linux-gnu/libX11.so.6 (0x00007f773fec2000)
+	libXext.so.6 => /lib/x86_64-linux-gnu/libXext.so.6 (0x00007f7740303000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007f7740757000)
+	libxcb.so.1 => /lib/x86_64-linux-gnu/libxcb.so.1 (0x00007f77402da000)
+	libXau.so.6 => /lib/x86_64-linux-gnu/libXau.so.6 (0x00007f7740617000)
+	libXdmcp.so.6 => /lib/x86_64-linux-gnu/libXdmcp.so.6 (0x00007f77402d2000)
+	libbsd.so.0 => /lib/x86_64-linux-gnu/libbsd.so.0 (0x00007f77402bc000)
+	libmd.so.0 => /lib/x86_64-linux-gnu/libmd.so.0 (0x00007f77402ad000)
 
 == [notice] PLPT Linux
 PASS native Release package extracted and executed

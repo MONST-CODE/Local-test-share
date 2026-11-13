@@ -13,14 +13,14 @@ from Linux cross-compilation. Skipped capabilities stay skipped and say why.
 
 | Identity | Value |
 |---|---|
-| Qualified branch head | **`498d18d9855488d903a563438c6798385ab15bb2`** |
-| PR | [#3](https://github.com/MONST-CODE/Local-test-share/pull/3), **draft, open, `merged=false`**, 9 commits, 23 files, +1387/−386 |
-| Run | [43456570072](https://github.com/MONST-CODE/Local-test-share/actions/runs/43456570072), attempt 1, **completed / success** |
-| Windows job / check | **131992341565**, `windows-2022`, **success** (17 steps green, 2 capability-gated steps skipped) |
-| Linux job / check | **131992341961**, `ubuntu-24.04`, **success** |
-| PR checkout (GitHub test merge) | `e5b0993806b4d7bf6124ca0f7fae7630b3062732`, parents `3b62b48` + `498d18d` |
-| Test-merge tree | `21c8096091dfa7676ebab19fb35a5b4930a0d6c3` |
-| `git rev-parse 498d18d^{tree}` | `21c8096091dfa7676ebab19fb35a5b4930a0d6c3` — **identical**, so the job compiled exactly this head's tracked inputs and no main drift is hidden in it |
+| Qualified branch head | **`6f2811d81f9ef16c2b044b016c5b369d7969ba4f`** |
+| PR | [#3](https://github.com/MONST-CODE/Local-test-share/pull/3), **draft, open, `merged=false`**, 10 commits, 48 files, +5987/−386 |
+| Run | [43464600922](https://github.com/MONST-CODE/Local-test-share/actions/runs/43464600922), attempt 1, **completed / success**, 2026-11-13T16:37:35Z → 16:53:17Z |
+| Windows job / check | **132020224029**, `windows-2022`, **success** (17 steps green, 2 capability-gated steps skipped), 45 annotations |
+| Linux job / check | **132020224464**, `ubuntu-24.04`, **success** (17 steps green), 32 annotations |
+| PR checkout (GitHub test merge) | `181bd9fb47bd7d346332f6106517ff5ca98b56ca`, parents `3b62b48` + `6f2811d` |
+| Test-merge tree | `2911b548ebd1c345abf35efbdfbeff792a3f993d` |
+| `git rev-parse 6f2811d^{tree}` | `2911b548ebd1c345abf35efbdfbeff792a3f993d` — **identical**, so the job compiled exactly this head's tracked inputs and no main drift is hidden in it |
 
 The PR checkout is a GitHub-generated test merge, **not an assistant merge into
 main**. Main was never modified; no force push, history rewrite or branch switch
@@ -30,8 +30,8 @@ Uploaded evidence bundles (metadata from the API; see §12 for the access limit)
 
 | Artifact | ID / bytes | GitHub-reported digest | Expires (UTC) |
 |---|---|---|---|
-| `ucrt64-windows-evidence` | **14053704998** / **23,030,751** | `sha256:4a91ea17701d24fa5a5e779d6ec57d83e778cce91415a95d7ddad7fc0373109f` | 2026-11-27T16:00:30Z |
-| `direct-linux-evidence` | **14055555707** / **1,816,127** | `sha256:23e93335d391b49918dc2b1fd424760cff74f1408755d59b286ff77a85e3c055` | 2026-11-27T16:01:01Z |
+| `ucrt64-windows-evidence` | **14057619750** / **23,035,998** | `sha256:f98987790bdaf4ccbf66bb967abe767efe1c63731ac5c736455d1d1bd5d8c005` | 2026-11-27T16:46:48Z |
+| `direct-linux-evidence` | **14059775955** / **1,818,998** | `sha256:2596acb1540c3eae6ee7a01c69ab056f45d24d5a2bb7d6b4a46105bc1e6f0052` | 2026-11-27T16:53:13Z |
 
 ## 2. Commands actually executed on native Windows
 
@@ -164,12 +164,18 @@ No `SDL3.lib`, no VC SDL ZIP, no CMake/Ninja/Make for either dependency.
 
 | Operation (as CI ran it) | Output directory | Result |
 |---|---|---|
-| `cmd.exe /d /c build.bat debug` | `out\windows\debug\bin` | `BUILD SUCCESS mode=debug elapsed_centiseconds=4941 core_only=0` (49.41 s) |
-| `cmd.exe /d /c build.bat test` | `out\windows\tests\debug\bin` | `BUILD SUCCESS mode=debug elapsed_centiseconds=7831` (78.31 s) + `TEST SUMMARY passed=14 skipped=0 mode=debug` |
-| `call build.bat test debug --native-ui` | `out\windows\tests\debug\bin` | `BUILD SUCCESS mode=debug elapsed_centiseconds=7786` (77.86 s) + `TEST SUMMARY passed=15 skipped=0 mode=debug` |
-| `cmd.exe /d /c build.bat release` | `out\windows\release\bin` | `BUILD SUCCESS mode=release elapsed_centiseconds=6078` (60.78 s) |
-| `call build.bat test release --native-ui` | `out\windows\tests\release\bin` | `BUILD SUCCESS mode=release elapsed_centiseconds=9092` (90.92 s) + `TEST SUMMARY passed=15 skipped=0 mode=release` |
-| `call build.bat package` (fresh Release rebuild after `clean`) | `out\windows\release\bin` | `BUILD SUCCESS mode=release elapsed_centiseconds=9032` (90.32 s) + `TEST SUMMARY passed=15 skipped=0 mode=release` |
+| `cmd.exe /d /c build.bat debug` | `out\windows\debug\bin` | `BUILD SUCCESS mode=debug elapsed_centiseconds=4518 core_only=0` (45.18 s) |
+| `cmd.exe /d /c build.bat test` | `out\windows\tests\debug\bin` | `BUILD SUCCESS mode=debug elapsed_centiseconds=6958` (69.58 s) + `TEST SUMMARY passed=14 skipped=0 mode=debug` |
+| `call build.bat test debug --native-ui` | `out\windows\tests\debug\bin` | `BUILD SUCCESS mode=debug elapsed_centiseconds=6834` (68.34 s) + `TEST SUMMARY passed=15 skipped=0 mode=debug` |
+| `cmd.exe /d /c build.bat release` | `out\windows\release\bin` | `BUILD SUCCESS mode=release elapsed_centiseconds=5727` (57.27 s) |
+| `call build.bat test release --native-ui` | `out\windows\tests\release\bin` | `BUILD SUCCESS mode=release elapsed_centiseconds=8025` (80.25 s) + `TEST SUMMARY passed=15 skipped=0 mode=release` |
+| `call build.bat package` (fresh Release rebuild after `clean`) | `out\windows\release\bin` | `BUILD SUCCESS mode=release elapsed_centiseconds=7948` (79.48 s) + `TEST SUMMARY passed=15 skipped=0 mode=release` |
+
+The same head was also qualified one run earlier
+([43456570072](https://github.com/MONST-CODE/Local-test-share/actions/runs/43456570072)
+at `498d18d`), which was the first complete native UCRT64 pass; its timings were
+49.41 / 78.31 / 77.86 / 60.78 / 90.92 / 90.32 s and its ZIP digest differs only
+because the packaged reports did. Both runs are retained in the evidence directory.
 
 Each operation deletes its output directory first (`:fresh`), recompiles every
 translation unit from source with `-std=c++20 -pthread -D_WIN32_WINNT=0x0A00`,
@@ -279,7 +285,7 @@ Package, extraction and execution:
 
 ```text
 SHA256 hash of D:\a\Local-test-share\Local-test-share\out\windows\packages\PLPT-0.1.0-preview-windows-ucrt64-x64.zip:
-8b8618e2a8ab719aa0bcb17821b72cfe024b1743d3370ca462c5b0675d697c00
+e916f2f6e327187045f817dc107000cb088099aedbfa27ca1db3c282aef891ca
 CertUtil: -hashfile command completed successfully.
 PASS UCRT64 Release ZIP extracted and executed using native Windows video with system-only PATH
 ```
@@ -319,7 +325,7 @@ The job itself started from a fresh `actions/checkout`, i.e. a clean checkout bu
 | Item | Status | Reason (measured, not assumed) |
 |---|---|---|
 | ASan/UBSan memory regressions on Windows | **SKIPPED** (workflow step not run; `build.bat test asan` exits 77) | MSYS2's `mingw-w64-ucrt-x86_64-clang 23.1.5-1` ships **no ASan runtime**: `compiler-rt-runtime-bin: none`, and the resource directory contains only `libclang_rt.builtins-x86_64.a`, `libclang_rt.fuzzer-x86_64.a`, `libclang_rt.fuzzer_interceptors-x86_64.a`, `libclang_rt.fuzzer_no_main-x86_64.a`, `libclang_rt.profile-x86_64.a`, `libclang_rt.profile_rocm-x86_64.a`, `liborc_rt-x86_64.a`. Doctor records `asan-dll=; asan-import-lib=;` and `ASan available=false`. This is **not** a memory-safety pass; Linux ASan/UBSan coverage remains the memory gate (§11). |
-| libFuzzer on Windows | **SKIPPED** (`build.bat fuzz` exits 77; step not run) | The capability probe (`tests/build/fuzzer_capability_probe.cpp`, compiled `-fsanitize=fuzzer-no-link`, linked `-fsanitize=fuzzer`, run once) did not produce a running binary, so the qualifying run recorded `fuzzer-link-flags=-fsanitize=fuzzer`, `fuzzer-probe=NOT-RUNNING; fuzz stays SKIP, see the retained command log` and `ASan available=false; libFuzzer available=false`. clang's MinGW toolchain support mask (`clang/lib/Driver/ToolChains/MinGW.cpp`, `getSupportedSanitizers`) enables Address/PointerCompare/PointerSubtract/Vptr but **not** `Fuzzer`, so the shipped `libclang_rt.fuzzer-x86_64.a` is not usable through the owner's `clang++` driver. Using it another way would mean bypassing the mandated driver and is not done. The head following this snapshot retains the compiler's own diagnostic for that probe in the evidence annotation. Linux runs the real 20,000-execution libFuzzer gate. |
+| libFuzzer on Windows | **SKIPPED** (`build.bat fuzz` exits 77; step not run) | The capability probe (`tests/build/fuzzer_capability_probe.cpp`, compiled `-fsanitize=fuzzer-no-link`, linked `-fsanitize=fuzzer`, run once) did not produce a running binary, so the qualifying run recorded `fuzzer-link-flags=-fsanitize=fuzzer`, the compiler's own diagnostic `clang++: error: unsupported option '-fsanitize=fuzzer-no-link' for target 'x86_64-w64-windows-gnu'`, `fuzzer-probe=UNAVAILABLE; native fuzz stays SKIP, never PASS` and `ASan available=false; libFuzzer available=false`. clang's MinGW toolchain support mask (`clang/lib/Driver/ToolChains/MinGW.cpp`, `getSupportedSanitizers`) enables Address/PointerCompare/PointerSubtract/Vptr but **not** `Fuzzer`, so the shipped `libclang_rt.fuzzer-x86_64.a` is not usable through the owner's `clang++` driver. Using it another way would mean bypassing the mandated driver and is not done. That diagnostic is retained verbatim in `windows-actions/qualification-excerpts.log`. Linux runs the real 20,000-execution libFuzzer gate. |
 | Interactive VS Code editor UI | **NOT TESTED** | `PASS native VS Code task/config contract; interactive editor UI not tested`. The contract test parses `.vscode/tasks.json` and `.vscode/c_cpp_properties.json`, asserts `compilerPath` is `C:/msys64/ucrt64/bin/clang++.exe`, C++20 mode, UCRT64 include discovery, `--no-default-config`, and that all four tasks delegate to `cmd /d /c build.bat …`; the same four command lines were then executed natively. Clicking tasks in the editor, the IntelliSense extension host, and editor-side diagnostics UI are outside automated CI. |
 | Real GPU/display, DPI scaling, IME, multi-monitor, per-monitor DPI change | **NOT TESTED** | The runner session provides a software renderer; `video=windows` proves a genuine Win32 window and message loop, not GPU acceleration or DPI behaviour on the owner's hardware. |
 | Signed installer / Authenticode | **NOT DONE** | Packages remain unsigned development ZIP archives, as before. |
@@ -341,13 +347,14 @@ and are reported as skipped by GitHub itself.
 dependency SHA256 e6a9c4e75de8fe719f922dddc208627f77754a502909f457a1355981f20c21e0 SDL-f00dc919ca35b9756316e86c4777392de442f9b2.tar.gz
 dependency SHA256 b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859.tar.gz
 PASS 20 independent native headers
-BUILD SUCCESS mode=asan elapsed_seconds=103 headless=0 core_only=0   → TEST SUMMARY passed=16 skipped=0 mode=asan
-BUILD SUCCESS mode=debug elapsed_seconds=63 / 80                      → TEST SUMMARY passed=16 skipped=0 mode=debug
-BUILD SUCCESS mode=release elapsed_seconds=93 / 111                   → TEST SUMMARY passed=16 skipped=0 mode=release
+compiler Ubuntu clang version 18.1.3 (1ubuntu1); target=x86_64-pc-linux-gnu
+BUILD SUCCESS mode=asan elapsed_seconds=155 headless=0 core_only=0   → TEST SUMMARY passed=16 skipped=0 mode=asan
+BUILD SUCCESS mode=debug elapsed_seconds=107 / 130                    → TEST SUMMARY passed=16 skipped=0 mode=debug
+BUILD SUCCESS mode=release elapsed_seconds=137 / 162                  → TEST SUMMARY passed=16 skipped=0 mode=release
 PASS native libFuzzer + ASan/UBSan: 20000 executions
 SELFTEST PASS: compiler/compile/link/hash failure propagation
-BUILD SUCCESS mode=release elapsed_seconds=112 (package rebuild)      → TEST SUMMARY passed=16 skipped=0
-PACKAGE SHA256 683558bd8bc657045f3f96cba3c895cce4fd230a2b0d0b49f9975a5fa6891628 PLPT-0.1.0-preview-linux-x64.tar.gz
+BUILD SUCCESS mode=release elapsed_seconds=162 (package rebuild)      → TEST SUMMARY passed=16 skipped=0
+PACKAGE SHA256 4ed6bbd81290b79b832b306336984a6baed2d434bce9a5f17098c0518c422a9e PLPT-0.1.0-preview-linux-x64.tar.gz
 PASS native Release package extracted and executed
 ```
 
@@ -369,8 +376,8 @@ and a real 20,000-execution libFuzzer run, including `ui-native-x11` and
 | 8. SDL3 headers and UCRT64 import library link | PASS — `libSDL3.dll.a`, `PASS SDL3 GNU import library …`, runtime `SDL=3004020` |
 | 9. Dear ImGui compiles and links with SDL3 | PASS — core + SDL3 + SDLRenderer3 backends compiled directly |
 | 10. Native desktop window opens and shuts down | PASS — `ui-native-windows exit=0`, `video=windows renderer=software` |
-| 11. Debug build succeeds | PASS — 49.41 s from a fresh checkout |
-| 12. Release build succeeds | PASS — 60.78 s |
+| 11. Debug build succeeds | PASS — 45.18 s from a fresh checkout |
+| 12. Release build succeeds | PASS — 57.27 s |
 | 13. Test execution successful | PASS — `passed=15 skipped=0` in Debug and Release |
 | 14. Error-path tests pass | PASS — CLI exit 2 cases, `ui-driver-error`/`ui-file-error` exit 1 |
 | 15. Package extraction and execution succeed | PASS — `fc /b` identical, executed with system-only PATH |

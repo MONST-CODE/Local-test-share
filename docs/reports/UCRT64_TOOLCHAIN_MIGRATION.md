@@ -264,3 +264,50 @@ native fuzzer was reported as unavailable. Now:
 - ASan memory regressions remain an honest SKIP (`exit 77`, never a PASS) with the
   file listing above as the reason, and the fuzz notice states whether address
   instrumentation was active.
+
+## 8. Qualification outcome
+
+Run [43464600922](https://github.com/MONST-CODE/Local-test-share/actions/runs/43464600922)
+at head `6f2811d81f9ef16c2b044b016c5b369d7969ba4f` completed **success on both
+platforms**: `Native Windows UCRT64 / owner clang++` (job 132020224029,
+`windows-2022`, 17 steps green, 2 capability-gated steps skipped) and
+`Native Linux x64 / direct clang++` (job 132020224464, `ubuntu-24.04`, 17 steps
+green). The GitHub test-merge tree `2911b548ebd1c345abf35efbdfbeff792a3f993d` is
+identical to `git rev-parse 6f2811d^{tree}`, so the runner compiled exactly this
+head's tracked inputs.
+
+Native Windows facts produced by `build.bat` alone, with no Microsoft SDK, no
+Visual Studio initialization and no standalone LLVM:
+
+- compiler `C:\msys64\ucrt64\bin\clang++.exe`, `clang version 23.1.5`,
+  `Target: x86_64-w64-windows-gnu`, GNU ld 2.47.20260726, GNU libstdc++ 16.2.0;
+- C++20/x64/thread/BCrypt probe executed, `probe-exit-code=PASS`;
+- SDL3 `mingw-w64-ucrt-x86_64-sdl3 3.4.20-1` verified against the owner's archive
+  digest and byte-compared once installed; ImGui 1.93.0 compiled directly;
+- Debug 45.18 s, Release 57.27 s, `TEST SUMMARY passed=15 skipped=0` in both,
+  including a real Win32 window (`video=windows renderer=software`);
+- selftest negatives (missing root, `CLANG64`, compiler override, compile/link/hash
+  failures, exit 23) all fail as required; clean, then a full Release rebuild and
+  retest inside `package`;
+- `PLPT-0.1.0-preview-windows-ucrt64-x64.zip`
+  `e916f2f6e327187045f817dc107000cb088099aedbfa27ca1db3c282aef891ca`, extracted,
+  `fc /b` identical, then executed with `PATH=%SystemRoot%\System32;%SystemRoot%`.
+
+Two capabilities are honestly unavailable on this toolchain and stay SKIP:
+
+- **ASan/UBSan** — MSYS2's UCRT64 clang installs no `libclang_rt.asan_*` runtime;
+  the doctor prints the actual compiler-rt contents as the reason.
+- **libFuzzer** — the archive is installed, but the driver itself refuses it:
+  `clang++: error: unsupported option '-fsanitize=fuzzer-no-link' for target
+  'x86_64-w64-windows-gnu'`. clang's MinGW toolchain enables Address,
+  PointerCompare, PointerSubtract and Vptr, not Fuzzer. Reaching the shipped
+  `libclang_rt.fuzzer-x86_64.a` another way would mean bypassing the mandated
+  `clang++` driver, so it is not done. Linux keeps the real 20,000-execution
+  libFuzzer + ASan/UBSan gate.
+
+Full commands, outputs, the runtime DLL closure with per-DLL package owners and
+digests, the requirement-by-requirement table and the remaining limits are in
+`UCRT64_WINDOWS_VALIDATION.md`; dependency provenance and licensing categories are
+in `UCRT64_DEPENDENCIES.md`; raw records are in
+`evidence/ucrt64-2026-11-13/`. The earlier Microsoft/SDK Windows qualification is
+retained and explicitly marked a superseded toolchain profile.

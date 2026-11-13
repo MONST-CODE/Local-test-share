@@ -1,8 +1,8 @@
 # MSYS2 UCRT64 dependency ledger
 
 Date: 2026-11-13. **Natively qualified** by run
-[43456570072](https://github.com/MONST-CODE/Local-test-share/actions/runs/43456570072)
-on `windows-2022` with MSYS2 UCRT64 `clang++.exe`; see
+[43464600922](https://github.com/MONST-CODE/Local-test-share/actions/runs/43464600922)
+(head `6f2811d`) on `windows-2022` with MSYS2 UCRT64 `clang++.exe`; see
 `UCRT64_WINDOWS_VALIDATION.md` and `evidence/ucrt64-2026-11-13/`.
 Only `build.bat` defines Windows dependencies/compiler flags and project operations.
 
