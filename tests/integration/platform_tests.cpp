@@ -14,6 +14,14 @@
 #include "engine/platform/native.hpp"
 #include "engine/discovery/monitor.hpp"
 #include "engine/port_allocator/port_allocator.hpp"
+#include <chrono>
+#include <thread>
+#include "engine/core/clock.hpp"
+#include "engine/core/secrets.hpp"
+#include "engine/net/discovery.hpp"
+#include "engine/net/guest_client.hpp"
+#include "engine/net/host_server.hpp"
+#include "engine/net/proxy.hpp"
 
 using namespace plpt;
 namespace {
@@ -197,6 +205,426 @@ void repeated_allocation_releases_fds() {
     CHECK_EQ(fd_count(), before);
 }
 #endif
+
+// ---- Réseau LAN réel : plan de contrôle, plan de données, découverte. ----
+// Tous les ports sont éphémères et toutes les adresses en loopback : ces cas sont
+// exécutables en CI sans aucun privilège ni configuration réseau particulière.
+using namespace std::chrono_literals;
+using namespace plpt::net;
+
+namespace {
+// Amont minimal : répond une fois par connexion, puis ferme. Sert à qualifier le
+// proxy sans dépendre d'un binaire externe.
+class TinyUpstream {
+public:
+    bool start(std::string body) {
+        body_ = std::move(body);
+        auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4);
+        if (!created) return false;
+        listener_ = std::move(created).value();
+        if (!listener_.bind(IpAddress::loopback(IpFamily::Ipv4), Port{0})) return false;
+        auto bound = listener_.bound_port();
+        if (!bound) return false;
+        port_ = bound.value().value;
+        if (!listener_.listen(8)) return false;
+        // Non bloquant : un accept() bloquant ne se réveille pas de façon fiable
+        // quand la socket est fermée depuis un autre thread (arrêt impossible).
+        if (!listener_.set_nonblocking(true)) return false;
+        worker_ = std::jthread([this](std::stop_token token) { run(token); });
+        return true;
+    }
+    void stop() {
+        if (worker_.joinable()) { worker_.request_stop(); }
+        listener_.close();
+        if (worker_.joinable()) worker_.join();
+    }
+    std::uint16_t port() const { return port_; }
+    unsigned served() const { return served_; }
+private:
+    void run(std::stop_token token) {
+        while (!token.stop_requested()) {
+            IpAddress peer; Port peer_port{};
+            auto accepted = listener_.accept(&peer, &peer_port);
+            if (!accepted) {
+                if (accepted.error().code == ErrorCode::WouldBlock) { std::this_thread::sleep_for(20ms); continue; }
+                return;
+            }
+            auto socket = std::move(accepted).value();
+            std::vector<std::uint8_t> buffer(4096);
+            std::string request;
+            const auto deadline = std::chrono::steady_clock::now() + 3000ms;
+            while (std::chrono::steady_clock::now() < deadline && request.find("\r\n\r\n") == std::string::npos) {
+                auto received = socket.receive(buffer);
+                if (!received || received.value() == 0) break;
+                request.append(reinterpret_cast<const char*>(buffer.data()), received.value());
+            }
+            // La ligne de requête est renvoyée dans le corps : cela prouve que le
+            // proxy transmet la requête originale, jeton compris, sans la réécrire.
+            const auto request_line = request.substr(0, request.find("\r\n"));
+            const std::string payload = body_ + "\n" + request_line;
+            const auto response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " +
+                std::to_string(payload.size()) + "\r\nConnection: close\r\n\r\n" + payload;
+            (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(response.data()), response.size()}, 2000ms);
+            socket.close();
+            ++served_;
+        }
+    }
+    Socket listener_;
+    std::jthread worker_;
+    std::string body_;
+    std::uint16_t port_ = 0;
+    unsigned served_ = 0;
+};
+} // namespace
+
+void lan_control_plane_host_and_guest() {
+    SystemClock clock;
+    auto generated = generate_invite_code(); REQUIRE(generated);
+    const InviteCode code = generated.value();
+    HostConfig config;
+    config.session_name = "Session intégration";
+    config.host_name = "hôte-test";
+    config.bind_address = IpAddress::loopback(IpFamily::Ipv4);
+    config.max_participants = 2;
+    config.approval_required = true;
+    config.heartbeat_interval_ms = 200;
+    config.inactivity_timeout_ms = 5000;
+    config.auth_timeout_ms = 3000;
+    config.approval_timeout_ms = 5000;
+    config.invite_code = code;
+    HostServer host(clock);
+    auto started = host.start(config); REQUIRE(started);
+    CHECK(started.value() != 0);
+
+    // Code erroné : refus explicite, jamais d'admission silencieuse.
+    {
+        GuestConfig wrong;
+        wrong.address = IpAddress::loopback(IpFamily::Ipv4);
+        wrong.control_port = started.value();
+        wrong.guest_name = "intrus";
+        wrong.invite_code = generate_invite_code().value();
+        GuestClient intruder(clock);
+        REQUIRE(intruder.start(wrong));
+        CHECK(intruder.wait_for([](const GuestSnapshot& snapshot) { return snapshot.phase == GuestPhase::Refused; }, 5s));
+        CHECK_EQ(std::string(guest_phase_text(intruder.snapshot()->phase)), std::string("refusé"));
+        intruder.stop();
+    }
+
+    // Code valide : attente d'autorisation, puis admission sur décision de l'hôte.
+    GuestConfig alice_config;
+    alice_config.address = IpAddress::loopback(IpFamily::Ipv4);
+    alice_config.control_port = started.value();
+    alice_config.guest_name = "Alice";
+    alice_config.invite_code = code;
+    alice_config.heartbeat_interval_ms = 200;
+    GuestClient alice(clock);
+    REQUIRE(alice.start(alice_config));
+    REQUIRE(alice.wait_for([](const GuestSnapshot& snapshot) { return snapshot.phase == GuestPhase::AwaitingApproval; }, 5s));
+    REQUIRE(host.wait_for([](const HostSnapshot& snapshot) { return snapshot.pending.size() == 1; }, 5s));
+    {
+        const auto view = host.snapshot();
+        CHECK_EQ(view->pending[0].guest_name, std::string("Alice"));
+        CHECK_EQ(view->invite_code, code.text);   // affiché à l'hôte, jamais annoncé sur le LAN.
+        CHECK_EQ(view->pending[0].client, std::string("PLPT 1.1"));
+    }
+    // Services publiés : port exposé et URL à jeton, pas le port local.
+    auto token = generate_service_token(); REQUIRE(token);
+    {
+        std::vector<SharedServiceRecord> services;
+        SharedServiceRecord record;
+        record.key = 1; record.label = "Démo HTTP"; record.local_port = 43210; record.exposed_port = 43211;
+        record.token = token.value();
+        record.url = "http://127.0.0.1:43211/?plpt=" + token.value();
+        services.push_back(record);
+        CHECK(host.set_services(services));
+    }
+    CHECK(host.approve(host.snapshot()->pending[0].request_id));
+    REQUIRE(alice.wait_for([](const GuestSnapshot& snapshot) { return snapshot.phase == GuestPhase::Connected; }, 5s));
+    REQUIRE(alice.wait_for([](const GuestSnapshot& snapshot) { return !snapshot.services.empty(); }, 5s));
+    {
+        const auto view = alice.snapshot();
+        CHECK(view->self.value != 0);
+        CHECK_EQ(view->session_name, std::string("Session intégration"));
+        CHECK_EQ(view->host_name, std::string("hôte-test"));
+        CHECK_EQ(view->services[0].exposed_port, 43211);
+        CHECK(view->services[0].url.find("plpt=") != std::string::npos);
+        CHECK(view->services[0].url.find(token.value()) != std::string::npos);
+    }
+    CHECK(host.wait_for([](const HostSnapshot& snapshot) { return snapshot.participants.size() == 1; }, 5s));
+
+    // Second invité, messagerie générale et privée relayées par l'autorité hôte.
+    GuestConfig bob_config = alice_config; bob_config.guest_name = "Bob";
+    GuestClient bob(clock);
+    REQUIRE(bob.start(bob_config));
+    REQUIRE(bob.wait_for([](const GuestSnapshot& snapshot) { return snapshot.phase == GuestPhase::AwaitingApproval; }, 5s));
+    CHECK(host.approve(host.snapshot()->pending[0].request_id));
+    REQUIRE(bob.wait_for([](const GuestSnapshot& snapshot) { return snapshot.phase == GuestPhase::Connected; }, 5s));
+    CHECK(host.wait_for([](const HostSnapshot& snapshot) { return snapshot.participants.size() == 2; }, 5s));
+    CHECK(host.post_chat("Bonjour depuis l'hôte"));
+    CHECK(alice.wait_for([](const GuestSnapshot& snapshot) {
+        for (const auto& line : snapshot.chat) if (line.body == "Bonjour depuis l'hôte") return true;
+        return false;
+    }, 5s));
+    const auto alice_id = alice.snapshot()->self;
+    CHECK(bob.post_chat("Message de Bob"));
+    CHECK(alice.wait_for([](const GuestSnapshot& snapshot) {
+        for (const auto& line : snapshot.chat) if (line.body == "Message de Bob" && line.sender_name == "Bob") return true;
+        return false;
+    }, 5s));
+    CHECK(bob.post_direct_message(alice_id, "Privé pour Alice"));
+    CHECK(alice.wait_for([](const GuestSnapshot& snapshot) {
+        for (const auto& line : snapshot.chat) if (line.body == "Privé pour Alice" && line.direct) return true;
+        return false;
+    }, 5s));
+    // Un message privé n'est jamais rediffusé sur le canal général.
+    CHECK(!bob.wait_for([](const GuestSnapshot& snapshot) {
+        for (const auto& line : snapshot.chat) if (line.body == "Privé pour Alice" && !line.direct) return true;
+        return false;
+    }, 400ms));
+    CHECK(!bob.post_direct_message(ParticipantId{4242}, "inconnu")); // pair absent de la liste publiée.
+    CHECK(!bob.post_direct_message(bob.snapshot()->self, "soi-même"));
+    // Battements : la latence mesurée est un aller-retour réel, jamais une estimation.
+    CHECK(alice.wait_for([](const GuestSnapshot& snapshot) { return snapshot.counters.frames_received >= 4; }, 5s));
+
+    // Capacité atteinte : l'admission est refusée et le motif traverse le réseau.
+    GuestConfig third_config = alice_config; third_config.guest_name = "Trop";
+    GuestClient third(clock);
+    REQUIRE(third.start(third_config));
+    REQUIRE(third.wait_for([](const GuestSnapshot& snapshot) { return snapshot.phase == GuestPhase::AwaitingApproval; }, 5s));
+    CHECK(host.approve(host.snapshot()->pending[0].request_id));
+    CHECK(third.wait_for([](const GuestSnapshot& snapshot) { return snapshot.phase == GuestPhase::Refused; }, 5s));
+    CHECK_EQ(third.snapshot()->status_text, std::string("capacité atteinte"));
+
+    // Révocation : l'invité perd l'accès immédiatement, l'hôte voit l'état.
+    CHECK(host.revoke(alice_id));
+    CHECK(alice.wait_for([](const GuestSnapshot& snapshot) { return snapshot.phase == GuestPhase::Disconnected; }, 5s));
+    CHECK(host.wait_for([&](const HostSnapshot& snapshot) {
+        for (const auto& participant : snapshot.participants)
+            if (participant.id == alice_id) return participant.state == plpt::model::ParticipantState::Revoked;
+        return false;
+    }, 5s));
+    CHECK(!alice.post_chat("après révocation"));
+
+    // Journal et compteurs réels ; aucun secret en clair.
+    {
+        const auto view = host.snapshot();
+        CHECK(view->counters.admitted >= 2);
+        CHECK(view->counters.bad_codes >= 1);
+        CHECK(view->counters.denied >= 1);
+        CHECK(view->counters.revoked == 1);
+        CHECK(view->counters.chat_relayed >= 3);
+        CHECK(!view->events.empty());
+        for (const auto& event : view->events) {
+            CHECK(event.find(code.text) == std::string::npos);
+            CHECK(event.find(token.value()) == std::string::npos);
+        }
+    }
+    third.stop(); bob.stop(); alice.stop();
+    host.stop();
+    CHECK(!host.running());
+    const auto final_view = host.snapshot();
+    CHECK(final_view->state == plpt::model::SessionState::Closed);
+    CHECK_EQ(final_view->connection_count, 0U);
+}
+
+void lan_data_plane_proxy_token_gate() {
+    SystemClock clock;
+    TinyUpstream upstream;
+    REQUIRE(upstream.start("contenu réel du service local"));
+    auto token = generate_service_token(); REQUIRE(token);
+    ProxyConfig config;
+    config.label = "Démo HTTP";
+    config.bind_address = IpAddress::loopback(IpFamily::Ipv4);
+    config.upstream_address = IpAddress::loopback(IpFamily::Ipv4);
+    config.upstream_port = upstream.port();
+    config.token = token.value();
+    config.handshake_timeout_ms = 3000;
+    config.idle_timeout_ms = 20000;
+    ServiceProxy proxy(clock);
+    auto started = proxy.start(config); REQUIRE(started);
+    CHECK(proxy.probe_upstream());
+    REQUIRE(proxy.wait_for([](const ProxySnapshot& snapshot) { return snapshot.upstream_alive; }, 5s));
+    CHECK_EQ(proxy.snapshot()->upstream, "127.0.0.1:" + std::to_string(upstream.port()));
+    CHECK(proxy.snapshot()->url.find(token.value()) != std::string::npos);
+
+    const auto request = [&](const std::string& target, const std::string& headers) {
+        auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4);
+        if (!created) return std::string();
+        auto socket = std::move(created).value();
+        if (!connect_with_timeout(socket, IpAddress::loopback(IpFamily::Ipv4), Port{started.value()}, 3s)) return std::string();
+        const std::string text = "GET " + target + " HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n" + headers + "\r\n";
+        if (!write_all(socket, {reinterpret_cast<const std::uint8_t*>(text.data()), text.size()}, 3s)) return std::string();
+        std::string raw; std::vector<std::uint8_t> buffer(8192);
+        const auto deadline = std::chrono::steady_clock::now() + 4s;
+        while (std::chrono::steady_clock::now() < deadline) {
+            auto received = socket.receive(buffer);
+            if (!received || received.value() == 0) break;
+            raw.append(reinterpret_cast<const char*>(buffer.data()), received.value());
+        }
+        socket.close();
+        return raw;
+    };
+    {
+        const auto response = request("/?plpt=" + token.value(), "");
+        CHECK(response.find("HTTP/1.1 200") == 0);
+        CHECK(response.find("contenu réel du service local") != std::string::npos);
+        CHECK(response.find("/?plpt=") != std::string::npos); // requête transmise telle quelle.
+    }
+    {
+        const auto response = request("/", "");
+        CHECK(response.find("HTTP/1.1 403") == 0);
+        CHECK(response.find("Content-Length: ") != std::string::npos);
+    }
+    {
+        const auto response = request("/?plpt=00000000000000000000000000000000", "");
+        CHECK(response.find("HTTP/1.1 403") == 0);
+    }
+    CHECK(request("/", "X-PLPT-Token: " + token.value() + "\r\n").find("HTTP/1.1 200") == 0);
+    CHECK(request("/", "Cookie: plpt=" + token.value() + "\r\n").find("HTTP/1.1 200") == 0);
+    // Requête sans fin d'en-têtes : le proxy répond et ferme, il n'attend pas indéfiniment.
+    {
+        auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4); REQUIRE(created);
+        auto socket = std::move(created).value();
+        REQUIRE(connect_with_timeout(socket, IpAddress::loopback(IpFamily::Ipv4), Port{started.value()}, 3s));
+        const std::string partial = "GET / HTTP/1.1\r\nHost: x\r\n";
+        REQUIRE(write_all(socket, {reinterpret_cast<const std::uint8_t*>(partial.data()), partial.size()}, 3s));
+        socket.close();
+        CHECK(proxy.wait_for([](const ProxySnapshot& snapshot) { return snapshot.counters.connections_total >= 6; }, 5s));
+    }
+    {
+        const auto view = proxy.snapshot();
+        CHECK(view->counters.authorized >= 3);
+        CHECK(view->counters.refused >= 2);
+        CHECK(view->counters.bytes_to_upstream > 0);
+        CHECK(view->counters.bytes_to_guest > 0);
+        for (const auto& event : view->events) CHECK(event.find(token.value()) == std::string::npos);
+    }
+    proxy.stop();
+    CHECK(!proxy.running());
+
+    // Amont injoignable : 502 explicite, jamais un silence ni un faux succès.
+    {
+        ProxyConfig dead = config;
+        dead.label = "Service éteint";
+        dead.upstream_port = 1;   // port fermé : connexion refusée garantie.
+        ServiceProxy dead_proxy(clock);
+        auto dead_started = dead_proxy.start(dead); REQUIRE(dead_started);
+        auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4); REQUIRE(created);
+        auto socket = std::move(created).value();
+        REQUIRE(connect_with_timeout(socket, IpAddress::loopback(IpFamily::Ipv4), Port{dead_started.value()}, 3s));
+        const std::string text = "GET /?plpt=" + token.value() + " HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n";
+        REQUIRE(write_all(socket, {reinterpret_cast<const std::uint8_t*>(text.data()), text.size()}, 3s));
+        std::string raw; std::vector<std::uint8_t> buffer(4096);
+        const auto deadline = std::chrono::steady_clock::now() + 4s;
+        while (std::chrono::steady_clock::now() < deadline) {
+            auto received = socket.receive(buffer);
+            if (!received || received.value() == 0) break;
+            raw.append(reinterpret_cast<const char*>(buffer.data()), received.value());
+        }
+        socket.close();
+        CHECK(raw.find("HTTP/1.1 502") == 0);
+        CHECK(dead_proxy.wait_for([](const ProxySnapshot& snapshot) {
+            return !snapshot.upstream_alive && snapshot.counters.upstream_failures >= 1;
+        }, 5s));
+        dead_proxy.stop();
+    }
+    upstream.stop();
+}
+
+void lan_discovery_announce_and_listen() {
+    SystemClock clock;
+    // Écoute en loopback sur un port éphémère : ni multicast ni port de production,
+    // donc exécutable en CI sans privilège ni configuration réseau.
+    DiscoveryListener::Config listen_config;
+    listen_config.bind = IpAddress::loopback(IpFamily::Ipv4);
+    listen_config.port = Port{0};
+    listen_config.join_multicast = false;
+    listen_config.allow_broadcast = false;
+    DiscoveryListener listener(clock);
+    REQUIRE(listener.start(listen_config));
+    const auto bound = listener.bound_port();
+    REQUIRE(bound.value != 0);
+
+    Announcement announcement;
+    announcement.session_id = 987654;
+    announcement.session_name = "Session découverte";
+    announcement.host_name = "hôte-test";
+    announcement.control_port = 40000;
+    announcement.participants = 2;
+    announcement.max_participants = 5;
+    announcement.shared_services = 1;
+    announcement.accepting = true;
+    announcement.sequence = 1;
+    announcement.wall_ms = clock.now_wall_ms();
+
+    Announcer::Config announce_config;
+    announce_config.announcement = announcement;
+    announce_config.source = IpAddress::loopback(IpFamily::Ipv4);
+    announce_config.extra_targets.push_back({IpAddress::loopback(IpFamily::Ipv4), bound});
+    announce_config.interval_ms = 250;
+    Announcer announcer(clock);
+    REQUIRE(announcer.start(announce_config));
+    REQUIRE(announcer.send_now());
+    CHECK(listener.wait_for_sessions(1, 5s));
+    auto view = listener.snapshot();
+    REQUIRE(view);
+    REQUIRE(!view->empty());
+    const auto& session = (*view)[0];
+    CHECK_EQ(session.session_name, std::string("Session découverte"));
+    CHECK_EQ(session.host_name, std::string("hôte-test"));
+    CHECK_EQ(session.control_port, 40000);
+    CHECK_EQ(session.participants, 2);
+    CHECK_EQ(session.max_participants, 5);
+    CHECK_EQ(session.shared_services, 1);
+    CHECK(session.accepting);
+    CHECK_EQ(session.address.text, std::string("127.0.0.1")); // adresse OBSERVÉE, jamais celle annoncée.
+    CHECK_EQ(session.session_id, 987654U);
+    CHECK(!session.manual);
+    CHECK(listener.accepted_datagrams() >= 1);
+
+    // Déduplication : une seconde annonce de la même session ne crée pas d'entrée.
+    REQUIRE(announcer.send_now());
+    std::this_thread::sleep_for(500ms);
+    view = listener.snapshot();
+    REQUIRE(view);
+    CHECK_EQ(view->size(), 1U);
+    announcer.stop();
+
+    // Datagrammes illisibles : comptés comme rejetés, l'écoute continue.
+    {
+        auto junk = Socket::create(TransportProtocol::Udp, IpFamily::Ipv4);
+        REQUIRE(junk);
+        auto sender = std::move(junk).value();
+        const std::string garbage = "PAS-UNE-ANNONCE-PLPT";
+        for (int index = 0; index < 3; ++index)
+            (void)sender.send_to(IpAddress::loopback(IpFamily::Ipv4), bound,
+                {reinterpret_cast<const std::uint8_t*>(garbage.data()), garbage.size()});
+        std::this_thread::sleep_for(400ms);
+        CHECK(listener.rejected_datagrams() >= 3);
+        view = listener.snapshot();
+        REQUIRE(view);
+        CHECK_EQ(view->size(), 1U); // la session valide survit au bruit.
+        sender.close();
+    }
+
+    // Saisie manuelle : secours sans découverte, sans identifiant de session.
+    listener.inject_manual(IpAddress::loopback(IpFamily::Ipv4), Port{40001}, "session saisie à la main");
+    view = listener.snapshot();
+    REQUIRE(view);
+    CHECK_EQ(view->size(), 2U);
+    bool found_manual = false;
+    for (const auto& entry : *view) {
+        if (!entry.manual) continue;
+        found_manual = true;
+        CHECK_EQ(entry.session_id, 0U);
+        CHECK_EQ(entry.session_name, std::string("session saisie à la main"));
+        CHECK_EQ(entry.control_port, 40001);
+        CHECK(!entry.expired(clock.now_monotonic_ms() + 60000)); // une saisie manuelle n'expire pas.
+    }
+    CHECK(found_manual);
+    listener.stop();
+    CHECK(!listener.running());
+}
 }
 int main(int argc, char** argv) {
     if (argc == 2 && std::string_view(argv[1]) == "--ipv6") {
@@ -210,5 +638,7 @@ int main(int argc, char** argv) {
 #ifndef _WIN32
     CASE(proc_parsers_and_fixtures); CASE(repeated_allocation_releases_fds);
 #endif
+    CASE(lan_control_plane_host_and_guest); CASE(lan_data_plane_proxy_token_gate);
+    CASE(lan_discovery_announce_and_listen);
     return plpt_test::finish("platform");
 }

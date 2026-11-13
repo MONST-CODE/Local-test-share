@@ -139,20 +139,29 @@ toolchain() {
         local metadata; metadata=$(cat "$info"); notice "native environment: ${metadata//$'\n'/%0A}"
     fi
 }
-# Explicit PLPT targets; models are linked ONLY to unit tests, never the monitor/UI.
-CORE_SOURCES=(engine/core/random.cpp engine/diagnostics/audit.cpp
+# Explicit PLPT targets. The CLI monitor stays model-free; the desktop control
+# post and the tests link the session models and the real LAN networking.
+CORE_SOURCES=(engine/core/random.cpp engine/core/digest.cpp engine/core/secrets.cpp
+    engine/core/format.cpp engine/diagnostics/audit.cpp
     engine/discovery/process_tree.cpp engine/discovery/terminal_classifier.cpp
     engine/discovery/monitor.cpp engine/service_registry/registry.cpp
-    engine/port_allocator/port_allocator.cpp engine/platform/linux/linux_platform.cpp)
+    engine/port_allocator/port_allocator.cpp engine/platform/socket.cpp
+    engine/platform/linux/linux_platform.cpp)
 MODEL_SOURCES=(engine/session/session.cpp engine/messaging/messaging.cpp
     engine/protocol/envelope.cpp engine/resource_manager/resource.cpp)
+# Real networking: control plane (host/guest), discovery, data plane (proxy).
+NET_SOURCES=(engine/net/wire.cpp engine/net/discovery.cpp engine/net/host_server.cpp
+    engine/net/guest_client.cpp engine/net/proxy.cpp)
 IMGUI_SOURCES=(imgui.cpp imgui_draw.cpp imgui_tables.cpp imgui_widgets.cpp
     backends/imgui_impl_sdl3.cpp backends/imgui_impl_sdlrenderer3.cpp)
 HEADERS=(
     engine/browser/browser.hpp
     engine/core/clock.hpp
+    engine/core/digest.hpp
+    engine/core/format.hpp
     engine/core/random.hpp
     engine/core/result.hpp
+    engine/core/secrets.hpp
     engine/core/text.hpp
     engine/core/types.hpp
     engine/diagnostics/audit.hpp
@@ -160,14 +169,20 @@ HEADERS=(
     engine/discovery/process_tree.hpp
     engine/discovery/terminal_classifier.hpp
     engine/messaging/messaging.hpp
+    engine/net/chat.hpp
+    engine/net/discovery.hpp
+    engine/net/guest_client.hpp
+    engine/net/host_server.hpp
+    engine/net/proxy.hpp
+    engine/net/wire.hpp
     engine/platform/native.hpp
     engine/platform/platform.hpp
+    engine/platform/socket.hpp
     engine/port_allocator/port_allocator.hpp
     engine/protocol/envelope.hpp
     engine/resource_manager/resource.hpp
     engine/service_registry/registry.hpp
     engine/session/session.hpp
-    engine/transport/transport.hpp
     engine/platform/linux/linux_platform.hpp)
 # SDL has no official Linux binary development archive for 3.4.20. These are
 # explicit sources of our small POSIX + X11/software (or explicit dummy) profile.
@@ -360,7 +375,9 @@ compile_cpp() {
 link_cpp() {
     local output=$1; shift
     say "Linking: $output"
-    run "$CXX" "${VERBOSE_FLAG[@]}" "${MODEFLAGS[@]}" "${SAN[@]}" -pthread "$@" "${EXTRA_LINK[@]}" -o "$output"
+    # -ldl : engine/core/digest.cpp charge un fournisseur OpenSSL par dlopen quand
+    # AF_ALG est indisponible. -pthread : std::jthread des services réseau.
+    run "$CXX" "${VERBOSE_FLAG[@]}" "${MODEFLAGS[@]}" "${SAN[@]}" -pthread "$@" "${EXTRA_LINK[@]}" -ldl -o "$output"
     [[ -x $output ]] || fail "linker returned success without executable: $output"
 }
 build_sdl() {
@@ -390,12 +407,22 @@ build_project() {
     fresh "$DIR"; BIN="$DIR/bin"; run mkdir -p "$BIN" "$DIR/objects"
     toolchain; dependencies; configure_flags
     say "Compilation started: $MODE, clean deterministic objects (no cache)"
-    COMMON_OBJECTS=(); MODEL_OBJECTS=(); GUI_OBJECTS=()
+    COMMON_OBJECTS=(); MODEL_OBJECTS=(); NET_OBJECTS=(); GUI_OBJECTS=()
     for source in "${CORE_SOURCES[@]}"; do
         object="$DIR/objects/${source//\//_}.o"; compile_cpp "$source" "$object"; COMMON_OBJECTS+=("$object")
     done
+    # Modèles et réseau compilés une seule fois : le poste de contrôle et les tests
+    # en ont besoin, le moniteur CLI reste lié sans eux.
+    if (( ! CORE_ONLY )) || (( tests )); then
+        for source in "${MODEL_SOURCES[@]}" "${NET_SOURCES[@]}"; do
+            object="$DIR/objects/${source//\//_}.o"; compile_cpp "$source" "$object"
+            case $source in engine/net/*) NET_OBJECTS+=("$object");; *) MODEL_OBJECTS+=("$object");; esac
+        done
+    fi
     compile_cpp app/host_shell/main.cpp "$DIR/objects/cli.o"
     link_cpp "$BIN/plpt-monitor" "${COMMON_OBJECTS[@]}" "$DIR/objects/cli.o"
+    compile_cpp app/demo_service/main.cpp "$DIR/objects/demo.o"
+    link_cpp "$BIN/plpt-demo-service" "${COMMON_OBJECTS[@]}" "$DIR/objects/demo.o"
     if (( ! CORE_ONLY )); then
         build_sdl
         for source in "${IMGUI_SOURCES[@]}"; do
@@ -406,16 +433,13 @@ build_project() {
             [[ -f $object ]] || fail "missing ImGui object $object"; GUI_OBJECTS+=("$object")
         done
         compile_cpp app/desktop_ui/main.cpp "$DIR/objects/desktop.o" -isystem "$IMGUI_ROOT" -isystem "$IMGUI_ROOT/backends" -isystem "$SDL_ROOT/include"
-        link_cpp "$BIN/plpt-desktop" "${COMMON_OBJECTS[@]}" "${GUI_OBJECTS[@]}" "$DIR/objects/desktop.o" "$BIN/libSDL3.so.0" '-Wl,-rpath,$ORIGIN'
+        link_cpp "$BIN/plpt-desktop" "${COMMON_OBJECTS[@]}" "${MODEL_OBJECTS[@]}" "${NET_OBJECTS[@]}" "${GUI_OBJECTS[@]}" "$DIR/objects/desktop.o" "$BIN/libSDL3.so.0" '-Wl,-rpath,$ORIGIN'
     fi
     if (( tests )); then
-        for source in "${MODEL_SOURCES[@]}"; do
-            object="$DIR/objects/${source//\//_}.o"; compile_cpp "$source" "$object"; MODEL_OBJECTS+=("$object")
-        done
         compile_cpp tests/unit/test_main.cpp "$DIR/objects/unit.o"
-        link_cpp "$BIN/plpt-unit-tests" "${COMMON_OBJECTS[@]}" "${MODEL_OBJECTS[@]}" "$DIR/objects/unit.o"
+        link_cpp "$BIN/plpt-unit-tests" "${COMMON_OBJECTS[@]}" "${MODEL_OBJECTS[@]}" "${NET_OBJECTS[@]}" "$DIR/objects/unit.o"
         compile_cpp tests/integration/platform_tests.cpp "$DIR/objects/platform.o"
-        link_cpp "$BIN/plpt-platform-tests" "${COMMON_OBJECTS[@]}" "$DIR/objects/platform.o"
+        link_cpp "$BIN/plpt-platform-tests" "${COMMON_OBJECTS[@]}" "${MODEL_OBJECTS[@]}" "${NET_OBJECTS[@]}" "$DIR/objects/platform.o"
         for source in "${HEADERS[@]}"; do
             printf '#include "%s"\n' "$source" > "$DIR/header-probe.cpp"
             say "Independent header: $source"
@@ -495,7 +519,7 @@ package() {
     fresh "$stage"; mkdir -p "$stage/PLPT/bin" "$stage/PLPT/docs/reports" "$stage/PLPT/licenses"
     run cp packaging/README.md "$stage/PLPT/README.md"
     run cp docs/reports/BUILD_DEPENDENCIES.md "$stage/PLPT/docs/reports/"
-    run cp "$BIN/plpt-monitor" "$BIN/plpt-desktop" "$BIN/libSDL3.so.0" "$stage/PLPT/bin/"
+    run cp "$BIN/plpt-monitor" "$BIN/plpt-desktop" "$BIN/plpt-demo-service" "$BIN/libSDL3.so.0" "$stage/PLPT/bin/"
     run cp docs/BUILD.md docs/SECURITY.md docs/QUICKSTART.md "$stage/PLPT/docs/"
     run cp third_party/DEPENDENCIES.md "$stage/PLPT/docs/"
     run cp third_party/licenses/SDL3.txt third_party/licenses/ImGui.txt third_party/licenses/Bundled-notices.txt "$stage/PLPT/licenses/"

@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <string_view>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -9,8 +10,37 @@ namespace plpt {
 enum class ErrorCode {
     Ok, InvalidArgument, NotFound, AlreadyExists, PermissionDenied, Expired,
     Replayed, RateLimited, CapacityExceeded, InvalidState, ProtocolViolation,
-    UnsupportedVersion, Unsupported, IoError, PlatformError, Cancelled, Internal
+    UnsupportedVersion, Unsupported, IoError, PlatformError, Cancelled, Internal,
+    // Réseau réel : trois états qui ne sont ni des succès ni des fautes.
+    WouldBlock, TimedOut, Disconnected, Unauthorized, TooLarge
 };
+inline std::string_view to_string(ErrorCode code) {
+    switch (code) {
+    case ErrorCode::Ok: return "Ok";
+    case ErrorCode::InvalidArgument: return "InvalidArgument";
+    case ErrorCode::NotFound: return "NotFound";
+    case ErrorCode::AlreadyExists: return "AlreadyExists";
+    case ErrorCode::PermissionDenied: return "PermissionDenied";
+    case ErrorCode::Expired: return "Expired";
+    case ErrorCode::Replayed: return "Replayed";
+    case ErrorCode::RateLimited: return "RateLimited";
+    case ErrorCode::CapacityExceeded: return "CapacityExceeded";
+    case ErrorCode::InvalidState: return "InvalidState";
+    case ErrorCode::ProtocolViolation: return "ProtocolViolation";
+    case ErrorCode::UnsupportedVersion: return "UnsupportedVersion";
+    case ErrorCode::Unsupported: return "Unsupported";
+    case ErrorCode::IoError: return "IoError";
+    case ErrorCode::PlatformError: return "PlatformError";
+    case ErrorCode::Cancelled: return "Cancelled";
+    case ErrorCode::Internal: return "Internal";
+    case ErrorCode::WouldBlock: return "WouldBlock";
+    case ErrorCode::TimedOut: return "TimedOut";
+    case ErrorCode::Disconnected: return "Disconnected";
+    case ErrorCode::Unauthorized: return "Unauthorized";
+    case ErrorCode::TooLarge: return "TooLarge";
+    }
+    return "Unknown";
+}
 struct Error {
     ErrorCode code = ErrorCode::Ok;
     std::string message; // Diagnostic technique, jamais du contenu non fiable.

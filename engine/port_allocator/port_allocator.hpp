@@ -1,13 +1,11 @@
 #pragma once
 #include <cstdint>
-#include <limits>
+#include <utility>
 #include "../core/types.hpp"
 #include "../core/result.hpp"
+#include "../platform/socket.hpp" // NativeSocket / kInvalidSocket : une seule définition.
 namespace plpt {
 enum class BindScope { Loopback, Lan };
-// uintptr_t conserve SOCKET (UINT_PTR) sur Windows x64. Aucun int tronqué.
-using NativeSocket = std::uintptr_t;
-inline constexpr NativeSocket kInvalidSocket = std::numeric_limits<NativeSocket>::max();
 class ReservedListener {
 public:
     ReservedListener() = default;
