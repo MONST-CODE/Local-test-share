@@ -203,3 +203,64 @@ profile, installs only the pinned UCRT64 packages, then invokes `build.bat` for
 every project operation from ordinary `cmd.exe`. No Visual Studio initialization,
 no Windows SDK, no Program Files LLVM. The Linux job is unchanged, so the
 correction cannot regress `build.sh`.
+
+### 7. GNU-specific corrections found by real native execution
+
+Two defects only the GNU toolchain exposes were found by running `build.bat` on
+native Windows and are now fixed in the script itself.
+
+**Windows-subsystem entry point.** The Debug build linked `plpt-monitor.exe`
+(console) and then failed on `plpt-desktop.exe`:
+
+```text
+C:\msys64\ucrt64\bin\ld.exe: C:/msys64/ucrt64/lib/libmingw32.a(lib64_libmingw32_a-crtexewin.o):
+crtexewin.c:(.text.startup+0xc6): undefined reference to `WinMain'
+clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+```
+
+Cause, verified against the actual sources of this toolchain:
+
+- `app/desktop_ui/main.cpp` includes `<SDL3/SDL_main.h>`, so SDL3's header-only
+  `SDL_main_impl.h` renames the application's `main` to `SDL_main` and supplies
+  the platform entry point itself.
+- That impl supplies `main`/`wmain` **only for `_MSC_VER`**; for MinGW it supplies
+  only `wWinMain` when `UNICODE` is defined (which this build always defines).
+- clang's MinGW driver passes `crt2.o` unless `-municode` is given. `crt2.o`
+  (mingw-w64 `crtexe.c`) resolves `_tmain` to the ANSI `main`, which the
+  application no longer defines, so GNU ld pulled `libmingw32.a`'s ANSI
+  `crtexewin.o` wrapper, which then demanded ANSI `WinMain`.
+
+Fix: link every windows-subsystem target with `-mwindows -municode`. clang then
+passes `crt2u.o` (`ucrtexe.c`, compiled with `_UNICODE`), whose `_tmain` is
+`wmain`; ld resolves it from `libmingw32.a`'s `ucrtexewin.o`, which calls
+`wWinMain` — the exact entry SDL3 provides. SDL's own Windows `SDL_RunApp()`
+(`src/main/windows/SDL_sysmain_runapp.c`) rebuilds a real UTF-8 `argc`/`argv`
+from `GetCommandLineW()` when SDL provides the entry, so argument parsing, the
+`--smoke-test`/`--screenshot` tests and error paths are unchanged. No application
+source was modified, no `SDL_main` renaming was fought, and `-DUNICODE`/`-D_UNICODE`
+are preserved so every Win32 call stays wide-char/UTF-16 rather than silently
+downgrading to the ANSI code page.
+
+**libFuzzer availability was coupled to ASan.** The doctor now records the real
+compiler-rt contents instead of assuming filenames. On this toolchain:
+
+```text
+compiler-rt-runtime-bin: none
+compiler-rt-resource-libs: libclang_rt.builtins-x86_64.a libclang_rt.fuzzer-x86_64.a
+  libclang_rt.fuzzer_interceptors-x86_64.a libclang_rt.fuzzer_no_main-x86_64.a
+  libclang_rt.profile-x86_64.a libclang_rt.profile_rocm-x86_64.a liborc_rt-x86_64.a
+asan-dll=; asan-import-lib=; fuzzer-lib=C:\msys64\ucrt64\lib\clang\23\lib\windows\libclang_rt.fuzzer-x86_64.a
+```
+
+MSYS2's UCRT64 `mingw-w64-ucrt-x86_64-clang 23.1.5-1` ships libFuzzer but **no
+ASan runtime**. The previous script required ASan before fuzzing, so a working
+native fuzzer was reported as unavailable. Now:
+
+- the fuzz operation has its own `-O1 -g` profile and does not depend on ASan;
+- ASan is added back automatically when the toolchain really provides it;
+- `libFuzzer available=true` only after `tests/build/fuzzer_capability_probe.cpp`
+  is compiled with `-fsanitize=fuzzer-no-link`, linked with the recorded
+  `fuzzer-link-flags`, and executed once;
+- ASan memory regressions remain an honest SKIP (`exit 77`, never a PASS) with the
+  file listing above as the reason, and the fuzz notice states whether address
+  instrumentation was active.
