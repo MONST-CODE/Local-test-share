@@ -1,0 +1,1420 @@
+# Readable projection of 44 real check annotations
+# Run 43456570072 (head 498d18d9855488d903a563438c6798385ab15bb2) — Native Windows UCRT64 / owner clang++ — check-run 131992341565
+# Reversed into execution order; message text is quoted verbatim, not fabricated.
+# Excerpts only: complete step logs live in the uploaded evidence artifact.
+
+== [notice] PLPT Windows dependency
+SHA256 4a44381560c433ff42da3a6aff788fba2bba84a44b7f63ea396dec9c1cf79f78 mingw-w64-ucrt-x86_64-sdl3-3.4.20-1-any.pkg.tar.zst
+
+== [notice] PLPT Windows dependency
+SHA256 4a44381560c433ff42da3a6aff788fba2bba84a44b7f63ea396dec9c1cf79f78 mingw-w64-ucrt-x86_64-sdl3-3.4.20-1-any.pkg.tar.zst
+
+== [notice] PLPT Windows dependency
+SHA256 b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859.tar.gz
+
+== [notice] PLPT UCRT64 dependencies
+PASS installed SDL3 3.4.20-1 headers and both GNU libraries and DLL match verified package bytes
+
+== [notice] PLPT Windows evidence
+PROFILE=MSYS2 UCRT64 root="C:\msys64"
+compiler=C:\msys64\ucrt64\bin\clang++.exe
+PATH=C:\msys64\ucrt64\bin;C:\Windows\System32;C:\Windows
+compiler-exact=C:\msys64\ucrt64\bin\clang++.exe
+clang version 23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/msys64/ucrt64/bin
+x86_64-w64-windows-gnu
+programs: =C:/msys64/ucrt64/bin
+libraries: =C:/msys64/ucrt64/lib/clang/23;C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0;C:/msys64/ucrt64/x86_64-w64-mingw32/lib;C:/msys64/ucrt64/x86_64-w64-mingw32/mingw/lib;C:/msys64/ucrt64/lib
+default-linker=C:/msys64/ucrt64/bin/ld; explicit-linker=C:\msys64\ucrt64\bin\ld.exe
+GNU ld (GNU Binutils) 2.47.20260726
+Copyright (C) 2026 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or (at your option) a later version.
+This program has absolutely no warranty.
+libstdc++.dll.a=C:/msys64/ucrt64/lib/libstdc++.dll.a
+libucrt.a=C:/msys64/ucrt64/lib/libucrt.a
+libws2_32.a=C:/msys64/ucrt64/lib/libws2_32.a
+libiphlpapi.a=C:/msys64/ucrt64/lib/libiphlpapi.a
+libbcrypt.a=C:/msys64/ucrt64/lib/libbcrypt.a
+libkernel32.a=C:/msys64/ucrt64/lib/libkernel32.a
+libuser32.a=C:/msys64/ucrt64/lib/libuser32.a
+libgdi32.a=C:/msys64/ucrt64/lib/libgdi32.a
+libshell32.a=C:/msys64/ucrt64/lib/libshell32.a
+ C:/msys64/ucrt64/include/c++/16.2.0
+ C:/msys64/ucrt64/include/c++/16.2.0/x86_64-w64-mingw32
+ C:/msys64/ucrt64/include/c++/16.2.0/backward
+ C:/msys64/ucrt64/lib/clang/23/include
+ C:/msys64/ucrt64/include
+mingw-w64-ucrt-x86_64-clang 23.1.5-1
+mingw-w64-ucrt-x86_64-headers 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-crt 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-binutils 2.47-4
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+toolchain-probe: selected compiler=C:\msys64\ucrt64\bin\clang++.exe
+toolchain-probe: MSYS2 UCRT64, GNU ABI, clang=23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725), C++=202002, pointer=8, libstdc++=20260807, GCC=16, _UCRT=1
+runtime: ucrtbase.dll=C:\Windows\System32\ucrtbase.dll
+runtime: libstdc++-6.dll=C:\msys64\ucrt64\bin\libstdc++-6.dll
+runtime: libwinpthread-1.dll=C:\msys64\ucrt64\bin\libwinpthread-1.dll
+probe-exit-code=PASS native C++20/x64/thread/BCrypt, no MSVC headers
+compiler-rt-runtime-bin:
+none
+compiler-rt-resource-libs:
+libclang_rt.builtins-x86_64.a
+libclang_rt.fuzzer-x86_64.a
+libclang_rt.fuzzer_interceptors-x86_64.a
+libclang_rt.fuzzer_no_main-x86_64.a
+libclang_rt.profile-x86_64.a
+libclang_rt.profile_rocm-x86_64.a
+liborc_rt-x86_64.a
+asan-dll=; asan-import-lib=; fuzzer-lib=C:\msys64\ucrt64\lib\clang\23\lib\windows\libclang_rt.fuzzer-x86_64.a
+fuzzer-link-flags=-fsanitize=fuzzer
+fuzzer-probe=NOT-RUNNING; fuzz stays SKIP, see the retained command log
+ASan available=false; libFuzzer available=false
+
+== [notice] PLPT Windows evidence
+PROFILE=MSYS2 UCRT64 root="C:\msys64"
+compiler=C:\msys64\ucrt64\bin\clang++.exe
+PATH=C:\msys64\ucrt64\bin;C:\Windows\System32;C:\Windows
+compiler-exact=C:\msys64\ucrt64\bin\clang++.exe
+clang version 23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/msys64/ucrt64/bin
+x86_64-w64-windows-gnu
+programs: =C:/msys64/ucrt64/bin
+libraries: =C:/msys64/ucrt64/lib/clang/23;C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0;C:/msys64/ucrt64/x86_64-w64-mingw32/lib;C:/msys64/ucrt64/x86_64-w64-mingw32/mingw/lib;C:/msys64/ucrt64/lib
+default-linker=C:/msys64/ucrt64/bin/ld; explicit-linker=C:\msys64\ucrt64\bin\ld.exe
+GNU ld (GNU Binutils) 2.47.20260726
+Copyright (C) 2026 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or (at your option) a later version.
+This program has absolutely no warranty.
+libstdc++.dll.a=C:/msys64/ucrt64/lib/libstdc++.dll.a
+libucrt.a=C:/msys64/ucrt64/lib/libucrt.a
+libws2_32.a=C:/msys64/ucrt64/lib/libws2_32.a
+libiphlpapi.a=C:/msys64/ucrt64/lib/libiphlpapi.a
+libbcrypt.a=C:/msys64/ucrt64/lib/libbcrypt.a
+libkernel32.a=C:/msys64/ucrt64/lib/libkernel32.a
+libuser32.a=C:/msys64/ucrt64/lib/libuser32.a
+libgdi32.a=C:/msys64/ucrt64/lib/libgdi32.a
+libshell32.a=C:/msys64/ucrt64/lib/libshell32.a
+ C:/msys64/ucrt64/include/c++/16.2.0
+ C:/msys64/ucrt64/include/c++/16.2.0/x86_64-w64-mingw32
+ C:/msys64/ucrt64/include/c++/16.2.0/backward
+ C:/msys64/ucrt64/lib/clang/23/include
+ C:/msys64/ucrt64/include
+mingw-w64-ucrt-x86_64-clang 23.1.5-1
+mingw-w64-ucrt-x86_64-headers 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-crt 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-binutils 2.47-4
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+toolchain-probe: selected compiler=C:\msys64\ucrt64\bin\clang++.exe
+toolchain-probe: MSYS2 UCRT64, GNU ABI, clang=23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725), C++=202002, pointer=8, libstdc++=20260807, GCC=16, _UCRT=1
+runtime: ucrtbase.dll=C:\Windows\System32\ucrtbase.dll
+runtime: libstdc++-6.dll=C:\msys64\ucrt64\bin\libstdc++-6.dll
+runtime: libwinpthread-1.dll=C:\msys64\ucrt64\bin\libwinpthread-1.dll
+probe-exit-code=PASS native C++20/x64/thread/BCrypt, no MSVC headers
+compiler-rt-runtime-bin:
+none
+compiler-rt-resource-libs:
+libclang_rt.builtins-x86_64.a
+libclang_rt.fuzzer-x86_64.a
+libclang_rt.fuzzer_interceptors-x86_64.a
+libclang_rt.fuzzer_no_main-x86_64.a
+libclang_rt.profile-x86_64.a
+libclang_rt.profile_rocm-x86_64.a
+liborc_rt-x86_64.a
+asan-dll=; asan-import-lib=; fuzzer-lib=C:\msys64\ucrt64\lib\clang\23\lib\windows\libclang_rt.fuzzer-x86_64.a
+fuzzer-link-flags=-fsanitize=fuzzer
+fuzzer-probe=NOT-RUNNING; fuzz stays SKIP, see the retained command log
+ASan available=false; libFuzzer available=false
+
+== [notice] PLPT Windows evidence
+Native UCRT64 PE dependency closure; source root=C:\msys64\ucrt64
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\ide\bin\vscode-contract.exe
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libstdc++-6.dll
+mingw-w64-ucrt-x86_64-libgcc 16.2.0-6
+SHA256 hash of C:\msys64\ucrt64\bin\libgcc_s_seh-1.dll:
+791ebf66e99c7c1b4ed3666468cec45a0172b4c8942ac6c84c3e9cab3e1b5270
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-libstdc++ 16.2.0-6
+SHA256 hash of C:\msys64\ucrt64\bin\libstdc++-6.dll:
+4e4822dc4aaa99383f581dae7ab9464ae89346c5ca742f7efbcdebe20b0fe7b5
+CertUtil: -hashfile command completed successfully.
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\ide\bin\libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+SHA256 hash of C:\msys64\ucrt64\bin\libwinpthread-1.dll:
+94a9a4e2fe27b4bc827a4b209e9deb4cc3dc34bc025df06b849144f9d4c588f8
+CertUtil: -hashfile command completed successfully.
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\ide\bin\libstdc++-6.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\ide\bin\libwinpthread-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+
+== [notice] PLPT UCRT64
+PASS native VS Code task/config contract; interactive editor UI not tested
+
+== [notice] PLPT Windows evidence
+PROFILE=MSYS2 UCRT64 root="C:\msys64"
+compiler=C:\msys64\ucrt64\bin\clang++.exe
+PATH=C:\msys64\ucrt64\bin;C:\Windows\System32;C:\Windows
+compiler-exact=C:\msys64\ucrt64\bin\clang++.exe
+clang version 23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/msys64/ucrt64/bin
+x86_64-w64-windows-gnu
+programs: =C:/msys64/ucrt64/bin
+libraries: =C:/msys64/ucrt64/lib/clang/23;C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0;C:/msys64/ucrt64/x86_64-w64-mingw32/lib;C:/msys64/ucrt64/x86_64-w64-mingw32/mingw/lib;C:/msys64/ucrt64/lib
+default-linker=C:/msys64/ucrt64/bin/ld; explicit-linker=C:\msys64\ucrt64\bin\ld.exe
+GNU ld (GNU Binutils) 2.47.20260726
+Copyright (C) 2026 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or (at your option) a later version.
+This program has absolutely no warranty.
+libstdc++.dll.a=C:/msys64/ucrt64/lib/libstdc++.dll.a
+libucrt.a=C:/msys64/ucrt64/lib/libucrt.a
+libws2_32.a=C:/msys64/ucrt64/lib/libws2_32.a
+libiphlpapi.a=C:/msys64/ucrt64/lib/libiphlpapi.a
+libbcrypt.a=C:/msys64/ucrt64/lib/libbcrypt.a
+libkernel32.a=C:/msys64/ucrt64/lib/libkernel32.a
+libuser32.a=C:/msys64/ucrt64/lib/libuser32.a
+libgdi32.a=C:/msys64/ucrt64/lib/libgdi32.a
+libshell32.a=C:/msys64/ucrt64/lib/libshell32.a
+ C:/msys64/ucrt64/include/c++/16.2.0
+ C:/msys64/ucrt64/include/c++/16.2.0/x86_64-w64-mingw32
+ C:/msys64/ucrt64/include/c++/16.2.0/backward
+ C:/msys64/ucrt64/lib/clang/23/include
+ C:/msys64/ucrt64/include
+mingw-w64-ucrt-x86_64-clang 23.1.5-1
+mingw-w64-ucrt-x86_64-headers 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-crt 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-binutils 2.47-4
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+toolchain-probe: selected compiler=C:\msys64\ucrt64\bin\clang++.exe
+toolchain-probe: MSYS2 UCRT64, GNU ABI, clang=23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725), C++=202002, pointer=8, libstdc++=20260807, GCC=16, _UCRT=1
+runtime: ucrtbase.dll=C:\Windows\System32\ucrtbase.dll
+runtime: libstdc++-6.dll=C:\msys64\ucrt64\bin\libstdc++-6.dll
+runtime: libwinpthread-1.dll=C:\msys64\ucrt64\bin\libwinpthread-1.dll
+probe-exit-code=PASS native C++20/x64/thread/BCrypt, no MSVC headers
+compiler-rt-runtime-bin:
+none
+compiler-rt-resource-libs:
+libclang_rt.builtins-x86_64.a
+libclang_rt.fuzzer-x86_64.a
+libclang_rt.fuzzer_interceptors-x86_64.a
+libclang_rt.fuzzer_no_main-x86_64.a
+libclang_rt.profile-x86_64.a
+libclang_rt.profile_rocm-x86_64.a
+liborc_rt-x86_64.a
+asan-dll=; asan-import-lib=; fuzzer-lib=C:\msys64\ucrt64\lib\clang\23\lib\windows\libclang_rt.fuzzer-x86_64.a
+fuzzer-link-flags=-fsanitize=fuzzer
+fuzzer-probe=NOT-RUNNING; fuzz stays SKIP, see the retained command log
+ASan available=false; libFuzzer available=false
+
+== [notice] PLPT UCRT64
+PASS SDL3 GNU import library and embedded asInvoker/PerMonitorV2 manifest
+
+== [notice] PLPT Windows evidence
+Native UCRT64 PE dependency closure; source root=C:\msys64\ucrt64
+PE=D:\a\Local-test-share\Local-test-share\out\windows\debug\bin\plpt-desktop.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: SDL3.dll
+	DLL Name: SHELL32.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: USER32.dll
+	DLL Name: WS2_32.dll
+mingw-w64-ucrt-x86_64-libgcc 16.2.0-6
+SHA256 hash of C:\msys64\ucrt64\bin\libgcc_s_seh-1.dll:
+791ebf66e99c7c1b4ed3666468cec45a0172b4c8942ac6c84c3e9cab3e1b5270
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+SHA256 hash of C:\msys64\ucrt64\bin\libwinpthread-1.dll:
+94a9a4e2fe27b4bc827a4b209e9deb4cc3dc34bc025df06b849144f9d4c588f8
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-sdl3 3.4.20-1
+SHA256 hash of C:\msys64\ucrt64\bin\SDL3.dll:
+fcf8a99a019c8d2ed947219e7e768aae1f9cef7219ad93c0ab0007b63db1a6f1
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-libstdc++ 16.2.0-6
+SHA256 hash of C:\msys64\ucrt64\bin\libstdc++-6.dll:
+4e4822dc4aaa99383f581dae7ab9464ae89346c5ca742f7efbcdebe20b0fe7b5
+CertUtil: -hashfile command completed successfully.
+PE=D:\a\Local-test-share\Local-test-share\out\windows\debug\bin\plpt-monitor.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\debug\bin\libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\debug\bin\libstdc++-6.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\debug\bin\libwinpthread-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\debug\bin\SDL3.dll
+	DLL Name: ADVAPI32.dll
+	DLL Name: GDI32.dll
+	DLL Name: libiconv-2.dll
+	DLL Name: IMM32.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0
+
+== [notice] PLPT Windows
+BUILD SUCCESS mode=debug elapsed_centiseconds=4941 core_only=0
+
+== [notice] PLPT Windows evidence
+PROFILE=MSYS2 UCRT64 root="C:\msys64"
+compiler=C:\msys64\ucrt64\bin\clang++.exe
+PATH=C:\msys64\ucrt64\bin;C:\Windows\System32;C:\Windows
+compiler-exact=C:\msys64\ucrt64\bin\clang++.exe
+clang version 23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/msys64/ucrt64/bin
+x86_64-w64-windows-gnu
+programs: =C:/msys64/ucrt64/bin
+libraries: =C:/msys64/ucrt64/lib/clang/23;C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0;C:/msys64/ucrt64/x86_64-w64-mingw32/lib;C:/msys64/ucrt64/x86_64-w64-mingw32/mingw/lib;C:/msys64/ucrt64/lib
+default-linker=C:/msys64/ucrt64/bin/ld; explicit-linker=C:\msys64\ucrt64\bin\ld.exe
+GNU ld (GNU Binutils) 2.47.20260726
+Copyright (C) 2026 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or (at your option) a later version.
+This program has absolutely no warranty.
+libstdc++.dll.a=C:/msys64/ucrt64/lib/libstdc++.dll.a
+libucrt.a=C:/msys64/ucrt64/lib/libucrt.a
+libws2_32.a=C:/msys64/ucrt64/lib/libws2_32.a
+libiphlpapi.a=C:/msys64/ucrt64/lib/libiphlpapi.a
+libbcrypt.a=C:/msys64/ucrt64/lib/libbcrypt.a
+libkernel32.a=C:/msys64/ucrt64/lib/libkernel32.a
+libuser32.a=C:/msys64/ucrt64/lib/libuser32.a
+libgdi32.a=C:/msys64/ucrt64/lib/libgdi32.a
+libshell32.a=C:/msys64/ucrt64/lib/libshell32.a
+ C:/msys64/ucrt64/include/c++/16.2.0
+ C:/msys64/ucrt64/include/c++/16.2.0/x86_64-w64-mingw32
+ C:/msys64/ucrt64/include/c++/16.2.0/backward
+ C:/msys64/ucrt64/lib/clang/23/include
+ C:/msys64/ucrt64/include
+mingw-w64-ucrt-x86_64-clang 23.1.5-1
+mingw-w64-ucrt-x86_64-headers 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-crt 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-binutils 2.47-4
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+toolchain-probe: selected compiler=C:\msys64\ucrt64\bin\clang++.exe
+toolchain-probe: MSYS2 UCRT64, GNU ABI, clang=23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725), C++=202002, pointer=8, libstdc++=20260807, GCC=16, _UCRT=1
+runtime: ucrtbase.dll=C:\Windows\System32\ucrtbase.dll
+runtime: libstdc++-6.dll=C:\msys64\ucrt64\bin\libstdc++-6.dll
+runtime: libwinpthread-1.dll=C:\msys64\ucrt64\bin\libwinpthread-1.dll
+probe-exit-code=PASS native C++20/x64/thread/BCrypt, no MSVC headers
+compiler-rt-runtime-bin:
+none
+compiler-rt-resource-libs:
+libclang_rt.builtins-x86_64.a
+libclang_rt.fuzzer-x86_64.a
+libclang_rt.fuzzer_interceptors-x86_64.a
+libclang_rt.fuzzer_no_main-x86_64.a
+libclang_rt.profile-x86_64.a
+libclang_rt.profile_rocm-x86_64.a
+liborc_rt-x86_64.a
+asan-dll=; asan-import-lib=; fuzzer-lib=C:\msys64\ucrt64\lib\clang\23\lib\windows\libclang_rt.fuzzer-x86_64.a
+fuzzer-link-flags=-fsanitize=fuzzer
+fuzzer-probe=NOT-RUNNING; fuzz stays SKIP, see the retained command log
+ASan available=false; libFuzzer available=false
+
+== [notice] PLPT UCRT64
+PASS SDL3 GNU import library and embedded asInvoker/PerMonitorV2 manifest
+
+== [notice] PLPT Windows
+PASS 21 independent native headers
+
+== [notice] PLPT Windows evidence
+Native UCRT64 PE dependency closure; source root=C:\msys64\ucrt64
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\debug\bin\plpt-desktop.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: SDL3.dll
+	DLL Name: SHELL32.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: USER32.dll
+	DLL Name: WS2_32.dll
+mingw-w64-ucrt-x86_64-libgcc 16.2.0-6
+SHA256 hash of C:\msys64\ucrt64\bin\libgcc_s_seh-1.dll:
+791ebf66e99c7c1b4ed3666468cec45a0172b4c8942ac6c84c3e9cab3e1b5270
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+SHA256 hash of C:\msys64\ucrt64\bin\libwinpthread-1.dll:
+94a9a4e2fe27b4bc827a4b209e9deb4cc3dc34bc025df06b849144f9d4c588f8
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-sdl3 3.4.20-1
+SHA256 hash of C:\msys64\ucrt64\bin\SDL3.dll:
+fcf8a99a019c8d2ed947219e7e768aae1f9cef7219ad93c0ab0007b63db1a6f1
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-libstdc++ 16.2.0-6
+SHA256 hash of C:\msys64\ucrt64\bin\libstdc++-6.dll:
+4e4822dc4aaa99383f581dae7ab9464ae89346c5ca742f7efbcdebe20b0fe7b5
+CertUtil: -hashfile command completed successfully.
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\debug\bin\plpt-monitor.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\debug\bin\plpt-platform-tests.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\debug\bin\plpt-unit-tests.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\debug\bin\libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL
+
+== [notice] PLPT Windows
+BUILD SUCCESS mode=debug elapsed_centiseconds=7831 core_only=0
+
+== [notice] PLPT Windows evidence
+Native Windows tests mode=debug
+PASS unit exit=0 mode=debug
+unit: 26 cases, 12449 checks, 0 failures (0 failed cases)
+PASS platform exit=0 mode=debug
+platform: 4 cases, 58 checks, 0 failures (0 failed cases)
+PASS ipv6 exit=0 mode=debug
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS cli-help exit=0 mode=debug
+PASS cli-version exit=0 mode=debug
+PASS cli-unknown exit=2 mode=debug
+PASS cli-extra exit=2 mode=debug
+PASS cli-ambiguous exit=2 mode=debug
+PASS ui-smoke exit=0 mode=debug
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-unknown exit=2 mode=debug
+PASS ui-missing-argument exit=2 mode=debug
+PASS ui-capture-requires-smoke exit=2 mode=debug
+PASS ui-driver-error exit=1 mode=debug
+PASS ui-file-error exit=1 mode=debug
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+TEST SUMMARY passed=14 skipped=0 mode=debug
+
+== [notice] PLPT Windows evidence
+PROFILE=MSYS2 UCRT64 root="C:\msys64"
+compiler=C:\msys64\ucrt64\bin\clang++.exe
+PATH=C:\msys64\ucrt64\bin;C:\Windows\System32;C:\Windows
+compiler-exact=C:\msys64\ucrt64\bin\clang++.exe
+clang version 23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/msys64/ucrt64/bin
+x86_64-w64-windows-gnu
+programs: =C:/msys64/ucrt64/bin
+libraries: =C:/msys64/ucrt64/lib/clang/23;C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0;C:/msys64/ucrt64/x86_64-w64-mingw32/lib;C:/msys64/ucrt64/x86_64-w64-mingw32/mingw/lib;C:/msys64/ucrt64/lib
+default-linker=C:/msys64/ucrt64/bin/ld; explicit-linker=C:\msys64\ucrt64\bin\ld.exe
+GNU ld (GNU Binutils) 2.47.20260726
+Copyright (C) 2026 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or (at your option) a later version.
+This program has absolutely no warranty.
+libstdc++.dll.a=C:/msys64/ucrt64/lib/libstdc++.dll.a
+libucrt.a=C:/msys64/ucrt64/lib/libucrt.a
+libws2_32.a=C:/msys64/ucrt64/lib/libws2_32.a
+libiphlpapi.a=C:/msys64/ucrt64/lib/libiphlpapi.a
+libbcrypt.a=C:/msys64/ucrt64/lib/libbcrypt.a
+libkernel32.a=C:/msys64/ucrt64/lib/libkernel32.a
+libuser32.a=C:/msys64/ucrt64/lib/libuser32.a
+libgdi32.a=C:/msys64/ucrt64/lib/libgdi32.a
+libshell32.a=C:/msys64/ucrt64/lib/libshell32.a
+ C:/msys64/ucrt64/include/c++/16.2.0
+ C:/msys64/ucrt64/include/c++/16.2.0/x86_64-w64-mingw32
+ C:/msys64/ucrt64/include/c++/16.2.0/backward
+ C:/msys64/ucrt64/lib/clang/23/include
+ C:/msys64/ucrt64/include
+mingw-w64-ucrt-x86_64-clang 23.1.5-1
+mingw-w64-ucrt-x86_64-headers 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-crt 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-binutils 2.47-4
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+toolchain-probe: selected compiler=C:\msys64\ucrt64\bin\clang++.exe
+toolchain-probe: MSYS2 UCRT64, GNU ABI, clang=23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725), C++=202002, pointer=8, libstdc++=20260807, GCC=16, _UCRT=1
+runtime: ucrtbase.dll=C:\Windows\System32\ucrtbase.dll
+runtime: libstdc++-6.dll=C:\msys64\ucrt64\bin\libstdc++-6.dll
+runtime: libwinpthread-1.dll=C:\msys64\ucrt64\bin\libwinpthread-1.dll
+probe-exit-code=PASS native C++20/x64/thread/BCrypt, no MSVC headers
+compiler-rt-runtime-bin:
+none
+compiler-rt-resource-libs:
+libclang_rt.builtins-x86_64.a
+libclang_rt.fuzzer-x86_64.a
+libclang_rt.fuzzer_interceptors-x86_64.a
+libclang_rt.fuzzer_no_main-x86_64.a
+libclang_rt.profile-x86_64.a
+libclang_rt.profile_rocm-x86_64.a
+liborc_rt-x86_64.a
+asan-dll=; asan-import-lib=; fuzzer-lib=C:\msys64\ucrt64\lib\clang\23\lib\windows\libclang_rt.fuzzer-x86_64.a
+fuzzer-link-flags=-fsanitize=fuzzer
+fuzzer-probe=NOT-RUNNING; fuzz stays SKIP, see the retained command log
+ASan available=false; libFuzzer available=false
+
+== [notice] PLPT UCRT64
+PASS SDL3 GNU import library and embedded asInvoker/PerMonitorV2 manifest
+
+== [notice] PLPT Windows
+PASS 21 independent native headers
+
+== [notice] PLPT Windows evidence
+Native UCRT64 PE dependency closure; source root=C:\msys64\ucrt64
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\debug\bin\plpt-desktop.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: SDL3.dll
+	DLL Name: SHELL32.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: USER32.dll
+	DLL Name: WS2_32.dll
+mingw-w64-ucrt-x86_64-libgcc 16.2.0-6
+SHA256 hash of C:\msys64\ucrt64\bin\libgcc_s_seh-1.dll:
+791ebf66e99c7c1b4ed3666468cec45a0172b4c8942ac6c84c3e9cab3e1b5270
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+SHA256 hash of C:\msys64\ucrt64\bin\libwinpthread-1.dll:
+94a9a4e2fe27b4bc827a4b209e9deb4cc3dc34bc025df06b849144f9d4c588f8
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-sdl3 3.4.20-1
+SHA256 hash of C:\msys64\ucrt64\bin\SDL3.dll:
+fcf8a99a019c8d2ed947219e7e768aae1f9cef7219ad93c0ab0007b63db1a6f1
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-libstdc++ 16.2.0-6
+SHA256 hash of C:\msys64\ucrt64\bin\libstdc++-6.dll:
+4e4822dc4aaa99383f581dae7ab9464ae89346c5ca742f7efbcdebe20b0fe7b5
+CertUtil: -hashfile command completed successfully.
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\debug\bin\plpt-monitor.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\debug\bin\plpt-platform-tests.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\debug\bin\plpt-unit-tests.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\debug\bin\libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL
+
+== [notice] PLPT Windows
+BUILD SUCCESS mode=debug elapsed_centiseconds=7786 core_only=0
+
+== [notice] PLPT Windows evidence
+Native Windows tests mode=debug
+PASS unit exit=0 mode=debug
+unit: 26 cases, 12449 checks, 0 failures (0 failed cases)
+PASS platform exit=0 mode=debug
+platform: 4 cases, 58 checks, 0 failures (0 failed cases)
+PASS ipv6 exit=0 mode=debug
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS cli-help exit=0 mode=debug
+PASS cli-version exit=0 mode=debug
+PASS cli-unknown exit=2 mode=debug
+PASS cli-extra exit=2 mode=debug
+PASS cli-ambiguous exit=2 mode=debug
+PASS ui-smoke exit=0 mode=debug
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-unknown exit=2 mode=debug
+PASS ui-missing-argument exit=2 mode=debug
+PASS ui-capture-requires-smoke exit=2 mode=debug
+PASS ui-driver-error exit=1 mode=debug
+PASS ui-file-error exit=1 mode=debug
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-native-windows exit=0 mode=debug
+desktop-runtime: SDL=3004020 video=windows renderer=software
+TEST SUMMARY passed=15 skipped=0 mode=debug
+
+== [notice] PLPT Windows evidence
+PROFILE=MSYS2 UCRT64 root="C:\msys64"
+compiler=C:\msys64\ucrt64\bin\clang++.exe
+PATH=C:\msys64\ucrt64\bin;C:\Windows\System32;C:\Windows
+compiler-exact=C:\msys64\ucrt64\bin\clang++.exe
+clang version 23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/msys64/ucrt64/bin
+x86_64-w64-windows-gnu
+programs: =C:/msys64/ucrt64/bin
+libraries: =C:/msys64/ucrt64/lib/clang/23;C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0;C:/msys64/ucrt64/x86_64-w64-mingw32/lib;C:/msys64/ucrt64/x86_64-w64-mingw32/mingw/lib;C:/msys64/ucrt64/lib
+default-linker=C:/msys64/ucrt64/bin/ld; explicit-linker=C:\msys64\ucrt64\bin\ld.exe
+GNU ld (GNU Binutils) 2.47.20260726
+Copyright (C) 2026 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or (at your option) a later version.
+This program has absolutely no warranty.
+libstdc++.dll.a=C:/msys64/ucrt64/lib/libstdc++.dll.a
+libucrt.a=C:/msys64/ucrt64/lib/libucrt.a
+libws2_32.a=C:/msys64/ucrt64/lib/libws2_32.a
+libiphlpapi.a=C:/msys64/ucrt64/lib/libiphlpapi.a
+libbcrypt.a=C:/msys64/ucrt64/lib/libbcrypt.a
+libkernel32.a=C:/msys64/ucrt64/lib/libkernel32.a
+libuser32.a=C:/msys64/ucrt64/lib/libuser32.a
+libgdi32.a=C:/msys64/ucrt64/lib/libgdi32.a
+libshell32.a=C:/msys64/ucrt64/lib/libshell32.a
+ C:/msys64/ucrt64/include/c++/16.2.0
+ C:/msys64/ucrt64/include/c++/16.2.0/x86_64-w64-mingw32
+ C:/msys64/ucrt64/include/c++/16.2.0/backward
+ C:/msys64/ucrt64/lib/clang/23/include
+ C:/msys64/ucrt64/include
+mingw-w64-ucrt-x86_64-clang 23.1.5-1
+mingw-w64-ucrt-x86_64-headers 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-crt 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-binutils 2.47-4
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+toolchain-probe: selected compiler=C:\msys64\ucrt64\bin\clang++.exe
+toolchain-probe: MSYS2 UCRT64, GNU ABI, clang=23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725), C++=202002, pointer=8, libstdc++=20260807, GCC=16, _UCRT=1
+runtime: ucrtbase.dll=C:\Windows\System32\ucrtbase.dll
+runtime: libstdc++-6.dll=C:\msys64\ucrt64\bin\libstdc++-6.dll
+runtime: libwinpthread-1.dll=C:\msys64\ucrt64\bin\libwinpthread-1.dll
+probe-exit-code=PASS native C++20/x64/thread/BCrypt, no MSVC headers
+compiler-rt-runtime-bin:
+none
+compiler-rt-resource-libs:
+libclang_rt.builtins-x86_64.a
+libclang_rt.fuzzer-x86_64.a
+libclang_rt.fuzzer_interceptors-x86_64.a
+libclang_rt.fuzzer_no_main-x86_64.a
+libclang_rt.profile-x86_64.a
+libclang_rt.profile_rocm-x86_64.a
+liborc_rt-x86_64.a
+asan-dll=; asan-import-lib=; fuzzer-lib=C:\msys64\ucrt64\lib\clang\23\lib\windows\libclang_rt.fuzzer-x86_64.a
+fuzzer-link-flags=-fsanitize=fuzzer
+fuzzer-probe=NOT-RUNNING; fuzz stays SKIP, see the retained command log
+ASan available=false; libFuzzer available=false
+
+== [notice] PLPT UCRT64
+PASS SDL3 GNU import library and embedded asInvoker/PerMonitorV2 manifest
+
+== [notice] PLPT Windows evidence
+Native UCRT64 PE dependency closure; source root=C:\msys64\ucrt64
+PE=D:\a\Local-test-share\Local-test-share\out\windows\release\bin\plpt-desktop.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: SDL3.dll
+	DLL Name: SHELL32.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: USER32.dll
+	DLL Name: WS2_32.dll
+mingw-w64-ucrt-x86_64-libgcc 16.2.0-6
+SHA256 hash of C:\msys64\ucrt64\bin\libgcc_s_seh-1.dll:
+791ebf66e99c7c1b4ed3666468cec45a0172b4c8942ac6c84c3e9cab3e1b5270
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+SHA256 hash of C:\msys64\ucrt64\bin\libwinpthread-1.dll:
+94a9a4e2fe27b4bc827a4b209e9deb4cc3dc34bc025df06b849144f9d4c588f8
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-sdl3 3.4.20-1
+SHA256 hash of C:\msys64\ucrt64\bin\SDL3.dll:
+fcf8a99a019c8d2ed947219e7e768aae1f9cef7219ad93c0ab0007b63db1a6f1
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-libstdc++ 16.2.0-6
+SHA256 hash of C:\msys64\ucrt64\bin\libstdc++-6.dll:
+4e4822dc4aaa99383f581dae7ab9464ae89346c5ca742f7efbcdebe20b0fe7b5
+CertUtil: -hashfile command completed successfully.
+PE=D:\a\Local-test-share\Local-test-share\out\windows\release\bin\plpt-monitor.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\release\bin\libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\release\bin\libstdc++-6.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\release\bin\libwinpthread-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\release\bin\SDL3.dll
+	DLL Name: ADVAPI32.dll
+	DLL Name: GDI32.dll
+	DLL Name: libiconv-2.dll
+	DLL Name: IMM32.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt
+
+== [notice] PLPT Windows
+BUILD SUCCESS mode=release elapsed_centiseconds=6078 core_only=0
+
+== [notice] PLPT Windows evidence
+PROFILE=MSYS2 UCRT64 root="C:\msys64"
+compiler=C:\msys64\ucrt64\bin\clang++.exe
+PATH=C:\msys64\ucrt64\bin;C:\Windows\System32;C:\Windows
+compiler-exact=C:\msys64\ucrt64\bin\clang++.exe
+clang version 23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/msys64/ucrt64/bin
+x86_64-w64-windows-gnu
+programs: =C:/msys64/ucrt64/bin
+libraries: =C:/msys64/ucrt64/lib/clang/23;C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0;C:/msys64/ucrt64/x86_64-w64-mingw32/lib;C:/msys64/ucrt64/x86_64-w64-mingw32/mingw/lib;C:/msys64/ucrt64/lib
+default-linker=C:/msys64/ucrt64/bin/ld; explicit-linker=C:\msys64\ucrt64\bin\ld.exe
+GNU ld (GNU Binutils) 2.47.20260726
+Copyright (C) 2026 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or (at your option) a later version.
+This program has absolutely no warranty.
+libstdc++.dll.a=C:/msys64/ucrt64/lib/libstdc++.dll.a
+libucrt.a=C:/msys64/ucrt64/lib/libucrt.a
+libws2_32.a=C:/msys64/ucrt64/lib/libws2_32.a
+libiphlpapi.a=C:/msys64/ucrt64/lib/libiphlpapi.a
+libbcrypt.a=C:/msys64/ucrt64/lib/libbcrypt.a
+libkernel32.a=C:/msys64/ucrt64/lib/libkernel32.a
+libuser32.a=C:/msys64/ucrt64/lib/libuser32.a
+libgdi32.a=C:/msys64/ucrt64/lib/libgdi32.a
+libshell32.a=C:/msys64/ucrt64/lib/libshell32.a
+ C:/msys64/ucrt64/include/c++/16.2.0
+ C:/msys64/ucrt64/include/c++/16.2.0/x86_64-w64-mingw32
+ C:/msys64/ucrt64/include/c++/16.2.0/backward
+ C:/msys64/ucrt64/lib/clang/23/include
+ C:/msys64/ucrt64/include
+mingw-w64-ucrt-x86_64-clang 23.1.5-1
+mingw-w64-ucrt-x86_64-headers 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-crt 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-binutils 2.47-4
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+toolchain-probe: selected compiler=C:\msys64\ucrt64\bin\clang++.exe
+toolchain-probe: MSYS2 UCRT64, GNU ABI, clang=23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725), C++=202002, pointer=8, libstdc++=20260807, GCC=16, _UCRT=1
+runtime: ucrtbase.dll=C:\Windows\System32\ucrtbase.dll
+runtime: libstdc++-6.dll=C:\msys64\ucrt64\bin\libstdc++-6.dll
+runtime: libwinpthread-1.dll=C:\msys64\ucrt64\bin\libwinpthread-1.dll
+probe-exit-code=PASS native C++20/x64/thread/BCrypt, no MSVC headers
+compiler-rt-runtime-bin:
+none
+compiler-rt-resource-libs:
+libclang_rt.builtins-x86_64.a
+libclang_rt.fuzzer-x86_64.a
+libclang_rt.fuzzer_interceptors-x86_64.a
+libclang_rt.fuzzer_no_main-x86_64.a
+libclang_rt.profile-x86_64.a
+libclang_rt.profile_rocm-x86_64.a
+liborc_rt-x86_64.a
+asan-dll=; asan-import-lib=; fuzzer-lib=C:\msys64\ucrt64\lib\clang\23\lib\windows\libclang_rt.fuzzer-x86_64.a
+fuzzer-link-flags=-fsanitize=fuzzer
+fuzzer-probe=NOT-RUNNING; fuzz stays SKIP, see the retained command log
+ASan available=false; libFuzzer available=false
+
+== [notice] PLPT UCRT64
+PASS SDL3 GNU import library and embedded asInvoker/PerMonitorV2 manifest
+
+== [notice] PLPT Windows
+PASS 21 independent native headers
+
+== [notice] PLPT Windows evidence
+Native UCRT64 PE dependency closure; source root=C:\msys64\ucrt64
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\release\bin\plpt-desktop.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: SDL3.dll
+	DLL Name: SHELL32.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: USER32.dll
+	DLL Name: WS2_32.dll
+mingw-w64-ucrt-x86_64-libgcc 16.2.0-6
+SHA256 hash of C:\msys64\ucrt64\bin\libgcc_s_seh-1.dll:
+791ebf66e99c7c1b4ed3666468cec45a0172b4c8942ac6c84c3e9cab3e1b5270
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+SHA256 hash of C:\msys64\ucrt64\bin\libwinpthread-1.dll:
+94a9a4e2fe27b4bc827a4b209e9deb4cc3dc34bc025df06b849144f9d4c588f8
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-sdl3 3.4.20-1
+SHA256 hash of C:\msys64\ucrt64\bin\SDL3.dll:
+fcf8a99a019c8d2ed947219e7e768aae1f9cef7219ad93c0ab0007b63db1a6f1
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-libstdc++ 16.2.0-6
+SHA256 hash of C:\msys64\ucrt64\bin\libstdc++-6.dll:
+4e4822dc4aaa99383f581dae7ab9464ae89346c5ca742f7efbcdebe20b0fe7b5
+CertUtil: -hashfile command completed successfully.
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\release\bin\plpt-monitor.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\release\bin\plpt-platform-tests.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\release\bin\plpt-unit-tests.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\tests\release\bin\libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-
+
+== [notice] PLPT Windows
+BUILD SUCCESS mode=release elapsed_centiseconds=9092 core_only=0
+
+== [notice] PLPT Windows evidence
+Native Windows tests mode=release
+PASS unit exit=0 mode=release
+unit: 26 cases, 12449 checks, 0 failures (0 failed cases)
+PASS platform exit=0 mode=release
+platform: 4 cases, 58 checks, 0 failures (0 failed cases)
+PASS ipv6 exit=0 mode=release
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS cli-help exit=0 mode=release
+PASS cli-version exit=0 mode=release
+PASS cli-unknown exit=2 mode=release
+PASS cli-extra exit=2 mode=release
+PASS cli-ambiguous exit=2 mode=release
+PASS ui-smoke exit=0 mode=release
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-unknown exit=2 mode=release
+PASS ui-missing-argument exit=2 mode=release
+PASS ui-capture-requires-smoke exit=2 mode=release
+PASS ui-driver-error exit=1 mode=release
+PASS ui-file-error exit=1 mode=release
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-native-windows exit=0 mode=release
+desktop-runtime: SDL=3004020 video=windows renderer=software
+TEST SUMMARY passed=15 skipped=0 mode=release
+
+== [notice] PLPT UCRT64
+SELFTEST PASS missing compiler, CLANG64, compiler override, compile/link/hash failures and test exit 23
+
+== [notice] PLPT Windows evidence
+PROFILE=MSYS2 UCRT64 root="C:\msys64"
+compiler=C:\msys64\ucrt64\bin\clang++.exe
+PATH=C:\msys64\ucrt64\bin;C:\Windows\System32;C:\Windows
+compiler-exact=C:\msys64\ucrt64\bin\clang++.exe
+clang version 23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725)
+Target: x86_64-w64-windows-gnu
+Thread model: posix
+InstalledDir: C:/msys64/ucrt64/bin
+x86_64-w64-windows-gnu
+programs: =C:/msys64/ucrt64/bin
+libraries: =C:/msys64/ucrt64/lib/clang/23;C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0;C:/msys64/ucrt64/x86_64-w64-mingw32/lib;C:/msys64/ucrt64/x86_64-w64-mingw32/mingw/lib;C:/msys64/ucrt64/lib
+default-linker=C:/msys64/ucrt64/bin/ld; explicit-linker=C:\msys64\ucrt64\bin\ld.exe
+GNU ld (GNU Binutils) 2.47.20260726
+Copyright (C) 2026 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or (at your option) a later version.
+This program has absolutely no warranty.
+libstdc++.dll.a=C:/msys64/ucrt64/lib/libstdc++.dll.a
+libucrt.a=C:/msys64/ucrt64/lib/libucrt.a
+libws2_32.a=C:/msys64/ucrt64/lib/libws2_32.a
+libiphlpapi.a=C:/msys64/ucrt64/lib/libiphlpapi.a
+libbcrypt.a=C:/msys64/ucrt64/lib/libbcrypt.a
+libkernel32.a=C:/msys64/ucrt64/lib/libkernel32.a
+libuser32.a=C:/msys64/ucrt64/lib/libuser32.a
+libgdi32.a=C:/msys64/ucrt64/lib/libgdi32.a
+libshell32.a=C:/msys64/ucrt64/lib/libshell32.a
+ C:/msys64/ucrt64/include/c++/16.2.0
+ C:/msys64/ucrt64/include/c++/16.2.0/x86_64-w64-mingw32
+ C:/msys64/ucrt64/include/c++/16.2.0/backward
+ C:/msys64/ucrt64/lib/clang/23/include
+ C:/msys64/ucrt64/include
+mingw-w64-ucrt-x86_64-clang 23.1.5-1
+mingw-w64-ucrt-x86_64-headers 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-crt 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+mingw-w64-ucrt-x86_64-binutils 2.47-4
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+toolchain-probe: selected compiler=C:\msys64\ucrt64\bin\clang++.exe
+toolchain-probe: MSYS2 UCRT64, GNU ABI, clang=23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725), C++=202002, pointer=8, libstdc++=20260807, GCC=16, _UCRT=1
+runtime: ucrtbase.dll=C:\Windows\System32\ucrtbase.dll
+runtime: libstdc++-6.dll=C:\msys64\ucrt64\bin\libstdc++-6.dll
+runtime: libwinpthread-1.dll=C:\msys64\ucrt64\bin\libwinpthread-1.dll
+probe-exit-code=PASS native C++20/x64/thread/BCrypt, no MSVC headers
+compiler-rt-runtime-bin:
+none
+compiler-rt-resource-libs:
+libclang_rt.builtins-x86_64.a
+libclang_rt.fuzzer-x86_64.a
+libclang_rt.fuzzer_interceptors-x86_64.a
+libclang_rt.fuzzer_no_main-x86_64.a
+libclang_rt.profile-x86_64.a
+libclang_rt.profile_rocm-x86_64.a
+liborc_rt-x86_64.a
+asan-dll=; asan-import-lib=; fuzzer-lib=C:\msys64\ucrt64\lib\clang\23\lib\windows\libclang_rt.fuzzer-x86_64.a
+fuzzer-link-flags=-fsanitize=fuzzer
+fuzzer-probe=NOT-RUNNING; fuzz stays SKIP, see the retained command log
+ASan available=false; libFuzzer available=false
+
+== [notice] PLPT UCRT64
+PASS SDL3 GNU import library and embedded asInvoker/PerMonitorV2 manifest
+
+== [notice] PLPT Windows
+PASS 21 independent native headers
+
+== [notice] PLPT Windows evidence
+Native UCRT64 PE dependency closure; source root=C:\msys64\ucrt64
+PE=D:\a\Local-test-share\Local-test-share\out\windows\release\bin\plpt-desktop.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: SDL3.dll
+	DLL Name: SHELL32.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: USER32.dll
+	DLL Name: WS2_32.dll
+mingw-w64-ucrt-x86_64-libgcc 16.2.0-6
+SHA256 hash of C:\msys64\ucrt64\bin\libgcc_s_seh-1.dll:
+791ebf66e99c7c1b4ed3666468cec45a0172b4c8942ac6c84c3e9cab3e1b5270
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1
+SHA256 hash of C:\msys64\ucrt64\bin\libwinpthread-1.dll:
+94a9a4e2fe27b4bc827a4b209e9deb4cc3dc34bc025df06b849144f9d4c588f8
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-sdl3 3.4.20-1
+SHA256 hash of C:\msys64\ucrt64\bin\SDL3.dll:
+fcf8a99a019c8d2ed947219e7e768aae1f9cef7219ad93c0ab0007b63db1a6f1
+CertUtil: -hashfile command completed successfully.
+mingw-w64-ucrt-x86_64-libstdc++ 16.2.0-6
+SHA256 hash of C:\msys64\ucrt64\bin\libstdc++-6.dll:
+4e4822dc4aaa99383f581dae7ab9464ae89346c5ca742f7efbcdebe20b0fe7b5
+CertUtil: -hashfile command completed successfully.
+PE=D:\a\Local-test-share\Local-test-share\out\windows\release\bin\plpt-monitor.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\release\bin\plpt-platform-tests.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\release\bin\plpt-unit-tests.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=D:\a\Local-test-share\Local-test-share\out\windows\release\bin\libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-cr
+
+== [notice] PLPT Windows
+BUILD SUCCESS mode=release elapsed_centiseconds=9032 core_only=0
+
+== [notice] PLPT Windows evidence
+Native Windows tests mode=release
+PASS unit exit=0 mode=release
+unit: 26 cases, 12449 checks, 0 failures (0 failed cases)
+PASS platform exit=0 mode=release
+platform: 4 cases, 58 checks, 0 failures (0 failed cases)
+PASS ipv6 exit=0 mode=release
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS cli-help exit=0 mode=release
+PASS cli-version exit=0 mode=release
+PASS cli-unknown exit=2 mode=release
+PASS cli-extra exit=2 mode=release
+PASS cli-ambiguous exit=2 mode=release
+PASS ui-smoke exit=0 mode=release
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-unknown exit=2 mode=release
+PASS ui-missing-argument exit=2 mode=release
+PASS ui-capture-requires-smoke exit=2 mode=release
+PASS ui-driver-error exit=1 mode=release
+PASS ui-file-error exit=1 mode=release
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-native-windows exit=0 mode=release
+desktop-runtime: SDL=3004020 video=windows renderer=software
+TEST SUMMARY passed=15 skipped=0 mode=release
+
+== [notice] PLPT Windows evidence
+SHA256 hash of D:\a\Local-test-share\Local-test-share\out\windows\packages\PLPT-0.1.0-preview-windows-ucrt64-x64.zip:
+8b8618e2a8ab719aa0bcb17821b72cfe024b1743d3370ca462c5b0675d697c00
+CertUtil: -hashfile command completed successfully.
+
+== [notice] PLPT Windows
+PASS UCRT64 Release ZIP extracted and executed using native Windows video with system-only PATH
+
+== [warning] (job/step)
+Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683, actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+

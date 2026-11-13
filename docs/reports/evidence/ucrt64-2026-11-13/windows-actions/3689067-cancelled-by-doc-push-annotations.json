@@ -1,0 +1,50 @@
+[
+ {
+  "path": ".github",
+  "blob_href": "https://github.com/MONST-CODE/Local-test-share/blob/3689067f2828f53064dc04ffd3318b83940b227e/.github",
+  "start_line": 1,
+  "start_column": null,
+  "end_line": 1,
+  "end_column": null,
+  "annotation_level": "failure",
+  "title": "",
+  "message": "Canceling since a higher priority waiting request for plpt-direct-refs/pull/3/merge exists",
+  "raw_details": ""
+ },
+ {
+  "path": ".github",
+  "blob_href": "https://github.com/MONST-CODE/Local-test-share/blob/3689067f2828f53064dc04ffd3318b83940b227e/.github",
+  "start_line": 3,
+  "start_column": null,
+  "end_line": 3,
+  "end_column": null,
+  "annotation_level": "warning",
+  "title": "",
+  "message": "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683, actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/",
+  "raw_details": ""
+ },
+ {
+  "path": ".github",
+  "blob_href": "https://github.com/MONST-CODE/Local-test-share/blob/3689067f2828f53064dc04ffd3318b83940b227e/.github",
+  "start_line": 22,
+  "start_column": null,
+  "end_line": 22,
+  "end_column": null,
+  "annotation_level": "warning",
+  "title": "",
+  "message": "No files were found with the provided path: out/windows/logs/\nout/windows/**/*.log\nout/windows/**/test-summary.txt\nout/windows/**/runtime-dependencies.txt\nout/windows/**/runtime-licenses/\nout/windows/**/desktop*.bmp\nout/windows/packages/*.zip. No artifacts will be uploaded.",
+  "raw_details": ""
+ },
+ {
+  "path": ".github",
+  "blob_href": "https://github.com/MONST-CODE/Local-test-share/blob/3689067f2828f53064dc04ffd3318b83940b227e/.github",
+  "start_line": 226,
+  "start_column": null,
+  "end_line": 226,
+  "end_column": null,
+  "annotation_level": "failure",
+  "title": "",
+  "message": "The operation was canceled.",
+  "raw_details": ""
+ }
+]

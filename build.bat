@@ -329,15 +329,18 @@ rem Archive presence is not capability. Build and execute the real two-step
 rem recipe so "available=true" always means a fuzzer binary really ran here.
 set "EXPECT_FAILURE_SAVED=%PLPT_EXPECT_FAILURE%"
 set "PLPT_EXPECT_FAILURE=1"
+set "FUZZ_REASON="
 if defined FUZZ_LIB call :run "%CXX%" %LINK_DRIVER% -std=c++20 -O1 -g -fno-omit-frame-pointer -fsanitize=fuzzer-no-link -c tests/build/fuzzer_capability_probe.cpp -o "%OUT%\doctor\fuzzer-probe.o"
-if not exist "%OUT%\doctor\fuzzer-probe.o" set "FUZZ_LIB="
+if not exist "%OUT%\doctor\fuzzer-probe.o" (set "FUZZ_LIB="& set "FUZZ_REASON=%CMDLOG%")
 if defined FUZZ_LIB call :run "%CXX%" %LINK_DRIVER% -std=c++20 -O1 -g %FUZZ_LINK_SAN% "%OUT%\doctor\fuzzer-probe.o" -o "%OUT%\doctor\fuzzer-probe.exe"
-if not exist "%OUT%\doctor\fuzzer-probe.exe" set "FUZZ_LIB="
+if not exist "%OUT%\doctor\fuzzer-probe.exe" (set "FUZZ_LIB="& set "FUZZ_REASON=%CMDLOG%")
 if defined FUZZ_LIB call :run "%OUT%\doctor\fuzzer-probe.exe" -runs=1 -seed=1 -max_len=64
-if errorlevel 1 set "FUZZ_LIB="
-if defined FUZZ_LIB (>>"%TOOLCHAIN_INFO%" echo fuzzer-probe=PASS compiled linked and executed 1 run& type "%CMDLOG%" >>"%TOOLCHAIN_INFO%") else >>"%TOOLCHAIN_INFO%" echo fuzzer-probe=NOT-RUNNING; fuzz stays SKIP, see the retained command log
+if defined FUZZ_LIB if errorlevel 1 (set "FUZZ_LIB="& set "FUZZ_REASON=%CMDLOG%")
+if defined FUZZ_LIB (>>"%TOOLCHAIN_INFO%" echo fuzzer-probe=PASS compiled linked and executed 1 run& type "%CMDLOG%" >>"%TOOLCHAIN_INFO%") else >>"%TOOLCHAIN_INFO%" echo fuzzer-probe=UNAVAILABLE; native fuzz stays SKIP, never PASS
 set "PLPT_EXPECT_FAILURE=%EXPECT_FAILURE_SAVED%"
 set "EXPECT_FAILURE_SAVED="
+rem An unavailable capability must carry the compiler's own reason, not an assertion.
+if /I "%ACTION%"=="doctor" if not defined FUZZ_LIB if defined FUZZ_REASON call :notice_file "%FUZZ_REASON%"
 if defined FUZZ_LIB set "FUZZ_AVAILABLE=true"
 >>"%TOOLCHAIN_INFO%" echo ASan available=%ASAN_AVAILABLE%; libFuzzer available=%FUZZ_AVAILABLE%
 if "%ASAN_AVAILABLE%"=="false" echo SKIP capability: UCRT64 ASan runtime not installed. Not a memory-test PASS.

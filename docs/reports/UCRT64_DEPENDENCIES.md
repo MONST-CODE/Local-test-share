@@ -1,6 +1,9 @@
 # MSYS2 UCRT64 dependency ledger
 
-Date: 2026-11-13. **Native qualification pending** at this initial implementation.
+Date: 2026-11-13. **Natively qualified** by run
+[43456570072](https://github.com/MONST-CODE/Local-test-share/actions/runs/43456570072)
+on `windows-2022` with MSYS2 UCRT64 `clang++.exe`; see
+`UCRT64_WINDOWS_VALIDATION.md` and `evidence/ucrt64-2026-11-13/`.
 Only `build.bat` defines Windows dependencies/compiler flags and project operations.
 
 ## Compiler, headers and libraries
@@ -18,6 +21,14 @@ Only `build.bat` defines Windows dependencies/compiler flags and project operati
   Windres uses this same **clang++** as its preprocessor, not GCC/clang.exe.
 - No Microsoft SDK, Build Tools, MSVC ABI/STL, standalone LLVM or CLANG64 selection.
   Windows API headers are still valid API usage, supplied by MinGW-w64, not an SDK dependency.
+
+Versions observed on the qualifying runner (recorded by `doctor`, not pinned by us):
+`mingw-w64-ucrt-x86_64-clang 23.1.5-1`, `mingw-w64-ucrt-x86_64-headers
+14.0.0.r598.ge3d18511f-1`, `mingw-w64-ucrt-x86_64-crt 14.0.0.r598.ge3d18511f-1`,
+`mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1`,
+`mingw-w64-ucrt-x86_64-binutils 2.47-4`, `mingw-w64-ucrt-x86_64-libgcc 16.2.0-6`,
+`mingw-w64-ucrt-x86_64-libstdc++ 16.2.0-6`. GNU libstdc++ headers resolve to
+`ucrt64/include/c++/16.2.0`; GNU ld is `2.47.20260726`.
 
 Tool packages are installed by the owner/MSYS2 prerequisite step; their **actual
 versions must be recorded**, not represented as immutable compiler pins. CI's
@@ -40,8 +51,13 @@ packages; PLPT does **not** run those recipes or build SDL with CMake.
 | Runtime | `%PLPT_MSYS2_ROOT%\ucrt64\bin\SDL3.dll` |
 | License / origin | Zlib; SDL and MSYS2 package maintainers |
 
-The owner-supplied hash is the required digest, **not yet an observed verification**
-at this draft. `deps` can reuse the exact package from the existing pacman cache;
+Observed on the runner: the downloaded/cached
+`mingw-w64-ucrt-x86_64-sdl3-3.4.20-1-any.pkg.tar.zst` measured exactly
+`4a44381560c433ff42da3a6aff788fba2bba84a44b7f63ea396dec9c1cf79f78`, `pacman -Q`
+reported `mingw-w64-ucrt-x86_64-sdl3 3.4.20-1`, and the installed headers, both GNU
+libraries and `SDL3.dll` were byte-compared with a fresh verified extraction of that
+package (`PASS installed SDL3 3.4.20-1 headers and both GNU libraries and DLL match
+verified package bytes`). The running application reports `SDL=3004020`. `deps` can reuse the exact package from the existing pacman cache;
 `deps --fetch` explicitly permits downloading that same immutable filename plus
 pinned ImGui. It never installs/upgrades the owner's packages. Other operations
 never download. Every desktop build rechecks archive hashes and byte-compares the
@@ -73,7 +89,24 @@ in `runtime-dependencies.txt`; its available package license/provenance files ar
 copied into `licenses/runtime/`. Unknown non-system dependencies fail, not fall back
 to another installation. Extracted packages are executed with a **system-only PATH**.
 
-Expected categories, to be confirmed by actual PE evidence:
+Observed closure and staged runtime, measured on the qualifying Windows runner
+(`objdump -p` + `pacman -Q` + `certutil -hashfile`):
+
+| Staged DLL | Package owner / version | SHA-256 |
+|---|---|---|
+| `libgcc_s_seh-1.dll` | `mingw-w64-ucrt-x86_64-libgcc 16.2.0-6` | `791ebf66e99c7c1b4ed3666468cec45a0172b4c8942ac6c84c3e9cab3e1b5270` |
+| `libstdc++-6.dll` | `mingw-w64-ucrt-x86_64-libstdc++ 16.2.0-6` | `4e4822dc4aaa99383f581dae7ab9464ae89346c5ca742f7efbcdebe20b0fe7b5` |
+| `libwinpthread-1.dll` | `mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r598.ge3d18511f-1` | `94a9a4e2fe27b4bc827a4b209e9deb4cc3dc34bc025df06b849144f9d4c588f8` |
+| `SDL3.dll` | `mingw-w64-ucrt-x86_64-sdl3 3.4.20-1` | `fcf8a99a019c8d2ed947219e7e768aae1f9cef7219ad93c0ab0007b63db1a6f1` |
+
+`plpt-desktop.exe` additionally imports `bcrypt.dll`, `IPHLPAPI.DLL`, `KERNEL32.dll`,
+`SHELL32.dll`, `USER32.dll`, `WS2_32.dll` and the `api-ms-win-crt-*` UCRT API sets;
+`plpt-monitor.exe` and both test executables import the same family without SDL3.
+`libiconv` was **not** imported by this SDL3 build on Windows, so no LGPL iconv
+obligation arises in the package; the check stays active, so a future SDL that
+imports it will fail the closure audit instead of shipping silently.
+
+Category rules, confirmed by that PE evidence:
 
 - UCRT (`ucrtbase.dll` / Windows API sets) and OS DLLs: Windows-owned, not copied.
 - GNU libstdc++ / libgcc: GPL with GCC Runtime Library Exception; package notices
@@ -82,11 +115,16 @@ Expected categories, to be confirmed by actual PE evidence:
 - SDL3: Zlib plus bundled notices; broader compiled surface than Linux's small profile.
 - libiconv, if imported by MSYS2 SDL: LGPL; dynamic replacement and corresponding
   source/license obligations must be respected. Do not call it an OS component.
-- Compiler-rt for ASan, if available: Apache-2.0 with LLVM exception; tests only,
-  never bundled in a Release package.
+- Compiler-rt for ASan: **not available in this toolchain** —
+  `mingw-w64-ucrt-x86_64-clang 23.1.5-1` installs no `libclang_rt.asan_*` runtime,
+  so Windows memory regressions are an honest SKIP and nothing is bundled.
+- Compiler-rt libFuzzer: the archive `libclang_rt.fuzzer-x86_64.a` is installed, but
+  clang's MinGW driver does not accept `-fsanitize=fuzzer` for
+  `x86_64-w64-windows-gnu`, so the capability probe fails and Windows fuzzing stays
+  SKIP. It would be Apache-2.0 with LLVM exception and test-only in any case.
 
-A precise observed DLL/version/hash list belongs to the native validation report,
-not an invented fixed list. No blanket legal clearance or signed installer is
+The full observed list, commands and results are in `UCRT64_WINDOWS_VALIDATION.md`;
+the table above is the measured runtime closure, not an invented fixed list. No blanket legal clearance or signed installer is
 claimed. The PLPT license remains the owner's decision. Existing SDL/ImGui and
 bundled upstream notices remain in `third_party/licenses/`.
 

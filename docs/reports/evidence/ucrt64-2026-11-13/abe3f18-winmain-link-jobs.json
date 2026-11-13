@@ -1,0 +1,349 @@
+{
+ "total_count": 2,
+ "jobs": [
+  {
+   "id": 131976996960,
+   "run_id": 43452161886,
+   "workflow_name": "MSYS2 UCRT64 and native Linux qualification",
+   "head_branch": "arena/4197f0b0-local-test-share",
+   "run_url": "https://api.github.com/repos/MONST-CODE/Local-test-share/actions/runs/43452161886",
+   "run_attempt": 1,
+   "node_id": "CR_kwDOVsTrAs8AAAAeunEoYA",
+   "head_sha": "abe3f181594bf72c1edc913308994982ff729a3a",
+   "url": "https://api.github.com/repos/MONST-CODE/Local-test-share/actions/jobs/131976996960",
+   "html_url": "https://github.com/MONST-CODE/Local-test-share/actions/runs/43452161886/job/131976996960",
+   "status": "completed",
+   "conclusion": "success",
+   "created_at": "2026-11-13T15:23:56Z",
+   "started_at": "2026-11-13T15:24:00Z",
+   "completed_at": "2026-11-13T15:36:39Z",
+   "name": "Native Linux x64 / direct clang++",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 1,
+     "started_at": "2026-11-13T15:24:01Z",
+     "completed_at": "2026-11-13T15:24:01Z"
+    },
+    {
+     "name": "Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 2,
+     "started_at": "2026-11-13T15:24:01Z",
+     "completed_at": "2026-11-13T15:24:03Z"
+    },
+    {
+     "name": "Initialize native OS development and display environment",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 3,
+     "started_at": "2026-11-13T15:24:03Z",
+     "completed_at": "2026-11-13T15:24:13Z"
+    },
+    {
+     "name": "Explicit pinned dependency provisioning",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 4,
+     "started_at": "2026-11-13T15:24:13Z",
+     "completed_at": "2026-11-13T15:24:15Z"
+    },
+    {
+     "name": "Native compiler linker and dependency doctor",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 5,
+     "started_at": "2026-11-13T15:24:15Z",
+     "completed_at": "2026-11-13T15:24:24Z"
+    },
+    {
+     "name": "ASan UBSan memory regressions",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 6,
+     "started_at": "2026-11-13T15:24:24Z",
+     "completed_at": "2026-11-13T15:26:48Z"
+    },
+    {
+     "name": "Debug from fresh checkout",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 7,
+     "started_at": "2026-11-13T15:26:48Z",
+     "completed_at": "2026-11-13T15:28:09Z"
+    },
+    {
+     "name": "Direct Debug tests and X11 window",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 8,
+     "started_at": "2026-11-13T15:28:09Z",
+     "completed_at": "2026-11-13T15:29:55Z"
+    },
+    {
+     "name": "Release compile",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 9,
+     "started_at": "2026-11-13T15:29:55Z",
+     "completed_at": "2026-11-13T15:31:47Z"
+    },
+    {
+     "name": "Direct Release tests and X11 window",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 10,
+     "started_at": "2026-11-13T15:31:47Z",
+     "completed_at": "2026-11-13T15:34:03Z"
+    },
+    {
+     "name": "libFuzzer smoke",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 11,
+     "started_at": "2026-11-13T15:34:03Z",
+     "completed_at": "2026-11-13T15:34:06Z"
+    },
+    {
+     "name": "Failure propagation and stale-output regression",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 12,
+     "started_at": "2026-11-13T15:34:06Z",
+     "completed_at": "2026-11-13T15:34:17Z"
+    },
+    {
+     "name": "Remove generated outputs",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 13,
+     "started_at": "2026-11-13T15:34:17Z",
+     "completed_at": "2026-11-13T15:34:18Z"
+    },
+    {
+     "name": "Native Release rebuild tests and portable TGZ",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 14,
+     "started_at": "2026-11-13T15:34:18Z",
+     "completed_at": "2026-11-13T15:36:35Z"
+    },
+    {
+     "name": "Run actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 15,
+     "started_at": "2026-11-13T15:36:35Z",
+     "completed_at": "2026-11-13T15:36:37Z"
+    },
+    {
+     "name": "Post Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 30,
+     "started_at": "2026-11-13T15:36:37Z",
+     "completed_at": "2026-11-13T15:36:37Z"
+    },
+    {
+     "name": "Complete job",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 31,
+     "started_at": "2026-11-13T15:36:37Z",
+     "completed_at": "2026-11-13T15:36:37Z"
+    }
+   ],
+   "check_run_url": "https://api.github.com/repos/MONST-CODE/Local-test-share/check-runs/131976996960",
+   "labels": [
+    "ubuntu-24.04"
+   ],
+   "runner_id": 1000000069,
+   "runner_name": "GitHub Actions 1000000069",
+   "runner_group_id": 0,
+   "runner_group_name": "GitHub Actions"
+  },
+  {
+   "id": 131976997618,
+   "run_id": 43452161886,
+   "workflow_name": "MSYS2 UCRT64 and native Linux qualification",
+   "head_branch": "arena/4197f0b0-local-test-share",
+   "run_url": "https://api.github.com/repos/MONST-CODE/Local-test-share/actions/runs/43452161886",
+   "run_attempt": 1,
+   "node_id": "CR_kwDOVsTrAs8AAAAeunEq8g",
+   "head_sha": "abe3f181594bf72c1edc913308994982ff729a3a",
+   "url": "https://api.github.com/repos/MONST-CODE/Local-test-share/actions/jobs/131976997618",
+   "html_url": "https://github.com/MONST-CODE/Local-test-share/actions/runs/43452161886/job/131976997618",
+   "status": "completed",
+   "conclusion": "failure",
+   "created_at": "2026-11-13T15:23:56Z",
+   "started_at": "2026-11-13T15:23:59Z",
+   "completed_at": "2026-11-13T15:26:33Z",
+   "name": "Native Windows UCRT64 / owner clang++",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 1,
+     "started_at": "2026-11-13T15:24:00Z",
+     "completed_at": "2026-11-13T15:24:01Z"
+    },
+    {
+     "name": "Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 2,
+     "started_at": "2026-11-13T15:24:01Z",
+     "completed_at": "2026-11-13T15:24:09Z"
+    },
+    {
+     "name": "Provision MSYS2 UCRT64 prerequisites only",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 3,
+     "started_at": "2026-11-13T15:24:09Z",
+     "completed_at": "2026-11-13T15:25:36Z"
+    },
+    {
+     "name": "Verify pinned installed SDL3 and ImGui sources",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 4,
+     "started_at": "2026-11-13T15:25:36Z",
+     "completed_at": "2026-11-13T15:25:40Z"
+    },
+    {
+     "name": "Exact UCRT64 compiler ABI search paths and native probe",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 5,
+     "started_at": "2026-11-13T15:25:40Z",
+     "completed_at": "2026-11-13T15:25:49Z"
+    },
+    {
+     "name": "Native VS Code configuration and task contract",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 6,
+     "started_at": "2026-11-13T15:25:49Z",
+     "completed_at": "2026-11-13T15:26:01Z"
+    },
+    {
+     "name": "VS Code Debug task command from ordinary cmd",
+     "status": "completed",
+     "conclusion": "failure",
+     "number": 7,
+     "started_at": "2026-11-13T15:26:01Z",
+     "completed_at": "2026-11-13T15:26:27Z"
+    },
+    {
+     "name": "VS Code Test task command from ordinary cmd",
+     "status": "completed",
+     "conclusion": "skipped",
+     "number": 8,
+     "started_at": "2026-11-13T15:26:27Z",
+     "completed_at": "2026-11-13T15:26:27Z"
+    },
+    {
+     "name": "Debug native Windows window and direct tests",
+     "status": "completed",
+     "conclusion": "skipped",
+     "number": 9,
+     "started_at": "2026-11-13T15:26:27Z",
+     "completed_at": "2026-11-13T15:26:27Z"
+    },
+    {
+     "name": "VS Code Release task command from ordinary cmd",
+     "status": "completed",
+     "conclusion": "skipped",
+     "number": 10,
+     "started_at": "2026-11-13T15:26:27Z",
+     "completed_at": "2026-11-13T15:26:27Z"
+    },
+    {
+     "name": "Release native Windows window and direct tests",
+     "status": "completed",
+     "conclusion": "skipped",
+     "number": 11,
+     "started_at": "2026-11-13T15:26:27Z",
+     "completed_at": "2026-11-13T15:26:27Z"
+    },
+    {
+     "name": "UCRT64 native memory regressions if runtime is available",
+     "status": "completed",
+     "conclusion": "skipped",
+     "number": 12,
+     "started_at": "2026-11-13T15:26:27Z",
+     "completed_at": "2026-11-13T15:26:27Z"
+    },
+    {
+     "name": "UCRT64 libFuzzer smoke if runtime is available",
+     "status": "completed",
+     "conclusion": "skipped",
+     "number": 13,
+     "started_at": "2026-11-13T15:26:27Z",
+     "completed_at": "2026-11-13T15:26:27Z"
+    },
+    {
+     "name": "Wrong environment and failure propagation regressions",
+     "status": "completed",
+     "conclusion": "skipped",
+     "number": 14,
+     "started_at": "2026-11-13T15:26:27Z",
+     "completed_at": "2026-11-13T15:26:27Z"
+    },
+    {
+     "name": "VS Code Clean task command from ordinary cmd",
+     "status": "completed",
+     "conclusion": "skipped",
+     "number": 15,
+     "started_at": "2026-11-13T15:26:27Z",
+     "completed_at": "2026-11-13T15:26:27Z"
+    },
+    {
+     "name": "Fresh Release package and execution without MSYS2 on PATH",
+     "status": "completed",
+     "conclusion": "skipped",
+     "number": 16,
+     "started_at": "2026-11-13T15:26:27Z",
+     "completed_at": "2026-11-13T15:26:27Z"
+    },
+    {
+     "name": "Run actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 17,
+     "started_at": "2026-11-13T15:26:27Z",
+     "completed_at": "2026-11-13T15:26:30Z"
+    },
+    {
+     "name": "Post Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 34,
+     "started_at": "2026-11-13T15:26:30Z",
+     "completed_at": "2026-11-13T15:26:31Z"
+    },
+    {
+     "name": "Complete job",
+     "status": "completed",
+     "conclusion": "success",
+     "number": 35,
+     "started_at": "2026-11-13T15:26:31Z",
+     "completed_at": "2026-11-13T15:26:31Z"
+    }
+   ],
+   "check_run_url": "https://api.github.com/repos/MONST-CODE/Local-test-share/check-runs/131976997618",
+   "labels": [
+    "windows-2022"
+   ],
+   "runner_id": 1000000070,
+   "runner_name": "GitHub Actions 1000000070",
+   "runner_group_id": 0,
+   "runner_group_name": "GitHub Actions"
+  }
+ ]
+}
