@@ -417,7 +417,12 @@ expect() {
     if [[ $name == ipv6 && $rc == 77 ]]; then
         SKIP=$((SKIP+1)); say 'SKIP ipv6: unavailable, NOT counted as pass'; notice 'SKIP ipv6 (qualification incomplete)'; return 0
     fi
-    if [[ $rc != "$expected" ]] || ! grep -Eq -- "$pattern" "$capture"; then say "FAIL test=$name expected=$expected actual=$rc command=$(command_text "$@")"; if (( rc != 0 )); then return "$rc"; else return 1; fi; fi
+    if [[ $rc != "$expected" ]] || ! grep -Eq -- "$pattern" "$capture"; then
+        say "FAIL test=$name expected=$expected actual=$rc command=$(command_text "$@")"
+        local details; details=$(head -24 "$capture"; printf '\n--- tail ---\n'; tail -8 "$capture")
+        notice "failed test $name: ${details//$'\n'/%0A}"
+        if (( rc != 0 )); then return "$rc"; else return 1; fi
+    fi
     if grep -Eq 'AddressSanitizer|LeakSanitizer|UndefinedBehaviorSanitizer|runtime error:' "$capture"; then fail "sanitizer diagnostic in $name (even if exit matched)"; fi
     PASS=$((PASS+1)); say "PASS $name: exit=$rc"
     printf 'PASS %s exit=%s\n' "$name" "$rc" >> "$DIR/test-summary.txt"
