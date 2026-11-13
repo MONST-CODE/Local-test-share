@@ -1,4 +1,4 @@
-name: Direct native build qualification
+name: MSYS2 UCRT64 and native Linux qualification
 on:
   pull_request:
   workflow_dispatch:
@@ -9,9 +9,9 @@ concurrency:
   cancel-in-progress: true
 jobs:
   windows:
-    name: Native Windows x64 / direct clang++
+    name: Native Windows UCRT64 / owner clang++
     runs-on: windows-2022
-    timeout-minutes: 35
+    timeout-minutes: 40
     defaults:
       run:
         shell: cmd
@@ -19,38 +19,58 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Explicit pinned dependency provisioning
+      - name: Provision MSYS2 UCRT64 prerequisites only
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2, pinned
+        with:
+          msystem: UCRT64
+          release: false # use native runner C:\msys64, never Program Files LLVM
+          update: true
+          cache: false
+          install: >-
+            mingw-w64-ucrt-x86_64-clang
+            mingw-w64-ucrt-x86_64-binutils
+            mingw-w64-ucrt-x86_64-compiler-rt
+            mingw-w64-ucrt-x86_64-libarchive
+            mingw-w64-ucrt-x86_64-sdl3
+      - name: Verify pinned installed SDL3 and ImGui sources
         run: call build.bat deps --fetch
-      - name: Native SDK compiler linker and dependency doctor
+      - name: Exact UCRT64 compiler ABI search paths and native probe
+        id: doctor
         run: call build.bat doctor --verbose
-      - name: Debug from fresh checkout
-        run: call build.bat debug --verbose
-      - name: Direct Debug tests and real Windows window
+      - name: Native VS Code configuration and task contract
+        run: call build.bat ide-check
+      - name: VS Code Debug task command from ordinary cmd
+        run: cmd.exe /d /c build.bat debug
+      - name: VS Code Test task command from ordinary cmd
+        run: cmd.exe /d /c build.bat test
+      - name: Debug native Windows window and direct tests
         run: call build.bat test debug --native-ui
-      - name: Release compile
-        run: call build.bat release --verbose
-      - name: Direct Release tests and real Windows window
+      - name: VS Code Release task command from ordinary cmd
+        run: cmd.exe /d /c build.bat release
+      - name: Release native Windows window and direct tests
         run: call build.bat test release --native-ui
-      - name: Native memory regressions
+      - name: UCRT64 native memory regressions if runtime is available
+        if: steps.doctor.outputs.asan == 'true'
         run: call build.bat test asan --native-ui
-      - name: Native libFuzzer smoke
+      - name: UCRT64 libFuzzer smoke if runtime is available
+        if: steps.doctor.outputs.fuzz == 'true'
         run: call build.bat fuzz
-      - name: Failure propagation and stale-output regression
+      - name: Wrong environment and failure propagation regressions
         run: call build.bat selftest
-      - name: Remove generated outputs
-        run: call build.bat clean
-      - name: Native Release rebuild tests and portable ZIP
+      - name: VS Code Clean task command from ordinary cmd
+        run: cmd.exe /d /c build.bat clean
+      - name: Fresh Release package and execution without MSYS2 on PATH
         run: call build.bat package
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: direct-windows-evidence
+          name: ucrt64-windows-evidence
           path: |
             out/windows/logs/
             out/windows/**/*.log
             out/windows/**/test-summary.txt
-            out/windows/**/SDL3-runtime-dependencies.txt
-            out/windows/**/embedded.manifest
+            out/windows/**/runtime-dependencies.txt
+            out/windows/**/runtime-licenses/
             out/windows/**/desktop*.bmp
             out/windows/packages/*.zip
           retention-days: 14

@@ -1,0 +1,25 @@
+{
+  "version": 4,
+  "configurations": [
+    {
+      "name": "Windows UCRT64 (C:/msys64)",
+      "compilerPath": "C:/msys64/ucrt64/bin/clang++.exe",
+      "compilerArgs": ["--no-default-config"],
+      "intelliSenseMode": "windows-clang-x64",
+      "cStandard": "c17",
+      "cppStandard": "c++20",
+      "defines": ["WIN32_LEAN_AND_MEAN", "NOMINMAX", "UNICODE", "_UNICODE", "_WIN32_WINNT=0x0A00"],
+      "includePath": ["${workspaceFolder}", "${workspaceFolder}/out/windows/debug/vendor/imgui"]
+    },
+    {
+      "name": "Windows UCRT64 (custom root / existing ImGui)",
+      "compilerPath": "${env:PLPT_MSYS2_ROOT}/ucrt64/bin/clang++.exe",
+      "compilerArgs": ["--no-default-config"],
+      "intelliSenseMode": "windows-clang-x64",
+      "cStandard": "c17",
+      "cppStandard": "c++20",
+      "defines": ["WIN32_LEAN_AND_MEAN", "NOMINMAX", "UNICODE", "_UNICODE", "_WIN32_WINNT=0x0A00"],
+      "includePath": ["${workspaceFolder}", "${env:PLPT_IMGUI_DIR}", "${workspaceFolder}/out/windows/debug/vendor/imgui"]
+    }
+  ]
+}
