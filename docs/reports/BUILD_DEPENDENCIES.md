@@ -1,3 +1,5 @@
+> **Superseded Windows toolchain profile.** The Microsoft ABI/SDK/VC results below are historical, not MSYS2 UCRT64 validation. The owner now requires only `PLPT_MSYS2_ROOT\ucrt64\bin\clang++.exe`. See [UCRT64 migration](UCRT64_TOOLCHAIN_MIGRATION.md), [native validation](UCRT64_WINDOWS_VALIDATION.md) and [dependencies](UCRT64_DEPENDENCIES.md). Linux results remain separately scoped.
+
 # Direct-build dependency ledger
 
 Date: 2026-11-13. Only `build.bat` / `build.sh` own dependency identities, source

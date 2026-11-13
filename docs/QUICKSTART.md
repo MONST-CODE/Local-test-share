@@ -8,12 +8,12 @@ invitations, transport chiffré, cinq testeurs et nettoyage des profils sont abs
 
 ## Construire et installer — Windows x64
 
-Les prérequis de compilation ne concernent que le développeur : voir
-[BUILD.md](BUILD.md). Après `build.bat deps --fetch`, exécuter `build.bat package`.
+Les prérequis de compilation ne concernent que le développeur : MSYS2 UCRT64 et
+son `clang++.exe` exclusif, voir [BUILD.md](BUILD.md). Aucun SDK/Visual Studio requis. Après `build.bat deps --fetch`, exécuter `build.bat package`.
 Le script recompile Release, teste puis crée :
 
 ```text
-out\windows\packages\PLPT-0.1.0-preview-windows-x64.zip
+out\windows\packages\PLPT-0.1.0-preview-windows-ucrt64-x64.zip
 ```
 
 1. Extraire l'archive dans un dossier appartenant à votre compte, par exemple
@@ -25,9 +25,9 @@ out\windows\packages\PLPT-0.1.0-preview-windows-x64.zip
 4. Pour retirer la preview : fermer ses processus puis supprimer **ce dossier
    d'extraction uniquement**. Aucun service, règle de pare-feu ou désinstalleur ajouté.
 
-Ce ZIP de développement n'est pas signé. Aucun installateur NSIS/MSI n'est livré
+Ce ZIP de développement (profil UCRT64, DLL GNU/Mingw vérifiées et livrées) n'est pas signé. Aucun installateur NSIS/MSI n'est livré
 par la migration. L'exécution CI n'est pas une qualification SmartScreen, poste
-propre, installation/désinstallation complète ou redistribution Microsoft.
+propre, installation/désinstallation complète, DPI/IME ou approbation de redistribution du runtime GNU/SDL.
 
 ## Linux
 

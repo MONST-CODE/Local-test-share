@@ -1,0 +1,12 @@
+{
+ "state": "open",
+ "draft": true,
+ "merged": false,
+ "commits": 10,
+ "changed_files": 48,
+ "additions": 5987,
+ "deletions": 386,
+ "head": "6f2811d81f9ef16c2b044b016c5b369d7969ba4f",
+ "base": "3b62b48585c2ce095cca4681a2aad4f466fec85f",
+ "merge_commit_sha": "181bd9fb47bd7d346332f6106517ff5ca98b56ca"
+}

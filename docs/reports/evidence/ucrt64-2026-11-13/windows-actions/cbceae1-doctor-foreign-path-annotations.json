@@ -1,0 +1,110 @@
+[
+ {
+  "path": ".github",
+  "blob_href": "https://github.com/MONST-CODE/Local-test-share/blob/cbceae1f91aa3fd32aab2d69672461874b843102/.github",
+  "start_line": 2,
+  "start_column": null,
+  "end_line": 2,
+  "end_column": null,
+  "annotation_level": "warning",
+  "title": "",
+  "message": "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683, actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/",
+  "raw_details": ""
+ },
+ {
+  "path": ".github",
+  "blob_href": "https://github.com/MONST-CODE/Local-test-share/blob/cbceae1f91aa3fd32aab2d69672461874b843102/.github",
+  "start_line": 123,
+  "start_column": null,
+  "end_line": 123,
+  "end_column": null,
+  "annotation_level": "failure",
+  "title": "",
+  "message": "Process completed with exit code 2.",
+  "raw_details": ""
+ },
+ {
+  "path": ".github",
+  "blob_href": "https://github.com/MONST-CODE/Local-test-share/blob/cbceae1f91aa3fd32aab2d69672461874b843102/.github",
+  "start_line": 122,
+  "start_column": null,
+  "end_line": 122,
+  "end_column": null,
+  "annotation_level": "failure",
+  "title": "PLPT Windows",
+  "message": "Operation doctor failed, exit 2. See retained logs.",
+  "raw_details": ""
+ },
+ {
+  "path": ".github",
+  "blob_href": "https://github.com/MONST-CODE/Local-test-share/blob/cbceae1f91aa3fd32aab2d69672461874b843102/.github",
+  "start_line": 85,
+  "start_column": null,
+  "end_line": 85,
+  "end_column": null,
+  "annotation_level": "notice",
+  "title": "PLPT Windows evidence",
+  "message": "clang version 23.1.5 (https://github.com/msys2/MINGW-packages efc96badda99c076509ef01986c673d1cd30f725)\nTarget: x86_64-w64-windows-gnu\nThread model: posix\nInstalledDir: C:/msys64/ucrt64/bin\n (in-process)\n \"C:/msys64/ucrt64/bin/clang++.exe\" -cc1 -triple x86_64-w64-windows-gnu -E -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name toolchain_probe.cpp -mrelocation-model pic -pic-level 2 -mframe-pointer=none -fmath-errno -ffp-contract=on -fno-rounding-math -mconstructor-aliases -funwind-tables=2 -fno-sized-deallocation -fno-use-init-array -target-cpu x86-64 -tune-cpu generic -debugger-tuning=gdb -fdebug-compilation-dir=D:/a/Local-test-share/Local-test-share -v -fcoverage-compilation-dir=D:/a/Local-test-share/Local-test-share -resource-dir C:/msys64/ucrt64/lib/clang/23 -internal-isystem C:/msys64/ucrt64/x86_64-w64-mingw32/include/c++ -internal-isystem C:/msys64/ucrt64/x86_64-w64-mingw32/include/c++/x86_64-w64-mingw32 -internal-isystem C:/msys64/ucrt64/x86_64-w64-mingw32/include/c++/backward -internal-isystem C:/msys64/ucrt64/x86_64-w64-mingw32/include/c++/16.2.0 -internal-isystem C:/msys64/ucrt64/x86_64-w64-mingw32/include/c++/16.2.0/x86_64-w6\nclang -cc1 version 23.1.5 based upon LLVM 23.1.5 default target x86_64-w64-windows-gnu\nignoring nonexistent directory \"C:/msys64/ucrt64/x86_64-w64-mingw32/include/c++\"\nignoring nonexistent directory \"C:/msys64/ucrt64/x86_64-w64-mingw32/include/c++/x86_64-w64-mingw32\"\nignoring nonexistent directory \"C:/msys64/ucrt64/x86_64-w64-mingw32/include/c++/backward\"\nignoring nonexistent directory \"C:/msys64/ucrt64/x86_64-w64-mingw32/include/c++/16.2.0\"\nignoring nonexistent directory \"C:/msys64/ucrt64/x86_64-w64-mingw32/include/c++/16.2.0/x86_64-w64-mingw32\"\nignoring nonexistent directory \"C:/msys64/ucrt64/x86_64-w64-mingw32/include/c++/16.2.0/backward\"\nignoring nonexistent directory \"C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0/include/c++\"\nignoring nonexistent directory \"C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0/include/c++/x86_64-w64-mingw32\"\nignoring nonexistent directory \"C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0/include/c++/backward\"\nignoring nonexistent directory \"C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0/include/g++-v16.2.0\"\nignoring nonexistent directory \"C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0/include/g++-v16.2.0/x86_64-w64-mingw32\"\nignoring nonexistent directory \"C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0/include/g++-v16.2.0/backward\"\nignoring nonexistent directory \"C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0/include/g++-v16.2\"\nignoring nonexistent directory \"C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0/include/g++-v16.2/x86_64-w64-mingw32\"\nignoring nonexistent directory \"C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0/include/g++-v16.2/backward\"\nignoring nonexistent directory \"C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0/include/g++-v16\"\nignoring nonexistent directory \"C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0/include/g++-v16/x86_64-w64-mingw32\"\nignoring nonexistent directory \"C:/msys64/ucrt64/lib/gcc/x86_64-w64-mingw32/16.2.0/include/g++-v16/backward\"\nignoring nonexistent directory \"C:/msys64/ucrt64/x86_64-w64-mingw32/include\"\nignoring nonexistent directory \"C:/msys64/ucrt64/x86_64-w64-mingw32/usr/include\"\n#include \"...\" search starts here:\n#include <...> search starts here:\n C:/msys64/ucrt64/include/c++/16.2.0\n C:/msys64/ucrt64/include/c++/16.2.0/x86_64-w64-mingw32\n C:/msys64/ucrt64/include/c++/16.2.0/backward\n C:/msys64/ucrt64/lib/clang/23/include\n C:/msys64/ucrt64/include\nEnd of search list.\n",
+  "raw_details": ""
+ },
+ {
+  "path": ".github",
+  "blob_href": "https://github.com/MONST-CODE/Local-test-share/blob/cbceae1f91aa3fd32aab2d69672461874b843102/.github",
+  "start_line": 84,
+  "start_column": null,
+  "end_line": 84,
+  "end_column": null,
+  "annotation_level": "failure",
+  "title": "PLPT Windows validation",
+  "message": "foreign toolchain path/target in compiler diagnostics: D:\\a\\Local-test-share\\Local-test-share\\out\\windows\\logs\\doctor-debug-23226-9871.log.command-17.txt",
+  "raw_details": ""
+ },
+ {
+  "path": ".github",
+  "blob_href": "https://github.com/MONST-CODE/Local-test-share/blob/cbceae1f91aa3fd32aab2d69672461874b843102/.github",
+  "start_line": 65493,
+  "start_column": null,
+  "end_line": 65493,
+  "end_column": null,
+  "annotation_level": "notice",
+  "title": "PLPT UCRT64 dependencies",
+  "message": "PASS installed SDL3 3.4.20-1 headers and both GNU libraries and DLL match verified package bytes",
+  "raw_details": ""
+ },
+ {
+  "path": ".github",
+  "blob_href": "https://github.com/MONST-CODE/Local-test-share/blob/cbceae1f91aa3fd32aab2d69672461874b843102/.github",
+  "start_line": 33,
+  "start_column": null,
+  "end_line": 33,
+  "end_column": null,
+  "annotation_level": "notice",
+  "title": "PLPT Windows dependency",
+  "message": "SHA256 b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859.tar.gz",
+  "raw_details": ""
+ },
+ {
+  "path": ".github",
+  "blob_href": "https://github.com/MONST-CODE/Local-test-share/blob/cbceae1f91aa3fd32aab2d69672461874b843102/.github",
+  "start_line": 28,
+  "start_column": null,
+  "end_line": 28,
+  "end_column": null,
+  "annotation_level": "notice",
+  "title": "PLPT Windows dependency",
+  "message": "SHA256 4a44381560c433ff42da3a6aff788fba2bba84a44b7f63ea396dec9c1cf79f78 mingw-w64-ucrt-x86_64-sdl3-3.4.20-1-any.pkg.tar.zst",
+  "raw_details": ""
+ },
+ {
+  "path": ".github",
+  "blob_href": "https://github.com/MONST-CODE/Local-test-share/blob/cbceae1f91aa3fd32aab2d69672461874b843102/.github",
+  "start_line": 12,
+  "start_column": null,
+  "end_line": 12,
+  "end_column": null,
+  "annotation_level": "notice",
+  "title": "PLPT Windows dependency",
+  "message": "SHA256 4a44381560c433ff42da3a6aff788fba2bba84a44b7f63ea396dec9c1cf79f78 mingw-w64-ucrt-x86_64-sdl3-3.4.20-1-any.pkg.tar.zst",
+  "raw_details": ""
+ }
+]

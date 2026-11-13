@@ -36,14 +36,21 @@ Preserved suites:
   tests `/dev/full`. Sanitizer diagnostics fail even an expected exit-1 error test.
 - Native window smoke: `video=windows` or `video=x11`, software renderer; separate
   from `video=dummy`. This is not a human DPI/IME/input or GPU qualification.
-- ASan on Windows where compiler-rt is available; ASan+UBSan on Linux. Linux directly
-  built SDL/ImGui are also instrumented in this profile; Windows' official SDL DLL
-  is prebuilt and not an instrumented vendor binary.
+- ASan on Windows only when the exact UCRT64 compiler-rt runtime is present (otherwise
+  explicit SKIP 77, never PASS); ASan+UBSan on Linux. Linux directly built SDL/ImGui
+  are also instrumented in this profile; the UCRT64 SDL3 DLL is prebuilt and not an
+  instrumented vendor binary. SDL/ImGui on Windows are checked as x64 GNU/UCRT ABI.
 - libFuzzer codec roundtrip, 20,000 executions with two checked-in tiny valid corpus
   entries, deterministic seed, 4096-byte input cap. This is a short fuzz smoke, not
   exhaustive protocol or video-payload fuzzing.
-- `selftest`: missing compiler, compile/link failures, corrupt archive rejection,
-  no stale output marker/binary, and exact propagation of a deliberate test exit 23.
+- `selftest`: missing UCRT64 compiler, misleading `MSYSTEM=CLANG64`, rejected standalone
+  compiler override, compile/link failures, corrupt archive rejection, no stale output
+  marker/binary, and exact propagation of a deliberate test exit 23.
+- `ide-check`: native validation of the VS Code task/config contract; it does not
+  claim interactive editor-extension/UI qualification.
+- Native Windows CI also exercises each exact `cmd.exe /d /c build.bat <task>` chain,
+  embedded asInvoker/PerMonitorV2 manifest inspection, and extracted-package execution
+  after removing MSYS2 from PATH.
 
 `77` means **SKIP / incomplete qualification** for unavailable IPv6/instrumentation;
 it is not counted as PASS. Required CI steps return non-zero on that condition.

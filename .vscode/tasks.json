@@ -1,0 +1,40 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "PLPT: Debug (UCRT64)",
+      "type": "process",
+      "command": "${env:ComSpec}",
+      "args": ["/d", "/c", "build.bat", "debug"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": "$gcc",
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "PLPT: Release (UCRT64)",
+      "type": "process",
+      "command": "${env:ComSpec}",
+      "args": ["/d", "/c", "build.bat", "release"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": "$gcc",
+      "group": "build"
+    },
+    {
+      "label": "PLPT: Test (UCRT64)",
+      "type": "process",
+      "command": "${env:ComSpec}",
+      "args": ["/d", "/c", "build.bat", "test"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": "$gcc",
+      "group": "test"
+    },
+    {
+      "label": "PLPT: Clean (UCRT64)",
+      "type": "process",
+      "command": "${env:ComSpec}",
+      "args": ["/d", "/c", "build.bat", "clean"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ]
+}

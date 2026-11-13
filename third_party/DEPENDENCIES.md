@@ -8,15 +8,18 @@ explicitement demandé par le développeur, peut télécharger les archives épi
 
 | Nom | Version / identité | Licence / origine | Raison et surface |
 |---|---|---|---|
-| C++20 + API OS | Versions natives consignées dans les rapports Windows/Linux | LLVM, STL Microsoft / libstdc++, SDK/CRT selon cible | Types/threads ; Iphlpapi/Toolhelp32/Winsock/BCrypt ; proc/getrandom/getifaddrs |
-| SDL3 | 3.4.20, source `f00dc919ca35b9756316e86c4777392de442f9b2` ; Windows ZIP officiel VC | zlib, https://github.com/libsdl-org/SDL | Fenêtre, événements, SDL_Renderer. Windows : distribution officielle non recompilée ; Linux : profil direct-source X11/software, fonctionnalités périphériques désactivées/stubs. |
+| C++20 + API OS | Clang UCRT64 exact et versions runtime mesurés dans le rapport Windows UCRT64 ; clang++ natif/glibc/libstdc++ Linux | Apache-2.0 WITH LLVM-exception, MinGW-w64/UCRT, GNU libstdc++ | Types/threads ; Iphlpapi/Toolhelp32/Winsock/BCrypt ; proc/getrandom/getifaddrs |
+| SDL3 | 3.4.20 ; Windows : paquet MSYS2 UCRT64 `mingw-w64-ucrt-x86_64-sdl3` **3.4.20-1**, archive SHA-256 `4a4438…f78` ; Linux : source `f00dc919ca35b9756316e86c4777392de442f9b2` | zlib, https://github.com/libsdl-org/SDL + notices MSYS2 | Fenêtre, événements, SDL_Renderer. Windows : import GNU `libSDL3.dll.a` + DLL UCRT64 vérifiés ; Linux : profil direct-source X11/software, fonctionnalités périphériques désactivées/stubs. |
 | Dear ImGui | 1.93.0, `c1aaac65e896a45f81f47a4d68f9959e0f86c859` | MIT, https://github.com/ocornut/imgui | UI, backends officiels **SDL3 + SDLRenderer3 uniquement**. Aucun réseau. INI/logging désactivés. |
 
 Les URL, hashes, chemins, ABI et contraintes runtime complets sont dans
-[BUILD_DEPENDENCIES](../docs/reports/BUILD_DEPENDENCIES.md). Les identités et
-intégrations réelles appartiennent uniquement à `build.bat` / `build.sh` :
+[UCRT64_DEPENDENCIES](../docs/reports/UCRT64_DEPENDENCIES.md), et l'ancien profil
+Microsoft dans [BUILD_DEPENDENCIES](../docs/reports/BUILD_DEPENDENCIES.md) (historique,
+remplacé). Les identités et intégrations réelles appartiennent uniquement à
+`build.bat` / `build.sh` :
 
-- Windows SDL VC ZIP SHA-256 : `1ec3009655ee37b1f73e52b3b120acc5afd8abaf9532f3303b1bf1dfe91b5969`.
+- Windows SDL UCRT64 `mingw-w64-ucrt-x86_64-sdl3-3.4.20-1-any.pkg.tar.zst` SHA-256 : `4a44381560c433ff42da3a6aff788fba2bba84a44b7f63ea396dec9c1cf79f78`.
+- Windows ImGui 1.93.0 archive SHA-256 : `b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114`.
 - Linux SDL source : `e6a9c4e75de8fe719f922dddc208627f77754a502909f457a1355981f20c21e0`.
 - ImGui source, deux OS : `b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114`.
 
@@ -63,14 +66,14 @@ binaire tiers. Le renderer vidéo de la future application de partage reste à c
 
 ## ABI et redistribution
 
-Windows : Clang GNU driver ciblant Microsoft x64, import SDL3.lib + SDL3.dll,
-SDK/STL/CRT Microsoft. `/MTd` en Debug, `/MT` en Release pour PLPT/ImGui ; la DLL
-SDL conserve ses propres imports, inspectés par dumpbin. Le build copie les CRT
-app-local de release si les imports l'exigent. La DLL **effectivement inspectée**
-dans la validation native n'importe que 11 DLL système et aucun VCRUNTIME/MSVCP :
-ce chemin conditionnel n'a pas été nécessaire ni qualifié avec ce pin. Le code STL est MIT ; SDK/CRT et
-redistribution sont aussi régis par les conditions Microsoft du toolset exact.
-Pas de prétention d'autonomie universelle ou d'approbation juridique.
+Windows : **clang++.exe UCRT64 exclusif**, cible x86_64-w64-windows-gnu, import
+GNU/libSDL3.dll.a et MinGW-w64/UCRT/GNU libstdc++. Aucune DLL Microsoft C/C++ n'est
+livrée. Le build inspecte récursivement les imports PE, copie uniquement des DLL
+issues du préfixe UCRT64 sélectionné avec version/SHA-256/notices, et exécute
+l'archive extraite avec un PATH système seul. libstdc++/libgcc relèvent de GPL avec
+Runtime Library Exception, libiconv (si importé) de LGPL, SDL de zlib. Voir le
+rapport UCRT64 réel pour la liste/versions observées ; aucune autonomie universelle
+ni approbation juridique n'est prétendue.
 
 Linux : SDL partagée livrée à côté du binaire ; glibc/libm (LGPL-2.1-or-later),
 libstdc++/libgcc_s (GPL avec GCC Runtime Library Exception 3.1), X11/Xext et leurs
@@ -78,8 +81,10 @@ bibliothèques système ne sont pas copiées. L'archive requiert l'ABI de sa pla
 
 ## Outils de développement seulement
 
-- LLVM clang/clang++, lld-link, ASan/UBSan/libFuzzer : Apache-2.0 WITH LLVM-exception.
-- SDK/Build Tools Microsoft : environnement, headers/librairies, rc/mt/dumpbin.
+- MSYS2 UCRT64 clang++, binutils (windres/objdump/ld), compiler-rt ASan/libFuzzer :
+  Apache-2.0 WITH LLVM-exception / GPL pour GNU binutils, selon paquet.
+- GNU libstdc++/libgcc runtime fournis par le toolchain UCRT64 (RLE) ; MinGW-w64 UCRT
+  headers/imports. Aucun SDK, Build Tools, rc/mt/dumpbin ou lld-link Microsoft.
 - Bash/cmd, curl, tar et utilitaires natifs SHA/copie/comparaison ; Xvfb comme
   environnement d'affichage CI Linux, pas comme moteur de build.
 - Harness de tests : code du dépôt, aucune bibliothèque tierce de tests.
@@ -90,7 +95,7 @@ Le sandbox Linux utilise les packages npm `llvm-runtime-{clang-linux-x64,
 resources-linux,lld-linux-x64}` **22.1.8**, projet
 https://github.com/holepunchto/llvm-runtime . SHA-512 vérifiés avec les métadonnées
 registry, extraction sans scripts de cycle de vie. Canal secondaire de distribution :
-limite supply-chain explicite, pas un substitut aux tests Microsoft natifs.
+limite supply-chain explicite, pas un substitut aux tests Windows UCRT64 natifs.
 Les anciens outils CMake/Ninja/Zig/Pillow restent seulement dans les rapports historiques.
 
 ## Non retenu et politique de mise à jour
