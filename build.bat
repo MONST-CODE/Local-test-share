@@ -23,6 +23,10 @@ if /I "%ACTION%"=="test" if /I "%~1"=="asan" (set "MODE=asan"& shift& goto argum
 call :problem "unknown argument %~1"
 exit /b 2
 :arguments_done
+if /I "%ACTION%"=="release" set "MODE=release"
+if /I "%ACTION%"=="package" set "MODE=release"
+if /I "%ACTION%"=="asan" set "MODE=asan"
+if /I "%ACTION%"=="fuzz" set "MODE=asan"
 set "VALID="
 for %%A in (debug release test asan fuzz clean package doctor deps selftest help) do if /I "%ACTION%"=="%%A" set "VALID=1"
 if not defined VALID (call :problem "unknown operation %ACTION%"& exit /b 2)
@@ -197,9 +201,10 @@ for %%I in ("%CXX%") do set "CXXNAME=%%~nxI"
 if /I not "%CXXNAME%"=="clang++.exe" (call :problem "choose clang++.exe, not another driver"& exit /b 2)
 for %%I in ("%CXX%") do set "LLD=%%~dpIlld-link.exe"
 if not exist "%LLD%" (call :problem "matching lld-link.exe required next to clang++.exe"& exit /b 2)
+set "TOOLCHAIN_INFO=%LOG%.toolchain.txt"
 call :run "%CXX%" --version
 if errorlevel 1 exit /b
-call :notice_file "%CMDLOG%"
+type "%CMDLOG%" >"%TOOLCHAIN_INFO%"
 findstr /I /C:"clang version" "%CMDLOG%" >nul || (call :problem "selected compiler is not LLVM Clang: %CXX%"& exit /b 2)
 call :run "%CXX%" -dumpmachine
 if errorlevel 1 exit /b
@@ -212,7 +217,7 @@ if not defined CLANG_MAJOR (call :problem "cannot determine Clang version"& exit
 if %CLANG_MAJOR% LSS 18 (call :problem "LLVM Clang 18 or newer required; SDK compatibility is probed natively"& exit /b 2)
 call :run "%LLD%" --version
 if errorlevel 1 exit /b
-call :notice_file "%CMDLOG%"
+type "%CMDLOG%" >>"%TOOLCHAIN_INFO%"
 set "RCEXE="
 set "DUMPBIN="
 set "MTEXE="
@@ -225,14 +230,15 @@ if not defined DUMPBIN (call :problem "MSVC dumpbin.exe missing"& exit /b 2)
 >>"%LOG%" echo SDK=%WindowsSdkDir% version=%WindowsSDKVersion% VC=%VCToolsInstallDir%
 >>"%LOG%" echo INCLUDE=%INCLUDE%
 >>"%LOG%" echo LIB=%LIB%
-if "%GITHUB_ACTIONS%"=="true" echo ::notice title=PLPT Windows SDK::SDK=%WindowsSDKVersion% VC=%VCToolsVersion% compiler=%CXX% linker=%LLD%
+>>"%TOOLCHAIN_INFO%" echo SDK=%WindowsSDKVersion% VC=%VCToolsVersion% compiler=%CXX% linker=%LLD%
 if not exist "%OUT%\doctor" mkdir "%OUT%\doctor"
 call :run "%CXX%" --target=x86_64-pc-windows-msvc -std=c++20 -fms-runtime-lib=static -fuse-ld=lld -DWIN32_LEAN_AND_MEAN -DNOMINMAX -D_WIN32_WINNT=0x0A00 -Wall -Wextra -Wpedantic -Werror tests/build/toolchain_probe.cpp -o "%OUT%\doctor\probe.exe" -lkernel32 -lbcrypt
 if errorlevel 1 exit /b
 if not exist "%OUT%\doctor\probe.exe" (call :problem "toolchain probe output missing"& exit /b 1)
 call :run "%OUT%\doctor\probe.exe"
 if errorlevel 1 exit /b
-call :notice_file "%CMDLOG%"
+type "%CMDLOG%" >>"%TOOLCHAIN_INFO%"
+call :notice_file "%TOOLCHAIN_INFO%"
 exit /b 0
 
 :verify
@@ -243,7 +249,8 @@ findstr /I /X /C:"%~2" "%CMDLOG%" >nul
 if not "%errorlevel%"=="0" (call :problem "SHA-256 mismatch for %~1. Archive NOT extracted."& exit /b 1)
 echo SHA256 OK %~2 %~1
 >>"%LOG%" echo SHA256 OK %~2 %~1
-if "%GITHUB_ACTIONS%"=="true" echo ::notice title=PLPT Windows dependency::SHA256 %~2 %~nx1
+rem Hash checks always run/log; only provisioning emits repeated CI metadata.
+if "%GITHUB_ACTIONS%"=="true" if /I "%ACTION%"=="deps" if /I not "%~x1"==".part" echo ::notice title=PLPT Windows dependency::SHA256 %~2 %~nx1
 exit /b 0
 
 :dependencies
@@ -577,14 +584,18 @@ call :build_project || exit /b
 call :tests || exit /b
 set "STAGE=%OUT%\packages\stage"
 call :fresh "%STAGE%" || exit /b
-mkdir "%STAGE%\PLPT\bin" "%STAGE%\PLPT\docs" "%STAGE%\PLPT\licenses"
+mkdir "%STAGE%\PLPT\bin" "%STAGE%\PLPT\docs\reports" "%STAGE%\PLPT\licenses"
+call :run copy /y packaging\README.md "%STAGE%\PLPT\README.md"
+if errorlevel 1 exit /b
+call :run copy /y docs\reports\BUILD_DEPENDENCIES.md "%STAGE%\PLPT\docs\reports\"
+if errorlevel 1 exit /b
 call :run copy /y "%BIN%\plpt-monitor.exe" "%STAGE%\PLPT\bin\"
 if errorlevel 1 exit /b
 call :run copy /y "%BIN%\plpt-desktop.exe" "%STAGE%\PLPT\bin\"
 if errorlevel 1 exit /b
 call :run copy /y "%BIN%\*.dll" "%STAGE%\PLPT\bin\"
 if errorlevel 1 exit /b
-for %%F in (README.md docs\BUILD.md docs\SECURITY.md docs\QUICKSTART.md third_party\DEPENDENCIES.md) do (
+for %%F in (docs\BUILD.md docs\SECURITY.md docs\QUICKSTART.md third_party\DEPENDENCIES.md) do (
   call :run copy /y "%%F" "%STAGE%\PLPT\docs\"
   if errorlevel 1 exit /b
 )
@@ -605,6 +616,10 @@ for %%F in (plpt-monitor.exe plpt-desktop.exe SDL3.dll) do (
   call :run fc.exe /b "%BIN%\%%F" "%OUT%\packages\check\PLPT\bin\%%F"
   if errorlevel 1 exit /b
 )
+call :run fc.exe /b packaging\README.md "%OUT%\packages\check\PLPT\README.md"
+if errorlevel 1 exit /b
+call :run fc.exe /b docs\reports\BUILD_DEPENDENCIES.md "%OUT%\packages\check\PLPT\docs\reports\BUILD_DEPENDENCIES.md"
+if errorlevel 1 exit /b
 for %%F in (SDL3.txt ImGui.txt Bundled-notices.txt) do (
   call :run fc.exe /b "third_party\licenses\%%F" "%OUT%\packages\check\PLPT\licenses\%%F"
   if errorlevel 1 exit /b

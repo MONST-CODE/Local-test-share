@@ -32,6 +32,15 @@ utilise `SDL_SaveBMP_IO(..., false)`, gère la surface par RAII et vérifie la f
 Aucun patch tiers ou suppression sanitizer. Rejouer « fichier impossible » et
 « disque plein » (Linux) avant de simplifier cet adaptateur.
 
+**Deuxième régression observée sur le vrai backend X11 :** SDL 3.4.20 oublie de
+libérer `XTextProperty.value` lorsque `XmbTextListToTextProperty(..., XTextStyle, ...)`
+retourne `conv > 0`. Notre titre contenant un tiret cadratin a produit une fuite
+LSan de **37 octets** (pile native conservée). Le titre de la fenêtre OS est désormais
+ASCII, garanti par `static_assert`, donc représentable sans cette branche d'erreur.
+Le contenu français/Unicode reste rendu par ImGui à l'intérieur. Aucun flag de
+sanitizer désactivé, aucun patch silencieux de SDL. Revalider le chemin de titre
+X11 et cette précaution lors de la prochaine mise à jour du pin SDL.
+
 ## Notices incorporées
 
 | Composant | Identité / licence | Surface et règle |
@@ -42,6 +51,9 @@ Aucun patch tiers ou suppression sanitizer. Rejouer « fichier impossible » et
 | SDL stb_image | 2.30 via commit SDL ; alternative MIT | Décodeur PNG/JPEG ; aucune image invitée soumise dans cette preview |
 | SDL yuv2rgb | Commit SDL ; BSD-3-Clause, Adrien Descamps | Conversion de surfaces |
 | SDL qsort / libm / fallbacks | qsort 1.16 zlib ; fdlibm Sun ; dlmalloc 2.8.6, PDClib CC0 via SDL | Primitives ; notices conservées, pas de fork PLPT |
+| SDL X11 EDID et xsettings | Sources du commit SDL ; permissions Red Hat 2007 et Red Hat 2001/2007 + Igalia 2024, notices intégrales conservées | Description d'écran et réglages X11 ; ajoutés au profil Linux natif, aucune source flottante |
+| HIDAPI Windows | Snapshot 0.14.0 inclus dans SDL ; alternative BSD retenue | Surface du binaire SDL officiel plus large que le profil Linux ; pas d'initialisation HID par PLPT |
+| Valve OpenVR / Khronos | Headers inclus dans SDL ; Valve BSD-3-Clause, Khronos MIT/Apache-2.0, Vulkan 1.3.282 | Notices conservatrices pour la DLL officielle ; aucun runtime VR ajouté, aucun backend ImGui supplémentaire |
 
 Le profil **Linux** désactive/stube audio, joystick, haptic, sensor, camera, HIDAPI,
 GPU, lancement de processus, dialogues et tray. Ce n'est pas le profil compilé de
@@ -54,7 +66,9 @@ binaire tiers. Le renderer vidéo de la future application de partage reste à c
 Windows : Clang GNU driver ciblant Microsoft x64, import SDL3.lib + SDL3.dll,
 SDK/STL/CRT Microsoft. `/MTd` en Debug, `/MT` en Release pour PLPT/ImGui ; la DLL
 SDL conserve ses propres imports, inspectés par dumpbin. Le build copie les CRT
-app-local de release si les imports l'exigent. Le code STL est MIT ; SDK/CRT et
+app-local de release si les imports l'exigent. La DLL **effectivement inspectée**
+dans la validation native n'importe que 11 DLL système et aucun VCRUNTIME/MSVCP :
+ce chemin conditionnel n'a pas été nécessaire ni qualifié avec ce pin. Le code STL est MIT ; SDK/CRT et
 redistribution sont aussi régis par les conditions Microsoft du toolset exact.
 Pas de prétention d'autonomie universelle ou d'approbation juridique.
 

@@ -12,7 +12,12 @@ lists and integration flags. No generated dependency project or implicit downloa
 | Dear ImGui 1.93.0, commit `c1aaac65e896a45f81f47a4d68f9959e0f86c859` | https://codeload.github.com/ocornut/imgui/tar.gz/c1aaac65e896a45f81f47a4d68f9959e0f86c859 | `b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114` |
 
 SDL zlib and ImGui MIT notices are retained under `third_party/licenses/` with
-`Bundled-notices.txt`. The product/dependency security surface and update plan are
+`Bundled-notices.txt`. The latter also retains X11 EDID/xsettings notices and
+conservative notices for the broader official Windows SDL binary: HIDAPI 0.14.0
+(BSD alternative), Valve OpenVR interfaces (BSD-3-Clause) and pinned Khronos
+OpenGL/EGL/Vulkan headers (MIT/Apache-2.0; Vulkan header version 1.3.282).
+These are components of the same pinned SDL archive, not newly downloaded
+runtime integrations. No OpenVR/HID device library is initialized by PLPT. The product/dependency security surface and update plan are
 in `third_party/DEPENDENCIES.md`.
 
 Archive cache: `out/{windows,linux}/dependencies/`. Every build verifies hashes and
@@ -21,20 +26,36 @@ of a prior extraction cannot silently enter the next build. An existing corrupt
 archive is rejected rather than silently redownloaded. No dependency is fetched
 at application runtime or by debug/release/test/package.
 
-### Windows (qualification pending)
+### Windows — native ABI and runtime observed
 
 After stripping the archive root, expected files are `vendor/sdl/include/SDL3/SDL.h`,
 `vendor/sdl/lib/x64/SDL3.lib`, `vendor/sdl/lib/x64/SDL3.dll`. `dumpbin /headers`
 checks Microsoft COFF/PE x64, `/dependents` records runtime requirements. The DLL
 is copied next to the executable; application startup rejects a header/runtime
-SDL version mismatch. These checks are implemented, not yet native execution proof.
+SDL version mismatch. These checks **passed on native Windows** in run
+[43423683934](https://github.com/MONST-CODE/Local-test-share/actions/runs/43423683934),
+including Debug/Release/ASan execution and an extracted Release ZIP.
+
+Observed toolchain: **LLVM clang++ / LLD 20.1.8**, Microsoft target
+`x86_64-pc-windows-msvc`, **SDK 10.0.26100.0**, **VC Tools 14.44.35207**, probe
+`_MSC_VER=1944`, `_MSVC_STL_VERSION=143`, `__cplusplus=202002`. Compiler:
+`C:\Program Files\LLVM\bin\clang++.exe`; linker: adjacent `lld-link.exe`.
+
+The actual pinned SDL DLL imports only the following OS libraries:
+`SETUPAPI`, `WINMM`, `IMM32`, `VERSION`, `KERNEL32`, `USER32`, `GDI32`,
+`ADVAPI32`, `SHELL32`, `ole32`, `OLEAUT32` (all `.dll`). No VCRUNTIME/MSVCP
+DLL import was present; the app-local VC-CRT copy branch was **not needed or
+exercised** by this pinned archive. This is not a general claim about future
+SDL releases or other SDK combinations.
 
 Applications/ImGui use Microsoft static CRT (/MTd Debug, /MT Release). The official
 SDL DLL has its own CRT choices; the script records imports and, if necessary,
 copies the selected toolset's app-local release redistributable. SDK/STL/CRT licenses
 and Microsoft redistribution rights must be audited before distributing a release.
-The published ZIP digest is known from GitHub release asset 706576117; until a
-native runner verifies downloaded bytes, metadata alone is not a content audit.
+The published ZIP digest came from GitHub release asset 706576117. Native Windows
+runner runs starting with 43419873428 **downloaded and verified the actual ZIP bytes**
+against that digest (certutil SHA-256); corresponding annotations are retained.
+This hash verification alone is not a successful ABI/link/runtime qualification.
 
 ### Linux
 
@@ -72,7 +93,9 @@ The Linux sandbox compiler was provisioned from npm packages
 `llvm-runtime-lld-linux-x64` **22.1.8**, project https://github.com/holepunchto/llvm-runtime .
 Each tarball's SHA-512 matched registry metadata using openssl; extraction did not
 execute lifecycle scripts. Tool cache: `/home/user/.cache/plpt-direct-tools/`.
-The actual version/target/native probe were checked. This secondary distribution
+The actual version/target/native probe were checked. Exact tarball SHA-512 values
+and independent matches are retained in
+`evidence/direct-build-2026-11-13/linux-local/tool-provenance.txt`. This secondary distribution
 is a supply-chain limitation; it is not substituted for native Microsoft qualification.
 No CMake/Ninja/Zig/Python/PowerShell engine is provisioned for this migration.
 

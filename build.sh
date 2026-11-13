@@ -16,6 +16,7 @@ for arg in "$@"; do
         *) printf 'ERROR: unknown argument: %s\n' "$arg" >&2; exit 2;;
     esac
 done
+case "$ACTION" in release|package) MODE=release;; asan|fuzz) MODE=asan;; esac
 case "$ACTION" in debug|release|test|asan|fuzz|clean|package|doctor|deps|selftest|help) ;; *) echo "ERROR: unknown operation: $ACTION" >&2; exit 2;; esac
 if [[ $ACTION == help ]]; then
     echo 'Usage: ./build.sh debug|release|test [debug|release|asan]|asan|fuzz|clean|package|doctor|deps|selftest [--verbose] [--headless] [--core-only] [--native-ui]'
@@ -26,6 +27,9 @@ fi
 [[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || { echo 'ERROR: native Linux x86-64 required'; exit 2; }
 [[ -f engine/core/types.hpp && ! -L out && ! -L out/linux ]] || { echo 'ERROR: unsafe output root or wrong checkout'; exit 2; }
 OUT="$ROOT/out/linux"; DEPS="$OUT/dependencies"
+for generated in logs dependencies debug release tests packages doctor; do
+    [[ ! -L $OUT/$generated ]] || { echo "ERROR: symlink output directory refused: $OUT/$generated" >&2; exit 2; }
+done
 mkdir -p "$OUT/logs"
 LOG="$OUT/logs/$(date -u +%Y%m%dT%H%M%SZ)-${ACTION}-${MODE}-$$.log"
 : > "$LOG"
@@ -85,7 +89,8 @@ verify() {
     [[ -f $1 && ! -L $1 ]] || fail "missing archive $1; run ./build.sh deps --fetch or provision that exact verified archive"
     local got; got=$(sha256sum "$1"); got=${got%% *}
     [[ $got == "$2" ]] || fail "SHA-256 mismatch: $1 expected=$2 actual=$got (not extracted)"
-    say "SHA256 OK $got $1"; notice "dependency SHA256 $got $(basename "$1")"
+    say "SHA256 OK $got $1"
+    if [[ $ACTION == deps && $1 != *.part ]]; then notice "dependency SHA256 $got $(basename "$1")"; fi
 }
 dependencies() {
     (( CORE_ONLY )) && return 0
@@ -94,6 +99,7 @@ dependencies() {
 fetch_one() {
     local url=$1 file=$2 hash=$3
     if [[ -f $file ]]; then verify "$file" "$hash"; return; fi
+    [[ ! -L $file.part ]] || fail "symlink partial archive refused: $file.part"
     run curl --fail --location --show-error --proto '=https' --tlsv1.2 --output "$file.part" "$url"
     verify "$file.part" "$hash"; run mv -- "$file.part" "$file"
 }
@@ -117,7 +123,21 @@ toolchain() {
     run mkdir -p "$OUT/doctor"
     run "$CXX" -std=c++20 -Wall -Wextra -Wpedantic -Werror -pthread tests/build/toolchain_probe.cpp -o "$OUT/doctor/probe"
     [[ -x $OUT/doctor/probe ]] || fail 'toolchain probe binary missing after successful compiler return'
-    run "$OUT/doctor/probe"
+    run "$OUT/doctor/probe" > "$OUT/doctor/probe.log"
+    cat "$OUT/doctor/probe.log"
+    if [[ $ACTION == doctor ]]; then
+        local info="$OUT/doctor/environment.txt" linker_cmd
+        linker_cmd=$("$CXX" -print-prog-name=ld)
+        run uname -srvmo > "$info"
+        run getconf GNU_LIBC_VERSION >> "$info"
+        run "$linker_cmd" --version >> "$info"
+        cat "$OUT/doctor/probe.log" >> "$info"
+        if (( ! CORE_ONLY && ! HEADLESS )) && command -v dpkg-query >/dev/null; then
+            run dpkg-query -W '-f=${Package} ${Version}\n' libc6 libstdc++6 libx11-6 libxext6 >> "$info"
+        fi
+        cat "$info"
+        local metadata; metadata=$(cat "$info"); notice "native environment: ${metadata//$'\n'/%0A}"
+    fi
 }
 # Explicit PLPT targets; models are linked ONLY to unit tests, never the monitor/UI.
 CORE_SOURCES=(engine/core/random.cpp engine/diagnostics/audit.cpp
@@ -472,22 +492,30 @@ package() {
     fresh "$OUT/packages"
     MODE=release; DIR="$OUT/release"; build_project 1; tests
     local stage="$OUT/packages/stage" archive="$OUT/packages/PLPT-0.1.0-preview-linux-x64.tar.gz"
-    fresh "$stage"; mkdir -p "$stage/PLPT/bin" "$stage/PLPT/docs" "$stage/PLPT/licenses"
+    fresh "$stage"; mkdir -p "$stage/PLPT/bin" "$stage/PLPT/docs/reports" "$stage/PLPT/licenses"
+    run cp packaging/README.md "$stage/PLPT/README.md"
+    run cp docs/reports/BUILD_DEPENDENCIES.md "$stage/PLPT/docs/reports/"
     run cp "$BIN/plpt-monitor" "$BIN/plpt-desktop" "$BIN/libSDL3.so.0" "$stage/PLPT/bin/"
-    run cp README.md docs/BUILD.md docs/SECURITY.md docs/QUICKSTART.md "$stage/PLPT/docs/"
+    run cp docs/BUILD.md docs/SECURITY.md docs/QUICKSTART.md "$stage/PLPT/docs/"
     run cp third_party/DEPENDENCIES.md "$stage/PLPT/docs/"
     run cp third_party/licenses/SDL3.txt third_party/licenses/ImGui.txt third_party/licenses/Bundled-notices.txt "$stage/PLPT/licenses/"
     run tar -czf "$archive" -C "$stage" PLPT
     run sha256sum "$archive"
+    local package_hash; package_hash=$(sha256sum "$archive"); notice "PACKAGE SHA256 $package_hash"
     local check="$OUT/packages/check"; fresh "$check"; run tar -xzf "$archive" -C "$check"
     run cmp "$BIN/plpt-monitor" "$check/PLPT/bin/plpt-monitor"
     run cmp "$BIN/plpt-desktop" "$check/PLPT/bin/plpt-desktop"
     run cmp "$BIN/libSDL3.so.0" "$check/PLPT/bin/libSDL3.so.0"
+    run cmp packaging/README.md "$check/PLPT/README.md"
+    run cmp docs/reports/BUILD_DEPENDENCIES.md "$check/PLPT/docs/reports/BUILD_DEPENDENCIES.md"
     local license
     for license in SDL3.txt ImGui.txt Bundled-notices.txt; do run cmp "third_party/licenses/$license" "$check/PLPT/licenses/$license"; done
     run "$check/PLPT/bin/plpt-monitor" --version
     run env SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software "$check/PLPT/bin/plpt-desktop" --smoke-test
-    run ldd "$check/PLPT/bin/plpt-desktop"
+    run ldd "$check/PLPT/bin/plpt-desktop" > "$OUT/packages/runtime-dependencies.txt"
+    cat "$OUT/packages/runtime-dependencies.txt"
+    local runtime_info; runtime_info=$(cat "$OUT/packages/runtime-dependencies.txt")
+    notice "runtime dependencies: ${runtime_info//$'\n'/%0A}"
     say "PACKAGE SUCCESS $archive (development archive, host glibc/libstdc++/X11 required)"; notice 'PASS native Release package extracted and executed'
 }
 selftest() {

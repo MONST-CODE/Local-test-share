@@ -35,6 +35,8 @@ SDK/STL combination must pass the native doctor), Visual Studio C++ Build Tools
 with Windows SDK/UCRT x64, and native `curl.exe`, `tar.exe`, `certutil.exe`.
 The script may initialize `VsDevCmd.bat -arch=x64 -host_arch=x64` through vswhere.
 This initializes an environment only; it never invokes another build engine.
+Its log is separate from compiler captures; every process gets a fresh capture
+file so inherited SDK helper handles or old output cannot contaminate validation.
 
 The script selects `clang++.exe`, verifies its version/default Microsoft target,
 requires adjacent `lld-link.exe`, validates x64 SDK/STL headers/libraries and
@@ -141,7 +143,9 @@ set these for release qualification unless their values are recorded.
 `package` always recompiles Release and runs required tests first, then uses native
 tar/ZIP utilities. Archives include CLI, desktop, the SDL runtime (and any required
 Windows app-local CRT), concise docs and third-party notices. They are extracted,
-compared and executed before success is reported. No test/model executable is shipped.
+compared and executed before success is reported. No test/model executable is shipped. A package-specific README links only the
+included guides, dependency ledger and notices; full validation logs stay in the
+source checkout and platform-specific CI artifacts.
 
 These are **portable development archives**, not signed installers. The old CPack
 and unqualified NSIS recipe are retired. Windows installation/signing/SmartScreen
