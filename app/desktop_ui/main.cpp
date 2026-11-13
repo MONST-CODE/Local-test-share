@@ -171,10 +171,16 @@ int main(int argc, char** argv) {
     Runtime runtime;
     if (!SDL_Init(SDL_INIT_VIDEO)) { std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
     runtime.sdl = true;
+    if (SDL_GetVersion() != SDL_VERSION) {
+        std::fprintf(stderr, "SDL runtime/header version mismatch: runtime=%d headers=%d\n", SDL_GetVersion(), SDL_VERSION);
+        return 1;
+    }
     runtime.window = SDL_CreateWindow("PLPT — Moniteur local / preview 0.1.0", 1400, 900, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (!runtime.window) { std::fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError()); return 1; }
     runtime.renderer = SDL_CreateRenderer(runtime.window, nullptr);
     if (!runtime.renderer) { std::fprintf(stderr, "SDL_CreateRenderer: %s\n", SDL_GetError()); return 1; }
+    if (smoke) std::printf("desktop-runtime: SDL=%d video=%s renderer=%s\n", SDL_GetVersion(),
+        SDL_GetCurrentVideoDriver(), SDL_GetRendererName(runtime.renderer));
     (void)SDL_SetRenderVSync(runtime.renderer, 1);
     IMGUI_CHECKVERSION(); ImGui::CreateContext(); runtime.imgui = true;
     auto& io = ImGui::GetIO(); io.IniFilename = nullptr; io.LogFilename = nullptr;
