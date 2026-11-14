@@ -116,11 +116,14 @@ public:
     Result<int> pending_error() const;   // SO_ERROR après une initiation non bloquante
     Result<bool> peer_reachable() const; // getpeername : la connexion est établie
 
-    Result<void> join_multicast(const IpAddress& group, const IpAddress& interface);
-    Result<void> leave_multicast(const IpAddress& group, const IpAddress& interface);
+    // `local_interface` et non `interface` : les en-têtes Microsoft définissent
+    // `interface` comme une macro (`#define interface struct`), activée ici par
+    // iphlpapi.h. Un paramètre nommé `interface` ne compile donc pas sous Windows.
+    Result<void> join_multicast(const IpAddress& group, const IpAddress& local_interface);
+    Result<void> leave_multicast(const IpAddress& group, const IpAddress& local_interface);
     Result<void> set_multicast_ttl(int ttl);
     Result<void> set_multicast_loop(bool enabled);
-    Result<void> set_multicast_interface(const IpAddress& interface);
+    Result<void> set_multicast_interface(const IpAddress& local_interface);
 
     // Échec => Result invalide. WouldBlock/TimedOut/Disconnected sont des codes
     // explicites, jamais confondus avec une erreur de programmation.

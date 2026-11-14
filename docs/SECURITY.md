@@ -107,6 +107,28 @@ Garanties ajoutées, chacune adossée à un test réel et non à une intention :
   session (`HttpOnly`, `SameSite=Strict`, sans `Max-Age`) permet aux sous-ressources
   de passer sans répéter le jeton dans les URL ; un échec de dépôt est compté et
   averti, jamais masqué.
+- **Le cookie n'est jamais déposé dans une réponse qui ne peut pas le porter.** Les
+  réponses informationnelles (`100 Continue`, `103 Early Hints`, tout `1xx` sauf
+  `101`) sont transmises **telles quelles** et l'interception continue jusqu'à la
+  réponse pertinente : un `Set-Cookie` posé sur un `1xx` serait ignoré du navigateur
+  et donnerait l'illusion d'une capacité accordée. Le cookie n'est inséré que dans
+  une `2xx`–`5xx`, et son insertion est vérifiée octet par octet par le test
+  `lan_proxy_informational_and_upgrade_responses`.
+- **Un upgrade n'est jamais modifié.** Sur `101 Switching Protocols` — la réponse
+  d'un WebSocket — le proxy transmet sans toucher un octet : ajouter un en-tête à une
+  réponse `101` casserait la poignée de main et falsifierait le canal. Le renoncement
+  au cookie est compté (`grants_skipped`) et averti (`ProtocolViolation`), il n'est
+  pas silencieux. Même traitement pour une réponse amont illisible, et pour un
+  en-tête de réponse incomplet à la fermeture de l'amont : les octets réels sont
+  transmis à l'invité plutôt que perdus, et l'échec du dépôt est compté
+  (`grants_failed`).
+- **La saturation d'un service partagé est dite, pas absorbée.** Le pool de
+  connexions distingue les connexions **actives** des tâches **en attente** avec une
+  capacité totale unique (`workers + queue_capacity`) ; au-delà la soumission est
+  refusée, l'appelant reste propriétaire de la socket et répond `503`. Aucune file
+  infinie, aucun thread détaché, tous les ouvriers joints à l'arrêt. Une connexion
+  muette ne peut pas occuper un ouvrier indéfiniment : les délais de socket sont
+  bornés (`10 s` pour une requête, `120 s` d'inactivité WebSocket).
 - **L'identité ne repose plus sur le nom.** La reprise d'une place exige un secret
   aléatoire de 16 octets émis par l'hôte sur le canal authentifié, comparé à temps
   constant, consommé puis rotaté, supprimé par la révocation. Un homonyme et un

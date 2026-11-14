@@ -380,8 +380,9 @@ Result<std::size_t> Announcer::send_now() {
         if (target.first.text == kDiscoveryGroup) { group_port = target.second; break; }
     }
     // Multicast : une émission par interface LAN, avec l'interface de sortie explicite.
-    for (const auto& interface : config_.interfaces) {
-        if (auto selected = socket_.set_multicast_interface(interface); !selected) {
+    // `lan_interface` : `interface` est une macro des en-têtes Microsoft.
+    for (const auto& lan_interface : config_.interfaces) {
+        if (auto selected = socket_.set_multicast_interface(lan_interface); !selected) {
             std::lock_guard<std::mutex> guard(mutex_);
             failures_.push_back(selected.error());
             continue;

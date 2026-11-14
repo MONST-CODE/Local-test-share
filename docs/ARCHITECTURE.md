@@ -51,12 +51,13 @@ Modèles de session (liés au poste de contrôle et aux tests, jamais au CLI) :
     protocol (codec borné, enveloppe 56 octets, trames TCP)
     resource_manager (estimation, sans collecte CPU/GPU)
 
-Réseau LAN réel (engine/net, engine/platform/socket, engine/core/digest+secrets) :
+Réseau LAN réel (engine/net, engine/platform/socket+connection_pool, engine/core/digest+secrets) :
     wire        trames et messages typés, assembleur borné
     discovery   annonceur/écouteur UDP multicast 239.255.77.88:47788
     host_server plan de contrôle hôte : authentification, approbation, révocation
     guest_client plan de contrôle invité : attente d'autorisation, messagerie
     proxy       plan de données : pont TCP autorisé par jeton de service
+    connection_pool  capacité bornée des connexions acceptées : actives + en attente
 
 Interfaces non implémentées : browser, ITemporaryStorage.
 ```
@@ -263,6 +264,7 @@ encodage, décodage) est toujours absent.
 | --- | --- | --- |
 | `platform/socket` (TCP/UDP, poll, multicast, `MSG_NOSIGNAL`) | **OPÉRATIONNEL** | cas `platform`, `lan_*` |
 | `platform/socket` — énumération réelle des interfaces et `resolve_bind_address` | **OPÉRATIONNEL** ; instantané au démarrage, pas de basculement en cours de session | `bind_resolution_never_defaults_to_any`, ADR-014 |
+| `platform/connection_pool` (capacité explicite : `workers` connexions actives + `queue_capacity` en attente, refus au-delà, ouvriers joints) | **OPÉRATIONNEL** ; le traitement doit être borné par des délais de socket, sinon l'arrêt attend la tâche en cours — déclaré, pas masqué | `pool_saturation_with_held_open_connections` (connexions réelles maintenues ouvertes) |
 | `core/digest` (CNG, AF_ALG, sinon dlopen libcrypto) | **OPÉRATIONNEL** | vecteurs FIPS SHA-1/SHA-256 |
 | `core/secrets` (codes d'invitation, jetons, masquage) | **OPÉRATIONNEL** | `secrets_digests_and_formats_are_exact` |
 | `net/wire` (trames, assembleur borné, gardes anti-DoS) | **OPÉRATIONNEL** | `wire_messages_roundtrip_and_guard` |
@@ -270,7 +272,8 @@ encodage, décodage) est toujours absent.
 | `net/host_server` (authentification, approbation, messagerie, révocation, délais, fermeture, reprise par secret) | **OPÉRATIONNEL** sur TCP réel | `lan_control_plane_host_and_guest`, `lan_resume_secret_binds_identity` |
 | `net/guest_client` (attente d'autorisation, services, messagerie, latence mesurée, secret de reprise) | **OPÉRATIONNEL** sur TCP réel | idem |
 | `net/proxy` (pont TCP à jeton, capacité retirée avant l'amont, cookie de capacité, HTTP et WebSocket transparents, 403/502/503) | **OPÉRATIONNEL** en loopback ; **PARTIEL** : HTTP clair, pas de HTTP/2, pas de demi-fermeture, pas de débit limité par flux | `lan_data_plane_proxy_token_gate`, `capability_is_never_forwarded_upstream` |
-| `app/demo_service` (HTTP/1.1 + RFC 6455, écho, pool d'ouvriers fixes) | **OPÉRATIONNEL** ; construit, non exécuté par les tests CI | sonde locale : 85 requêtes, 9 threads stables, arrêt en 100 ms |
+| `net/proxy` — réponses informationnelles et upgrade : `1xx` (sauf `101`) transmis tels quels puis interception poursuivie jusqu'à la réponse pertinente, cookie déposé seulement dans une `2xx`–`5xx`, `101` et réponse illisible jamais modifiés et renoncement compté | **OPÉRATIONNEL** en loopback | `lan_proxy_informational_and_upgrade_responses` (`100 Continue`, `103 Early Hints`, `200` final, `101`, réponse illisible) |
+| `app/demo_service` (HTTP/1.1 + RFC 6455, écho, `connection_pool` partagé avec les tests, délais bornés par connexion, écoute non bloquante pour observer l'arrêt demandé) | **OPÉRATIONNEL** sous Linux ; construit par les deux chaînes, non exécuté par les tests CI (le harnais ne lance aucun binaire externe). L'arrêt par `Ctrl+C` sous Windows repose sur le même code mais n'est pas qualifié ici | diagnostic local `.cache/demo_diag.sh` : 9 threads constants (1 + 8 ouvriers), 69 connexions prises en charge et 4 refusées en `503` (14 ms) pendant une saturation provoquée par 26 connexions réelles maintenues ouvertes, retour à `200` après libération, 30/30 `200` ensuite, `426` sans upgrade, arrêt en 200 ms après `SIGTERM` avec bilan écrit (`actives_pic=8 attente_pic=16 terminées=69`) ; client RFC 6455 jetable : `101`, écho texte exact, ping→pong, close |
 | Interface SDL/ImGui branchée sur `host_server`/`guest_client` | **NON IMPLÉMENTÉ** | le tableau de bord n'ouvre pas encore de session |
 | Enchaînement détection native → service partagé (`monitor` → `proxy`) | **NON IMPLÉMENTÉ** | la détection existe, le câblage n'est pas fait |
 | Entrée clavier/souris, flux vidéo, TLS, orchestrateur multi-processus | **NON IMPLÉMENTÉ** | aucun stub silencieux |

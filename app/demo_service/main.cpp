@@ -13,26 +13,31 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
-#include <condition_variable>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <deque>
-#include <memory>
-#include <mutex>
 #include <span>
 #include <string>
 #include <thread>
 #include <vector>
 #include "../../engine/core/digest.hpp"
+#include "../../engine/platform/connection_pool.hpp"
 #include "../../engine/platform/socket.hpp"
 
 namespace {
 using namespace plpt;
 using namespace std::chrono_literals;
 
-constexpr std::size_t kMaxConnections = 8;
+constexpr std::size_t kMaxConnections = 8;  // connexions ACTIVES simultanées.
+constexpr std::size_t kMaxQueued = 16;      // tâches EN ATTENTE au-delà des actives.
 constexpr std::size_t kMaxHeadBytes = 8192;
+// Délais bornés côté service : une connexion muette ne doit pas pouvoir occuper un
+// ouvrier indéfiniment et épuiser la capacité annoncée. Le délai d'inactivité
+// WebSocket est aligné sur idle_timeout_ms du proxy (120 s), pas sur la requête.
+constexpr std::chrono::milliseconds kHeadTimeout{10000};
+constexpr std::chrono::milliseconds kWriteTimeout{5000};
+constexpr std::chrono::milliseconds kWebSocketIdleTimeout{120000};
 constexpr std::size_t kMaxFrameBytes = 64 * 1024;
 constexpr char kWebSocketGuid[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -188,6 +193,7 @@ void serve_websocket(Socket& socket) {
 }
 
 void serve_connection(Socket& socket, const IpAddress& peer) {
+    (void)socket.set_timeouts(kHeadTimeout, kWriteTimeout);
     std::vector<std::uint8_t> head;
     head.reserve(1024);
     std::array<std::uint8_t, 4096> buffer{};
@@ -223,6 +229,8 @@ void serve_connection(Socket& socket, const IpAddress& peer) {
         const std::string handshake = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
             "Sec-WebSocket-Accept: " + accept_value + "\r\n\r\n";
         if (auto written = write_all(socket, {reinterpret_cast<const std::uint8_t*>(handshake.data()), handshake.size()}, 2000ms); !written) return;
+        // Phase WebSocket : l'inactivité normale d'une session est longue.
+        (void)socket.set_timeouts(kWebSocketIdleTimeout, kWriteTimeout);
         log_line("websocket établi sur /ws");
         serve_websocket(socket);
         return;
@@ -239,6 +247,26 @@ void serve_connection(Socket& socket, const IpAddress& peer) {
     (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(response.data()), response.size()}, 2000ms);
 }
 
+// Arrêt demandé : SIGTERM/SIGINT posent g_stop. Sous POSIX le gestionnaire est
+// installé par sigaction SANS SA_RESTART, sinon accept() et receive() bloquants
+// seraient relancés par le noyau et la boucle ne verrait jamais l'arrêt : les
+// ouvriers ne seraient pas joints et la ligne de bilan ne serait pas écrite.
+// std::signal sous glibc pose SA_RESTART, d'où sigaction ici.
+void install_stop_handlers() {
+    const auto handler = [](int) { g_stop.store(true); };
+#ifdef _WIN32
+    (void)std::signal(SIGINT, handler);
+    (void)std::signal(SIGTERM, handler);
+#else
+    struct sigaction action{};
+    action.sa_handler = handler;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = 0; // volontairement pas de SA_RESTART.
+    (void)sigaction(SIGINT, &action, nullptr);
+    (void)sigaction(SIGTERM, &action, nullptr);
+#endif
+}
+
 void usage() {
     std::printf("Usage: plpt-demo-service [--port <num>] [--host <adresse>] [--quiet] [--once]\n"
                 "  --port  port d'écoute loopback (0 = éphémère, défaut 0)\n"
@@ -249,6 +277,7 @@ void usage() {
 } // namespace
 
 int main(int argc, char** argv) {
+    install_stop_handlers();
     std::uint16_t requested_port = 0;
     std::string host = "127.0.0.1";
     bool once = false;
@@ -286,43 +315,35 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "listen impossible : %s\n", listening.error().message.c_str());
         return 3;
     }
+    // Écoute non bloquante : la boucle vérifie l'arrêt demandé à chaque tour. Un
+    // accept() bloquant n'est interrompu par un signal que sous POSIX, et seulement
+    // sans SA_RESTART ; sous Windows (Ctrl+C) il ne l'est pas du tout. Le même code
+    // s'arrête donc proprement sur les deux plateformes. Les sockets acceptées sont
+    // remises en mode bloquant par Socket::accept.
+    if (auto nonblocking = listener.set_nonblocking(true); !nonblocking) {
+        std::fprintf(stderr, "écoute non bloquante impossible : %s\n", nonblocking.error().message.c_str());
+        return 3;
+    }
     std::printf("port=%u\n", port.value().value);
     std::fflush(stdout);
     log_line("service de démonstration en écoute sur " + address.value().text + ":" + std::to_string(port.value().value));
 
     unsigned served = 0;
-    // Pool d'ouvriers fixes et file bornée : aucun thread détaché, aucun join
-    // oublié, et la saturation mesurée est réelle (ouvriers occupés ou file pleine).
-    // Le retrait précédent testait joinable(), toujours vrai pour un std::thread
-    // vivant : le vecteur croissait donc jusqu'à refuser toute connexion.
-    struct Work {
-        std::shared_ptr<Socket> socket;
-        IpAddress peer;
-    };
-    std::mutex queue_mutex;
-    std::condition_variable queue_condition;
-    std::deque<Work> queue;
-    std::atomic<std::size_t> live{0};      // en file + en cours de service.
-    std::atomic<bool> accepting{true};
-    std::vector<std::thread> pool;
+    unsigned refused = 0;
+    // Capacité explicite et cohérente : kMaxConnections connexions ACTIVES et
+    // kMaxQueued tâches EN ATTENTE, soit kMaxConnections + kMaxQueued au total.
+    // Au-delà, la soumission est refusée et le client reçoit 503 immédiatement.
+    // Le pool joint tous ses ouvriers à l'arrêt : aucun thread détaché, aucune file
+    // infinie. C'est le même code que celui exercé par les tests d'intégration.
+    ConnectionPool pool;
     if (!once) {
-        pool.reserve(kMaxConnections);
-        for (std::size_t index = 0; index < kMaxConnections; ++index) {
-            pool.emplace_back([&] {
-                for (;;) {
-                    Work work;
-                    {
-                        std::unique_lock<std::mutex> guard(queue_mutex);
-                        queue_condition.wait(guard, [&] { return !queue.empty() || !accepting.load(); });
-                        if (queue.empty()) return; // arrêt demandé : plus rien à servir.
-                        work = std::move(queue.front());
-                        queue.pop_front();
-                    }
-                    --live;
-                    serve_connection(*work.socket, work.peer);
-                    work.socket->close();
-                }
-            });
+        auto started = pool.start(kMaxConnections, kMaxQueued, [](Socket& socket, const IpAddress& peer) {
+            serve_connection(socket, peer);
+        });
+        if (!started) {
+            std::fprintf(stderr, "pool de connexions impossible : %s\n", started.error().message.c_str());
+            listener.close();
+            return 3;
         }
     }
     while (!g_stop.load()) {
@@ -331,6 +352,9 @@ int main(int argc, char** argv) {
         auto accepted = listener.accept(&peer, &peer_port);
         if (!accepted) {
             if (accepted.error().code == ErrorCode::WouldBlock) { std::this_thread::sleep_for(50ms); continue; }
+            // EINTR après SIGTERM/SIGINT : ce n'est pas une erreur, c'est l'arrêt
+            // demandé. On sort de la boucle pour joindre les ouvriers proprement.
+            if (g_stop.load()) break;
             std::fprintf(stderr, "accept impossible : %s\n", accepted.error().message.c_str());
             break;
         }
@@ -341,27 +365,29 @@ int main(int argc, char** argv) {
             ++served;
             break;
         }
-        if (live.load() >= kMaxConnections) {
-            auto socket = std::move(accepted).value();
+        auto socket = std::move(accepted).value();
+        // En cas de refus la socket n'est pas consommée : l'appelant répond puis ferme.
+        switch (pool.submit(std::move(socket), peer)) {
+        case PoolSubmission::Refused: {
             const auto body = http_response(503, "Service Unavailable", "text/plain; charset=utf-8", "service de démonstration saturé");
             (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(body.data()), body.size()}, 1000ms);
             socket.close();
-            continue;
+            ++refused;
+            break;
         }
-        ++live;
-        {
-            std::lock_guard<std::mutex> guard(queue_mutex);
-            queue.push_back(Work{std::make_shared<Socket>(std::move(accepted).value()), peer});
+        default:
+            ++served;
+            break;
         }
-        queue_condition.notify_one();
-        ++served;
     }
     // Arrêt propre : plus d'acceptation, les ouvriers finissent leur connexion
     // courante puis sortent ; tous sont joints, aucun n'est détaché.
-    accepting.store(false);
-    queue_condition.notify_all();
     listener.close();
-    for (auto& worker : pool) if (worker.joinable()) worker.join();
-    log_line("service arrêté après " + std::to_string(served) + " connexion(s)");
+    pool.stop();
+    const auto pool_counters = pool.counters();
+    log_line("service arrêté après " + std::to_string(served) + " connexion(s) prise(s) en charge et " +
+        std::to_string(refused) + " refusée(s) : actives_pic=" + std::to_string(pool_counters.max_active) +
+        " attente_pic=" + std::to_string(pool_counters.max_queued) + " terminées=" +
+        std::to_string(pool_counters.completed));
     return 0;
 }

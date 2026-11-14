@@ -261,6 +261,21 @@ std::vector<std::uint8_t> redact_capability(std::span<const std::uint8_t> head, 
     return out;
 }
 
+int response_status_code(std::span<const std::uint8_t> head) {
+    const std::string_view text(reinterpret_cast<const char*>(head.data()), head.size());
+    const auto end = text.find("\r\n");
+    const auto line = end == std::string_view::npos ? text : text.substr(0, end);
+    if (line.size() < 12 || line.compare(0, 5, "HTTP/") != 0) return 0;
+    const auto space = line.find(' ');
+    if (space == std::string_view::npos || space + 3 >= line.size()) return 0;
+    const auto digits = line.substr(space + 1, 3);
+    for (const char character : digits)
+        if (character < '0' || character > '9') return 0;
+    if (space + 4 < line.size() && line[space + 4] != ' ') return 0; // « 200OK » refusé.
+    return static_cast<int>(digits[0] - '0') * 100 + static_cast<int>(digits[1] - '0') * 10 +
+        static_cast<int>(digits[2] - '0');
+}
+
 std::vector<std::uint8_t> inject_response_header(std::span<const std::uint8_t> response, std::size_t terminator,
     std::string_view line) {
     if (terminator + 2 > response.size()) return {response.begin(), response.end()};
@@ -293,7 +308,8 @@ struct ServiceProxy::Stream {
     Port peer_port{};
     enum class Phase : std::uint8_t { AwaitHead, Bridging, Closing } phase = Phase::AwaitHead;
     bool grant_pending = false;              // cookie de capacité à déposer.
-    bool grant_done = false;                 // première réponse déjà traitée.
+    bool grant_done = false;                 // réponse finale déjà traitée.
+    bool informational_logged = false;       // un seul événement par flux pour les 1xx.
     std::string grant_cookie_line;           // ligne Set-Cookie à insérer.
     std::vector<std::uint8_t> response_head; // en-têtes de la 1re réponse, bornés.
     std::vector<std::uint8_t> head;             // en-têtes reçus avant décision.
@@ -312,6 +328,79 @@ struct ServiceProxy::Stream {
     std::uint64_t bytes_to_guest = 0;
     std::uint64_t bytes_to_upstream = 0;
 };
+
+void ServiceProxy::process_response_head(Stream& stream, std::span<const std::uint8_t> received) {
+    // Interception jusqu'à la réponse PERTINENTE : un 100 Continue ou un 103 Early
+    // Hints précède la réponse finale, et un cookie inséré là ne serait pas honoré
+    // par le navigateur. Plusieurs réponses informationnelles peuvent arriver dans
+    // le même segment TCP : la boucle les traite toutes, et elle est bornée par les
+    // octets effectivement reçus (chaque 1xx est retiré du tampon).
+    stream.response_head.insert(stream.response_head.end(), received.begin(), received.end());
+    for (;;) {
+        const auto terminator = find_bytes(stream.response_head, "\r\n\r\n");
+        if (terminator == std::string::npos) {
+            if (stream.response_head.size() >= kMaxHeadBytes) {
+                // En-têtes de réponse anormalement grands : renoncement explicite, les
+                // octets réels sont transmis plutôt que la réponse bloquée.
+                stream.to_guest.insert(stream.to_guest.end(), stream.response_head.begin(), stream.response_head.end());
+                stream.grant_pending = false;
+                stream.grant_done = true;
+                ++counters_.grants_failed;
+                record_warning({ErrorCode::TooLarge, "cookie de capacité non déposé : en-têtes de réponse hors borne", "proxy"});
+                stream.response_head.clear();
+                stream.response_head.shrink_to_fit();
+            }
+            return; // en-têtes incomplets : on attend la suite.
+        }
+        const auto status = response_status_code({stream.response_head.data(), terminator + 2});
+        if (status >= 100 && status <= 199 && status != 101) {
+            const auto next_head = stream.response_head.begin() + static_cast<std::ptrdiff_t>(terminator + 4);
+            stream.to_guest.insert(stream.to_guest.end(), stream.response_head.begin(), next_head);
+            stream.response_head.erase(stream.response_head.begin(), next_head);
+            ++counters_.informational_responses;
+            if (!stream.informational_logged) {
+                stream.informational_logged = true;
+                record_event("réponse informationnelle " + std::to_string(status) +
+                    " transmise sans cookie de capacité");
+            }
+            continue; // la réponse pertinente peut suivre dans les mêmes octets.
+        }
+        if (status >= 200 && status <= 599) {
+            const auto modified = inject_response_header(stream.response_head, terminator, stream.grant_cookie_line);
+            stream.to_guest.insert(stream.to_guest.end(), modified.begin(), modified.end());
+            ++counters_.grants_issued;
+            record_event("cookie de capacité déposé dans la réponse " + std::to_string(status) +
+                " pour " + stream.peer.text);
+        } else {
+            // 101 Switching Protocols ou réponse illisible : la réponse n'est jamais
+            // modifiée, et le renoncement est dit.
+            stream.to_guest.insert(stream.to_guest.end(), stream.response_head.begin(), stream.response_head.end());
+            ++counters_.grants_skipped;
+            record_warning({ErrorCode::ProtocolViolation,
+                status == 101 ? "réponse 101 : aucun cookie de capacité déposé"
+                              : "réponse amont illisible : aucun cookie de capacité déposé",
+                "proxy"});
+        }
+        stream.grant_pending = false;
+        stream.grant_done = true;
+        stream.response_head.clear();
+        stream.response_head.shrink_to_fit();
+        return;
+    }
+}
+
+void ServiceProxy::flush_pending_response_head(Stream& stream, const char* reason) {
+    if (!stream.grant_pending || stream.grant_done || stream.response_head.empty()) return;
+    // Des octets réels ont été reçus mais ne forment pas une réponse complète : ils
+    // sont transmis à l'invité plutôt que perdus, et l'échec du dépôt est dit.
+    stream.to_guest.insert(stream.to_guest.end(), stream.response_head.begin(), stream.response_head.end());
+    stream.grant_pending = false;
+    stream.grant_done = true;
+    ++counters_.grants_failed;
+    record_warning({ErrorCode::ProtocolViolation, std::string("cookie de capacité non déposé : ") + reason, "proxy"});
+    stream.response_head.clear();
+    stream.response_head.shrink_to_fit();
+}
 
 ServiceProxy::ServiceProxy(IClock& clock) : clock_(clock) {}
 ServiceProxy::~ServiceProxy() { stop(); }
@@ -662,44 +751,28 @@ void ServiceProxy::pump_streams(std::chrono::milliseconds timeout) {
         if (stream.polled_upstream && upstream_entry.readable && stream.phase == Stream::Phase::Bridging) {
             auto received = stream.upstream.receive(buffer);
             if (!received) {
-                if (received.error().code != ErrorCode::WouldBlock) stream.upstream_eof = true;
+                if (received.error().code != ErrorCode::WouldBlock) {
+                    stream.upstream_eof = true;
+                    flush_pending_response_head(stream, "service local fermé avant une réponse complète");
+                }
             } else if (received.value() == 0) {
                 stream.upstream_eof = true;
+                flush_pending_response_head(stream, "service local fermé avant une réponse complète");
             } else {
                 stream.last_activity_ms = clock_.now_monotonic_ms();
-                const auto slice_end = buffer.begin() + static_cast<std::ptrdiff_t>(received.value());
                 if (stream.grant_pending && !stream.grant_done) {
-                    // Première réponse du flux : on y dépose le cookie de capacité.
-                    stream.response_head.insert(stream.response_head.end(), buffer.begin(), slice_end);
-                    const auto terminator = find_bytes(stream.response_head, "\r\n\r\n");
-                    if (terminator != std::string::npos) {
-                        const auto modified = inject_response_header(stream.response_head, terminator, stream.grant_cookie_line);
-                        stream.to_guest.insert(stream.to_guest.end(), modified.begin(), modified.end());
-                        stream.grant_pending = false;
-                        stream.grant_done = true;
-                        ++counters_.grants_issued;
-                        record_event("cookie de capacité déposé pour " + stream.peer.text);
-                        stream.response_head.clear();
-                        stream.response_head.shrink_to_fit();
-                    } else if (stream.response_head.size() >= kMaxHeadBytes) {
-                        // En-têtes de réponse anormalement grands : renoncement explicite,
-                        // les octets réels sont transmis plutôt que la réponse bloquée.
-                        stream.to_guest.insert(stream.to_guest.end(), stream.response_head.begin(), stream.response_head.end());
-                        stream.grant_pending = false;
-                        stream.grant_done = true;
-                        ++counters_.grants_failed;
-                        record_warning({ErrorCode::TooLarge, "cookie de capacité non déposé : en-têtes de réponse hors borne", "proxy"});
-                        stream.response_head.clear();
-                        stream.response_head.shrink_to_fit();
-                    }
-                    // Sinon : en-têtes de réponse incomplets, on attend la suite.
+                    process_response_head(stream, {buffer.data(), received.value()});
                 } else {
+                    const auto slice_end = buffer.begin() + static_cast<std::ptrdiff_t>(received.value());
                     stream.to_guest.insert(stream.to_guest.end(), buffer.begin(), slice_end);
                 }
             }
         }
         if (guest_entry.failed) { stream.guest_eof = true; close_stream(stream, "erreur de socket invité"); }
-        if (stream.polled_upstream && upstream_entry.failed && stream.upstream.valid()) { stream.upstream_eof = true; }
+        if (stream.polled_upstream && upstream_entry.failed && stream.upstream.valid()) {
+            stream.upstream_eof = true;
+            flush_pending_response_head(stream, "erreur de socket du service local");
+        }
         if (guest_entry.writable && stream.to_guest_sent < stream.to_guest.size()) {
             auto sent = stream.guest.send({stream.to_guest.data() + stream.to_guest_sent, stream.to_guest.size() - stream.to_guest_sent});
             if (sent) {

@@ -12,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
@@ -33,8 +34,13 @@ struct ProxyCounters {
     std::uint64_t closed = 0;
     std::uint64_t idle_timeouts = 0;
     std::uint64_t tokens_redacted = 0; // requêtes dont la capacité a été retirée.
-    std::uint64_t grants_issued = 0;   // cookies de capacité déposés chez l'invité.
+    // Un cookie n'est compté « délivré » que si son insertion dans une réponse
+    // PERTINENTE (statut >= 200) est effective : une insertion dans un 1xx ne
+    // serait pas honorée par le navigateur et ne compte donc pas.
+    std::uint64_t grants_issued = 0;   // cookies déposés dans une réponse finale.
+    std::uint64_t grants_skipped = 0;  // 101, réponse illisible : jamais modifiée.
     std::uint64_t grants_failed = 0;   // dépôt impossible : en-têtes de réponse hors borne.
+    std::uint64_t informational_responses = 0; // 100 Continue, 103 Early Hints…
 };
 
 struct ProxyConfig {
@@ -109,6 +115,15 @@ private:
     bool begin_upstream(Stream& stream);
     bool forward(Stream& stream, bool to_guest);
     void close_stream(Stream& stream, const char* reason);
+    // Interception de la première réponse amont. Les réponses informationnelles
+    // (1xx, sauf 101) sont transmises telles quelles et l'interception continue sur
+    // les octets suivants : plusieurs 1xx peuvent arriver dans le même segment, la
+    // boucle est bornée par les octets réellement reçus. Le cookie de capacité n'est
+    // déposé que dans la réponse pertinente (2xx–5xx).
+    void process_response_head(Stream& stream, std::span<const std::uint8_t> received);
+    // Amont fermé avant une réponse complète : les octets réels sont transmis, le
+    // renoncement au cookie est compté et averti, jamais masqué.
+    void flush_pending_response_head(Stream& stream, const char* reason);
     bool send_status(Stream& stream, std::uint16_t status, std::string_view reason, std::string_view body);
     void publish();
     void record_event(std::string text);
@@ -165,6 +180,9 @@ std::vector<std::uint8_t> http_status_response(std::uint16_t status, std::string
 // X-PLPT-Token, et paramètre homonyme dans Referer. Tout le reste est conservé
 // octet pour octet ; le résultat n'est jamais plus long que l'entrée.
 std::vector<std::uint8_t> redact_capability(std::span<const std::uint8_t> head, std::string_view token_name);
+// Code de statut d'une réponse HTTP, 0 si la ligne de statut n'est pas lisible.
+// Sert à distinguer une réponse informationnelle (1xx) d'une réponse finale.
+int response_status_code(std::span<const std::uint8_t> head);
 // Insère une ligne d'en-tête dans une réponse dont la fin d'en-têtes est connue :
 // `terminator` est l'index du premier octet de la séquence CRLF CRLF finale.
 std::vector<std::uint8_t> inject_response_header(std::span<const std::uint8_t> response, std::size_t terminator,

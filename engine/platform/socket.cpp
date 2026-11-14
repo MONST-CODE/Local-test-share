@@ -8,6 +8,10 @@
 
 #ifdef _WIN32
 #include "windows/winsock.hpp"
+// iphlpapi.h active transitivement la macro Microsoft `interface` (= struct).
+// Aucun identifiant PLPT ne porte donc ce nom : les paramètres d'interface locale
+// s'appellent `local_interface`. Les champs Winsock (`imr_interface`,
+// `ipv6mr_interface`) ne sont pas touchés : la macro ne remplace que le jeton exact.
 #include <iphlpapi.h>
 #else
 #include <ifaddrs.h>
@@ -601,7 +605,7 @@ Result<bool> Socket::peer_reachable() const {
     return Result<bool>::success(true);
 }
 
-Result<void> Socket::join_multicast(const IpAddress& group, const IpAddress& interface) {
+Result<void> Socket::join_multicast(const IpAddress& group, const IpAddress& local_interface) {
     if (!valid()) return Result<void>::failure({ErrorCode::InvalidState, "socket fermé", "socket"});
     if (!group.is_multicast())
         return Result<void>::failure({ErrorCode::InvalidArgument, "groupe non multicast", "socket"});
@@ -611,8 +615,8 @@ Result<void> Socket::join_multicast(const IpAddress& group, const IpAddress& int
         ip_mreq request{};
         if (::inet_pton(AF_INET, group.text.c_str(), &request.imr_multiaddr) != 1)
             return Result<void>::failure({ErrorCode::InvalidArgument, "groupe IPv4 invalide", "socket"});
-        if (interface.valid() && interface.family == IpFamily::Ipv4) {
-            if (::inet_pton(AF_INET, interface.text.c_str(), &request.imr_interface) != 1)
+        if (local_interface.valid() && local_interface.family == IpFamily::Ipv4) {
+            if (::inet_pton(AF_INET, local_interface.text.c_str(), &request.imr_interface) != 1)
                 return Result<void>::failure({ErrorCode::InvalidArgument, "interface IPv4 invalide", "socket"});
         } else {
             request.imr_interface.s_addr = htonl(INADDR_ANY);
@@ -624,26 +628,26 @@ Result<void> Socket::join_multicast(const IpAddress& group, const IpAddress& int
     ipv6_mreq request{};
     if (::inet_pton(AF_INET6, group.text.c_str(), &request.ipv6mr_multiaddr) != 1)
         return Result<void>::failure({ErrorCode::InvalidArgument, "groupe IPv6 invalide", "socket"});
-    request.ipv6mr_interface = interface.scope_id;
+    request.ipv6mr_interface = local_interface.scope_id;
     if (::setsockopt(raw(handle_), IPPROTO_IPV6, IPV6_JOIN_GROUP, reinterpret_cast<const char*>(&request), sizeof(request)) != 0)
         return Result<void>::failure(io_error("IPV6_JOIN_GROUP", "socket", last_error()));
     return Result<void>::success();
 }
 
-Result<void> Socket::leave_multicast(const IpAddress& group, const IpAddress& interface) {
+Result<void> Socket::leave_multicast(const IpAddress& group, const IpAddress& local_interface) {
     if (!valid()) return Result<void>::success();
     if (family_ == IpFamily::Ipv4) {
         ip_mreq request{};
         if (::inet_pton(AF_INET, group.text.c_str(), &request.imr_multiaddr) != 1) return Result<void>::success();
         request.imr_interface.s_addr = htonl(INADDR_ANY);
-        if (interface.valid() && interface.family == IpFamily::Ipv4)
-            (void)::inet_pton(AF_INET, interface.text.c_str(), &request.imr_interface);
+        if (local_interface.valid() && local_interface.family == IpFamily::Ipv4)
+            (void)::inet_pton(AF_INET, local_interface.text.c_str(), &request.imr_interface);
         (void)::setsockopt(raw(handle_), IPPROTO_IP, IP_DROP_MEMBERSHIP, reinterpret_cast<const char*>(&request), sizeof(request));
         return Result<void>::success();
     }
     ipv6_mreq request{};
     if (::inet_pton(AF_INET6, group.text.c_str(), &request.ipv6mr_multiaddr) != 1) return Result<void>::success();
-    request.ipv6mr_interface = interface.scope_id;
+    request.ipv6mr_interface = local_interface.scope_id;
     (void)::setsockopt(raw(handle_), IPPROTO_IPV6, IPV6_LEAVE_GROUP, reinterpret_cast<const char*>(&request), sizeof(request));
     return Result<void>::success();
 }
@@ -685,19 +689,19 @@ Result<void> Socket::set_multicast_loop(bool enabled) {
 #endif
 }
 
-Result<void> Socket::set_multicast_interface(const IpAddress& interface) {
-    if (!interface.valid()) return Result<void>::failure({ErrorCode::InvalidArgument, "interface invalide", "socket"});
+Result<void> Socket::set_multicast_interface(const IpAddress& local_interface) {
+    if (!local_interface.valid()) return Result<void>::failure({ErrorCode::InvalidArgument, "interface invalide", "socket"});
     if (family_ == IpFamily::Ipv6) {
-        if (interface.scope_id == 0)
+        if (local_interface.scope_id == 0)
             return Result<void>::failure({ErrorCode::InvalidArgument, "IPv6 exige un scope d'interface", "socket"});
         // Index d'interface sur 4 octets : DWORD sous Windows, unsigned int sous POSIX.
-        const std::uint32_t index = interface.scope_id;
+        const std::uint32_t index = local_interface.scope_id;
         if (::setsockopt(raw(handle_), IPPROTO_IPV6, IPV6_MULTICAST_IF, reinterpret_cast<const char*>(&index), sizeof(index)) != 0)
             return Result<void>::failure(io_error("IPV6_MULTICAST_IF", "socket", last_error()));
         return Result<void>::success();
     }
     in_addr local{};
-    if (::inet_pton(AF_INET, interface.text.c_str(), &local) != 1)
+    if (::inet_pton(AF_INET, local_interface.text.c_str(), &local) != 1)
         return Result<void>::failure({ErrorCode::InvalidArgument, "interface IPv4 invalide", "socket"});
     if (::setsockopt(raw(handle_), IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&local), sizeof(local)) != 0)
         return Result<void>::failure(io_error("IP_MULTICAST_IF", "socket", last_error()));
