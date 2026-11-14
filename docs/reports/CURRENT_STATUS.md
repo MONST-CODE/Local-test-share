@@ -24,22 +24,29 @@ Vocabulaire imposé, appliqué littéralement dans tout ce document :
 | Intégration LAN, `-O0` | `plpt-platform-tests` | **PASS — 12 cas / 622 vérifications / 0 échec** |
 | ASan + UBSan, `-O1`, fuites activées | les deux binaires | **PASS — mêmes totaux, 0 échec**, aucun rapport de sanitizer |
 | `_GLIBCXX_ASSERTIONS`, `-O0` (profil de débogage Windows) | les deux binaires | **PASS — mêmes totaux, 0 échec**, aucune assertion libstdc++ |
-| Stabilité du nouveau cas de saturation | `plpt-platform-tests` ×3 en `-O0 -D_GLIBCXX_ASSERTIONS`, ×2 en `-O2` | **PASS — 12/622/0 à chaque exécution** |
+| Stabilité du nouveau cas de saturation | `plpt-platform-tests` ×3 en `-O0 -D_GLIBCXX_ASSERTIONS`, ×2 en `-O2`, puis ×2 après factorisation du client HTTP des tests | **PASS — 12 cas / 622 vérifications / 0 échec à chaque exécution** |
 | Collision du macro Windows `interface` | compilation de **toutes** les sources produit et test avec `-Dinterface=struct` (simulation exacte de `<iphlpapi.h>`) | **PASS — aucune erreur**, sans `#undef` ni `push_macro` |
 | Service de démonstration, exécution réelle | `.cache/demo_diag.sh` (HTTP réel, 26 connexions maintenues ouvertes, `SIGTERM`) | **PASS — voir le détail ci-dessous** |
 | WebSocket RFC 6455 du service de démonstration | client jetable `/tmp/smoke/ws_client.cpp` | **PASS — `101`, écho texte exact, ping→pong, close** |
 | Énumération des interfaces, exécution réelle | `resolve_bind_address` | **PASS** — `lo` 127.0.0.1 / ::1 et `eth0` 169.254.0.21 / fe80::fc:ff:fe00:5 %2 ; eth0 retenue, repli lien local signalé |
 | Mode `--ipv6` des tests plateforme | `plpt-platform-tests --ipv6` | **SKIP — code 77** : aucun IPv6 utilisable dans cet environnement |
-| Qualification Windows (clang++ MSYS2 UCRT64) | CI, job `Native Windows UCRT64 / owner clang++` | voir la section CI : le run précédent était **FAIL** sur la collision `interface`, corrigée ici |
-| Fuzzing Windows (libFuzzer) | CI | **SKIP** : runtime indisponible sur le job Windows (sortie 77 attendue par la CI) |
+| **Qualification Windows, chaîne imposée** (clang++ MSYS2 UCRT64, `build.bat`) | CI run [`43607807540`](https://github.com/MONST-CODE/Local-test-share/actions/runs/43607807540), job `Native Windows UCRT64 / owner clang++` | **PASS — 11 min 42 s, 17 étapes en succès** : `deps --fetch`, `doctor`, `ide-check`, Debug (`cmd.exe /d /c build.bat debug`), tests Debug + fenêtre native, Release, tests Release + fenêtre native, `selftest`, `clean`, `package` et exécution sans MSYS2 dans le `PATH`. Le run précédent (`43600395896`) était **FAIL** sur la collision `interface` |
+| **Qualification Linux, chaîne imposée** (clang++ natif, `build.sh`) | CI run [`43607807540`](https://github.com/MONST-CODE/Local-test-share/actions/runs/43607807540), job `Native Linux x64 / direct clang++` | **PASS — 19 min 12 s, 17 étapes en succès** : `deps --fetch`, `doctor`, **ASan + UBSan** (`xvfb-run -a ./build.sh test asan --native-ui`), Debug depuis un checkout frais, tests Debug + fenêtre X11, Release, tests Release + fenêtre X11, **libFuzzer**, `selftest`, `clean`, `package --native-ui` |
+| ASan UCRT64 et libFuzzer Windows | CI, mêmes étapes | **SKIP (2 étapes `skipped`)** : runtime indisponible sur le job Windows, sortie 77 attendue par la CI. Jamais compté comme un PASS ; la couverture sanitizer réelle est celle du job Linux (clang++ + ASan/UBSan) et des profils locaux ci-dessus |
+| Fuzzing Linux (libFuzzer, clang++ natif) | CI, étape `libFuzzer smoke` | **PASS** |
 
 **Chaîne de compilation de ces mesures :** `g++ 12.2.0` sur Debian 12, en tant
 qu'outil de vérification intermédiaire uniquement (aucun `clang` n'est installé dans
 cet environnement et `PLPT_CXX` n'a jamais été pointé sur `g++`). La **qualification**
-appartient à la CI : `clang++ 18` natif Linux et `clang++` MSYS2 UCRT64 natif
-Windows, via `build.sh` et `build.bat`. Un lot n'est qualifié qu'après un run CI vert
-sur les deux jobs ; les totaux ci-dessus sont donc des résultats d'exécution réelle,
-pas une qualification de livraison.
+appartient à la CI : `clang++` natif Linux et `clang++` MSYS2 UCRT64 natif Windows, via
+`build.sh` et `build.bat`.
+
+**Qualification obtenue pour cet incrément :** run CI
+[`43607807540`](https://github.com/MONST-CODE/Local-test-share/actions/runs/43607807540)
+du 2026-11-14 (15:00:33Z → 15:19:49Z), **`success` sur les deux jobs**, sur les
+commits `1e8ed68` (fusion de `main`) et `b33f4a1` (corrections). C'est ce run — pas la
+compilation locale — qui qualifie les deux chaînes imposées. La CI ne déclenche que sur
+`pull_request` et `workflow_dispatch` : un push de branche seul ne lance rien.
 
 ### Détail du diagnostic du service de démonstration (PASS, mesuré)
 
@@ -162,6 +169,15 @@ octet par octet sur TCP réel en boucle locale :
 | Charge 5 invités / 30 FPS / 720p / p95 < 150 ms | **NON QUALIFIÉ** | aucune mesure revendiquée |
 | LAN physique deux machines | **NON QUALIFIÉ** | une seule machine disponible : procédure propriétaire à écrire, critères à marquer NON QUALIFIÉS |
 | Arrêt par `Ctrl+C` du service sous Windows | **NON QUALIFIÉ** | même code que sous Linux, jamais exécuté sur une machine Windows ici |
+
+Qualification par les deux chaînes imposées : le run CI
+[`43607807540`](https://github.com/MONST-CODE/Local-test-share/actions/runs/43607807540)
+est **`success`** sur les deux jobs (Windows clang++ MSYS2 UCRT64 en 11 min 42 s,
+Linux clang++ natif en 19 min 12 s, Debug **et** Release, tests directs et fenêtre
+native/X11, ASan+UBSan et libFuzzer côté Linux). Les lignes marquées **TESTÉ (PASS)**
+le sont donc aussi avec `clang++` et non seulement avec `g++`. Les lignes **SKIP** et
+**NON QUALIFIÉ** le restent : la CI ne lève ni l'absence d'IPv6, ni l'indisponibilité
+du runtime ASan/libFuzzer sous Windows, ni l'absence de deuxième machine.
 
 ## Défauts corrigés dans l'incrément précédent (rappel, tous testés)
 

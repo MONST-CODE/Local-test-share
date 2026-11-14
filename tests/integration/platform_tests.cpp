@@ -466,6 +466,41 @@ void lan_control_plane_host_and_guest() {
     CHECK_EQ(final_view->connection_count, 0U);
 }
 
+// Échange HTTP complet sur la boucle locale : renvoie tout ce que le client reçoit.
+std::string http_exchange(std::uint16_t port, const std::string& target, const std::string& extra_headers,
+    std::chrono::milliseconds budget = std::chrono::milliseconds(6000)) {
+    auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4);
+    if (!created) return {};
+    auto socket = std::move(created).value();
+    if (!connect_with_timeout(socket, IpAddress::loopback(IpFamily::Ipv4), Port{port}, std::chrono::milliseconds(3000)))
+        return {};
+    const std::string text = "GET " + target + " HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n" + extra_headers + "\r\n";
+    if (!write_all(socket, {reinterpret_cast<const std::uint8_t*>(text.data()), text.size()}, std::chrono::milliseconds(3000)))
+        return {};
+    std::string raw;
+    std::vector<std::uint8_t> buffer(8192);
+    const auto deadline = std::chrono::steady_clock::now() + budget;
+    while (std::chrono::steady_clock::now() < deadline) {
+        auto received = socket.receive(buffer);
+        if (!received || received.value() == 0) break;
+        raw.append(reinterpret_cast<const char*>(buffer.data()), received.value());
+    }
+    socket.close();
+    return raw;
+}
+
+ProxyConfig loopback_proxy_for(const TinyUpstream& upstream, const std::string& token) {
+    ProxyConfig config;
+    config.label = "Démo";
+    config.bind_address = IpAddress::loopback(IpFamily::Ipv4);
+    config.upstream_address = IpAddress::loopback(IpFamily::Ipv4);
+    config.upstream_port = upstream.port();
+    config.token = token;
+    config.handshake_timeout_ms = 3000;
+    config.idle_timeout_ms = 20000;
+    return config;
+}
+
 void lan_data_plane_proxy_token_gate() {
     SystemClock clock;
     TinyUpstream upstream;
@@ -486,22 +521,10 @@ void lan_data_plane_proxy_token_gate() {
     CHECK_EQ(proxy.snapshot()->upstream, "127.0.0.1:" + std::to_string(upstream.port()));
     CHECK(proxy.snapshot()->url.find(token.value()) != std::string::npos);
 
+    // Même client HTTP que le cas des réponses informationnelles : une seule
+    // implémentation d'échange pour tout le plan de données.
     const auto request = [&](const std::string& target, const std::string& headers) {
-        auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4);
-        if (!created) return std::string();
-        auto socket = std::move(created).value();
-        if (!connect_with_timeout(socket, IpAddress::loopback(IpFamily::Ipv4), Port{started.value()}, 3s)) return std::string();
-        const std::string text = "GET " + target + " HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n" + headers + "\r\n";
-        if (!write_all(socket, {reinterpret_cast<const std::uint8_t*>(text.data()), text.size()}, 3s)) return std::string();
-        std::string raw; std::vector<std::uint8_t> buffer(8192);
-        const auto deadline = std::chrono::steady_clock::now() + 4s;
-        while (std::chrono::steady_clock::now() < deadline) {
-            auto received = socket.receive(buffer);
-            if (!received || received.value() == 0) break;
-            raw.append(reinterpret_cast<const char*>(buffer.data()), received.value());
-        }
-        socket.close();
-        return raw;
+        return http_exchange(started.value(), target, headers, 4s);
     };
     // Corps renvoyé par l'amont = ce que le service local a réellement reçu.
     const auto upstream_view = [](const std::string& response) {
@@ -808,41 +831,6 @@ void lan_resume_secret_binds_identity() {
     CHECK(!host.running());
 }
 
-
-// Échange HTTP complet sur la boucle locale : renvoie tout ce que le client reçoit.
-std::string http_exchange(std::uint16_t port, const std::string& target, const std::string& extra_headers,
-    std::chrono::milliseconds budget = std::chrono::milliseconds(6000)) {
-    auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4);
-    if (!created) return {};
-    auto socket = std::move(created).value();
-    if (!connect_with_timeout(socket, IpAddress::loopback(IpFamily::Ipv4), Port{port}, std::chrono::milliseconds(3000)))
-        return {};
-    const std::string text = "GET " + target + " HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n" + extra_headers + "\r\n";
-    if (!write_all(socket, {reinterpret_cast<const std::uint8_t*>(text.data()), text.size()}, std::chrono::milliseconds(3000)))
-        return {};
-    std::string raw;
-    std::vector<std::uint8_t> buffer(8192);
-    const auto deadline = std::chrono::steady_clock::now() + budget;
-    while (std::chrono::steady_clock::now() < deadline) {
-        auto received = socket.receive(buffer);
-        if (!received || received.value() == 0) break;
-        raw.append(reinterpret_cast<const char*>(buffer.data()), received.value());
-    }
-    socket.close();
-    return raw;
-}
-
-ProxyConfig loopback_proxy_for(const TinyUpstream& upstream, const std::string& token) {
-    ProxyConfig config;
-    config.label = "Démo";
-    config.bind_address = IpAddress::loopback(IpFamily::Ipv4);
-    config.upstream_address = IpAddress::loopback(IpFamily::Ipv4);
-    config.upstream_port = upstream.port();
-    config.token = token;
-    config.handshake_timeout_ms = 3000;
-    config.idle_timeout_ms = 20000;
-    return config;
-}
 
 void lan_proxy_informational_and_upgrade_responses() {
     SystemClock clock;
