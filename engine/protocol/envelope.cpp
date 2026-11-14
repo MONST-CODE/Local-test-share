@@ -9,11 +9,14 @@ std::uint32_t max_payload_size(MessageType type) {
     case MessageType::Presence: return 2048;
     case MessageType::Feedback: return 16384;
     case MessageType::Heartbeat: return 256;
+    case MessageType::SessionState: return 16384; // 64 participants nommés bornent ce plafond.
+    case MessageType::ServiceList: return 8192;   // 64 services partagés au plus.
+    case MessageType::Bye: return 1024;
     }
     return 0;
 }
 Result<void> negotiate_version(std::uint16_t major, std::uint16_t minor) {
-    if (major != kProtocolMajor || minor != kProtocolMinor)
+    if (major != kProtocolMajor || minor > kProtocolMinor)
         return Result<void>::failure({ErrorCode::UnsupportedVersion, "version non négociée", "protocol"});
     return Result<void>::success();
 }

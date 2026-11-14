@@ -29,8 +29,16 @@ public:
     std::uint64_t now_ms() const { return clock_.now_monotonic_ms(); }
     bool is_expired() const;
     Result<void> transition_to(SessionState);
+    // Une session publiée et en attente d'invités est déjà active : l'hôte peut y
+    // écrire et autoriser des demandes. transition_to() garde ses règles strictes.
+    Result<void> open_for_guests();
     Result<void> complete_cleanup(const CleanupReport&); // un échec laisse l'état Cleanup.
-    // Le futur handshake authentifié appellera ce point interne (jamais du 0-RTT).
+    // L'hôte local est un participant du canal de messagerie, mais il n'occupe
+    // jamais une place d'invité : active_count() ne compte que les invités admis.
+    Result<ParticipantId> register_host();
+    std::optional<ParticipantId> host_participant() const { return host_; }
+    // Appelée uniquement après vérification du code d'invitation et, si elle est
+    // exigée, approbation explicite de l'hôte. Jamais depuis un payload invité.
     Result<ParticipantId> admit_verified_guest(Role, ContextId);
     Result<void> set_participant_state(ParticipantId, ParticipantState);
     Result<void> revoke_participant(ParticipantId);
@@ -49,6 +57,7 @@ private:
     std::map<ParticipantId, Participant> participants_;
     std::map<ContextId, bool> shared_contexts_;
     std::map<ContextId, ParticipantId> controllers_;
+    std::optional<ParticipantId> host_;
     std::uint64_t next_id_ = 1;
 };
 } // namespace plpt::model

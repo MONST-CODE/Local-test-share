@@ -13,9 +13,20 @@ API OS en lecture seule -> observation normalisée -> identité de processus
     -> registre de candidats -> snapshot immuable -> CLI / SDL3 + ImGui
 ```
 
-Ce chemin ne crée ni session réseau, ni serveur HTTP, ni navigateur. L'hôte peut
-**examiner et sélectionner localement** un endpoint. La sélection n'est pas une
-permission réseau : aucun composant de partage ne la consomme à ce stade.
+Ce chemin permettait d'**examiner et sélectionner localement** un endpoint sans
+aucun effet réseau. Depuis l'incrément « réseau LAN réel », un second chemin est
+opérationnel et distinct :
+
+```text
+code d'invitation (CSPRNG) -> annonce UDP multicast -> connexion TCP de contrôle
+    -> approbation de l'hôte -> session/messagerie -> proxy TCP à jeton
+    -> service local réel (HTTP et WebSocket)
+```
+
+La sélection locale d'un endpoint n'est toujours pas une permission réseau : seul
+l'hôte, en publiant explicitement un service dans une session ouverte, crée un
+accès. Le proxy exige le jeton de service comme capacité ; la découverte ne donne
+ni identité ni droit.
 
 Les modèles anticipés de F/G/H sont compilés dans `plpt_models` pour leurs tests,
 mais ne sont pas liés aux exécutables installés. Ils se trouvent dans le namespace
@@ -35,17 +46,29 @@ app/host_shell             app/desktop_ui
              /             \
     Windows natives     Linux proc / getifaddrs
 
-plpt_models, uniquement pour tests/prototypes :
+Modèles de session (liés au poste de contrôle et aux tests, jamais au CLI) :
     session -> messaging
-    protocol (codec borné, sans transport)
+    protocol (codec borné, enveloppe 56 octets, trames TCP)
     resource_manager (estimation, sans collecte CPU/GPU)
 
-Interfaces non implémentées : browser, ITransport, ITemporaryStorage.
+Réseau LAN réel (engine/net, engine/platform/socket, engine/core/digest+secrets) :
+    wire        trames et messages typés, assembleur borné
+    discovery   annonceur/écouteur UDP multicast 239.255.77.88:47788
+    host_server plan de contrôle hôte : authentification, approbation, révocation
+    guest_client plan de contrôle invité : attente d'autorisation, messagerie
+    proxy       plan de données : pont TCP autorisé par jeton de service
+
+Interfaces non implémentées : browser, ITemporaryStorage.
 ```
 
 Le cœur ne dépend pas d'ImGui, du renderer ou d'une API COM. Les règles de session
 ne connaissent pas Winsock. Aucun adaptateur QUIC/Docker/WebView2 n'est masqué
 dans les modules de découverte.
+
+L'ancien `engine/transport/transport.hpp` (interface `ITransport` sans
+implémentation) a été **supprimé** : il est remplacé par `engine/platform/socket.hpp`
+(sockets réelles, POSIX et Winsock) et `engine/net/*`. Aucune abstraction de
+transport sans implémentation n'est conservée.
 
 Le futur découpage en processus `Desktop UI / Host Engine / Browser Worker` et
 IPC à ACL utilisateur du maître reste la cible. **Le moniteur actuel utilise un
@@ -201,7 +224,7 @@ elle-même. Si elle ne peut pas adopter un socket prélié, elle devra faire ell
 `port=0 + query endpoint + rétention`. Il est interdit de fermer notre réservation
 pour rebinder « le même port libre » dans la pile : ce serait réintroduire TOCTOU.
 
-## 8. Modèles anticipés — pas de produit réseau
+## 8. Modèles de session et réseau LAN réel
 
 `Session` valide les transitions, l'expiration exacte, le plafond de participants,
 les capacités et la liaison contexte. Les invités ne peuvent pas devenir Host.
@@ -209,10 +232,34 @@ Un contexte indépendant n'est pas réattribué ; un contexte partagé dispose d
 seul contrôleur, explicitement accordé. Révocation/reconnexion/clôture retirent
 les droits pertinents immédiatement **dans ce modèle**.
 
-`admit_verified_guest` est une frontière interne de confiance. Aucun handshake
-ne l'appelle encore. L'ancien hachage non cryptographique de jeton a été retiré ;
-aucun mécanisme d'invitation n'est présenté comme sécurisé. Le handshake, la preuve
-d'identité hôte, SHA-256 via fournisseur audité et le refus du 0-RTT restent au lot G.
+`admit_verified_guest` reste une frontière interne de confiance ; elle est
+désormais appelée par un **handshake réel** (`engine/net/host_server.cpp`) : code
+d'invitation de 80 bits tiré du CSPRNG de l'OS, comparaison à temps constant, limite
+de tentatives par adresse et par connexion, puis — si l'approbation est requise —
+décision explicite de l'hôte avant toute admission. Aucun 0-RTT, aucune reprise sans
+code ; une reconnexion dans le délai de grâce rend la même place, pas une nouvelle.
+
+Il n'y a toujours **ni TLS, ni preuve d'identité de l'hôte par clé publique** : le
+canal de contrôle circule en clair sur le LAN et l'identité de l'hôte repose sur
+l'adresse source observée et sur le code communiqué hors bande. Le jeton de service
+est une capacité d'URL, pas un chiffrement. Ce sont des limites déclarées.
+
+### États réels de l'incrément « réseau LAN »
+
+| Composant | État | Preuve |
+| --- | --- | --- |
+| `platform/socket` (TCP/UDP, poll, multicast, `MSG_NOSIGNAL`) | **OPÉRATIONNEL** | cas `platform`, `lan_*` |
+| `core/digest` (CNG, AF_ALG, sinon dlopen libcrypto) | **OPÉRATIONNEL** | vecteurs FIPS SHA-1/SHA-256 |
+| `core/secrets` (codes d'invitation, jetons, masquage) | **OPÉRATIONNEL** | `secrets_digests_and_formats_are_exact` |
+| `net/wire` (trames, assembleur borné, gardes anti-DoS) | **OPÉRATIONNEL** | `wire_messages_roundtrip_and_guard` |
+| `net/discovery` (multicast, broadcast, saisie manuelle) | **OPÉRATIONNEL** en loopback ; **PARTIEL** : multicast inter-machines non qualifié | `lan_discovery_announce_and_listen` |
+| `net/host_server` (authentification, approbation, messagerie, révocation, délais, fermeture) | **OPÉRATIONNEL** sur TCP réel | `lan_control_plane_host_and_guest` |
+| `net/guest_client` (attente d'autorisation, services, messagerie, latence mesurée) | **OPÉRATIONNEL** sur TCP réel | idem |
+| `net/proxy` (pont TCP à jeton, HTTP et WebSocket transparents, 403/502/503) | **OPÉRATIONNEL** en loopback ; **PARTIEL** : pas de HTTP/2, pas de demi-fermeture, pas de débit limité par flux | `lan_data_plane_proxy_token_gate` |
+| `app/demo_service` (HTTP/1.1 + RFC 6455, écho) | **OPÉRATIONNEL** ; construit, non exécuté par les tests CI | qualifié par sonde locale |
+| Interface SDL/ImGui branchée sur `host_server`/`guest_client` | **NON IMPLÉMENTÉ** | le tableau de bord n'ouvre pas encore de session |
+| Enchaînement détection native → service partagé (`monitor` → `proxy`) | **NON IMPLÉMENTÉ** | la détection existe, le câblage n'est pas fait |
+| Entrée clavier/souris, flux vidéo, TLS, orchestrateur multi-processus | **NON IMPLÉMENTÉ** | aucun stub silencieux |
 
 `Messaging` utilise cette session pour vérifier acteur et destinataire. Une réponse
 à un DM reste dans le DM. La clé de canal est une paire d'IDs 64 bits, pas une

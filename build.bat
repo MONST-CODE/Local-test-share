@@ -53,11 +53,13 @@ set "SDL_PACKAGE=mingw-w64-ucrt-x86_64-sdl3-3.4.20-1-any.pkg.tar.zst"
 set "IMGUI_SHA=b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114"
 set "SDL_ARCHIVE=%DEPS%\%SDL_PACKAGE%"
 set "IMGUI_ARCHIVE=%DEPS%\imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859.tar.gz"
-rem Explicit project sources. Models never enter installed monitor/desktop targets.
-set "CORE_SOURCES=engine/core/random.cpp engine/diagnostics/audit.cpp engine/discovery/process_tree.cpp engine/discovery/terminal_classifier.cpp engine/discovery/monitor.cpp engine/service_registry/registry.cpp engine/port_allocator/port_allocator.cpp engine/platform/windows/windows_platform.cpp"
+rem Explicit project sources. The CLI monitor stays model-free; the desktop
+rem control post and the tests link the session models and the LAN networking.
+set "CORE_SOURCES=engine/core/random.cpp engine/core/digest.cpp engine/core/secrets.cpp engine/core/format.cpp engine/diagnostics/audit.cpp engine/discovery/process_tree.cpp engine/discovery/terminal_classifier.cpp engine/discovery/monitor.cpp engine/service_registry/registry.cpp engine/port_allocator/port_allocator.cpp engine/platform/socket.cpp engine/platform/windows/windows_platform.cpp"
 set "MODEL_SOURCES=engine/session/session.cpp engine/messaging/messaging.cpp engine/protocol/envelope.cpp engine/resource_manager/resource.cpp"
+set "NET_SOURCES=engine/net/wire.cpp engine/net/discovery.cpp engine/net/host_server.cpp engine/net/guest_client.cpp engine/net/proxy.cpp"
 set "IMGUI_SOURCES=imgui.cpp imgui_draw.cpp imgui_tables.cpp imgui_widgets.cpp backends/imgui_impl_sdl3.cpp backends/imgui_impl_sdlrenderer3.cpp"
-set "HEADERS=engine/browser/browser.hpp engine/core/clock.hpp engine/core/random.hpp engine/core/result.hpp engine/core/text.hpp engine/core/types.hpp engine/diagnostics/audit.hpp engine/discovery/monitor.hpp engine/discovery/process_tree.hpp engine/discovery/terminal_classifier.hpp engine/messaging/messaging.hpp engine/platform/native.hpp engine/platform/platform.hpp engine/port_allocator/port_allocator.hpp engine/protocol/envelope.hpp engine/resource_manager/resource.hpp engine/service_registry/registry.hpp engine/session/session.hpp engine/transport/transport.hpp engine/platform/windows/windows_platform.hpp engine/platform/windows/winsock.hpp"
+set "HEADERS=engine/browser/browser.hpp engine/core/clock.hpp engine/core/digest.hpp engine/core/format.hpp engine/core/random.hpp engine/core/result.hpp engine/core/secrets.hpp engine/core/text.hpp engine/core/types.hpp engine/diagnostics/audit.hpp engine/discovery/monitor.hpp engine/discovery/process_tree.hpp engine/discovery/terminal_classifier.hpp engine/messaging/messaging.hpp engine/net/chat.hpp engine/net/discovery.hpp engine/net/guest_client.hpp engine/net/host_server.hpp engine/net/proxy.hpp engine/net/wire.hpp engine/platform/native.hpp engine/platform/platform.hpp engine/platform/socket.hpp engine/port_allocator/port_allocator.hpp engine/protocol/envelope.hpp engine/resource_manager/resource.hpp engine/service_registry/registry.hpp engine/session/session.hpp engine/platform/windows/windows_platform.hpp engine/platform/windows/winsock.hpp"
 call :dispatch
 set "FINALRC=%errorlevel%"
 if "%LOCK%"=="1" rmdir "%OUT%\.build-lock"
@@ -526,6 +528,10 @@ exit /b 0
 call :cpp "%~1" || exit /b
 set "MODEL_OBJECTS=%MODEL_OBJECTS% "%OBJECT%""
 exit /b 0
+:net_one
+call :cpp "%~1" || exit /b
+set "NET_OBJECTS=%NET_OBJECTS% "%OBJECT%""
+exit /b 0
 :gui_one
 set "GUI_SOURCE=%~1"
 set "GUI_OBJECT=%DIR%\objects\imgui_%GUI_SOURCE:/=_%.o"
@@ -580,13 +586,23 @@ if not exist "%DIR%\application.o" (call :problem "resource compiler did not cre
 echo Compilation started: %MODE% - deterministic fresh objects, no cache
 set "CORE_OBJECTS="
 set "MODEL_OBJECTS="
+set "NET_OBJECTS="
 set "GUI_OBJECTS="
 set "UI_INCLUDES="
 set "LINK_EXTRA="
 for %%S in (%CORE_SOURCES%) do (call :core_one "%%S" || exit /b)
+rem Models and networking are compiled once: the desktop control post and the
+rem tests both need them, the CLI monitor links without them.
+if "%CORE_ONLY%"=="0" (for %%S in (%MODEL_SOURCES%) do (call :model_one "%%S" || exit /b))
+if "%CORE_ONLY%"=="0" (for %%S in (%NET_SOURCES%) do (call :net_one "%%S" || exit /b))
+if "%WITH_TESTS%"=="1" if "%CORE_ONLY%"=="1" (for %%S in (%MODEL_SOURCES%) do (call :model_one "%%S" || exit /b))
+if "%WITH_TESTS%"=="1" if "%CORE_ONLY%"=="1" (for %%S in (%NET_SOURCES%) do (call :net_one "%%S" || exit /b))
 call :cpp app/host_shell/main.cpp || exit /b
 set "LINK_OBJECTS=%CORE_OBJECTS% "%OBJECT%""
 call :link plpt-monitor CONSOLE || exit /b
+call :cpp app/demo_service/main.cpp || exit /b
+set "LINK_OBJECTS=%CORE_OBJECTS% "%OBJECT%""
+call :link plpt-demo-service CONSOLE || exit /b
 if "%CORE_ONLY%"=="0" (call :desktop || exit /b)
 if "%WITH_TESTS%"=="1" (call :test_targets || exit /b)
 call :runtime_dependencies || exit /b
@@ -606,7 +622,7 @@ for %%S in (%IMGUI_SOURCES%) do (call :gui_one "%%S" || exit /b)
 set "UI_INCLUDES=-isystem "%IMGUI_ROOT%" -isystem "%IMGUI_ROOT%\backends""
 call :cpp app/desktop_ui/main.cpp || exit /b
 set "UI_INCLUDES="
-set "LINK_OBJECTS=%CORE_OBJECTS% %GUI_OBJECTS% "%OBJECT%""
+set "LINK_OBJECTS=%CORE_OBJECTS% %MODEL_OBJECTS% %NET_OBJECTS% %GUI_OBJECTS% "%OBJECT%""
 set "LINK_EXTRA="%UCRT%\lib\libSDL3.dll.a""
 call :link plpt-desktop WINDOWS || exit /b
 set "LINK_EXTRA="
@@ -708,12 +724,12 @@ set /a LICENSE_COUNT+=1 >nul
 exit /b 0
 
 :test_targets
-for %%S in (%MODEL_SOURCES%) do (call :model_one "%%S" || exit /b)
+rem %MODEL_OBJECTS% and %NET_OBJECTS% were built during compilation; no rebuild.
 call :cpp tests/unit/test_main.cpp || exit /b
-set "LINK_OBJECTS=%CORE_OBJECTS% %MODEL_OBJECTS% "%OBJECT%""
+set "LINK_OBJECTS=%CORE_OBJECTS% %MODEL_OBJECTS% %NET_OBJECTS% "%OBJECT%""
 call :link plpt-unit-tests CONSOLE || exit /b
 call :cpp tests/integration/platform_tests.cpp || exit /b
-set "LINK_OBJECTS=%CORE_OBJECTS% "%OBJECT%""
+set "LINK_OBJECTS=%CORE_OBJECTS% %MODEL_OBJECTS% %NET_OBJECTS% "%OBJECT%""
 call :link plpt-platform-tests CONSOLE || exit /b
 set "HEADER_COUNT=0"
 for %%H in (%HEADERS%) do (call :header_one "%%H" || exit /b)
@@ -869,6 +885,8 @@ if errorlevel 1 exit /b
 call :run copy /y docs\reports\UCRT64_WINDOWS_VALIDATION.md "%STAGE%\PLPT\docs\reports\"
 if errorlevel 1 exit /b
 call :run copy /y "%BIN%\plpt-monitor.exe" "%STAGE%\PLPT\bin\"
+if errorlevel 1 exit /b
+call :run copy /y "%BIN%\plpt-demo-service.exe" "%STAGE%\PLPT\bin\"
 if errorlevel 1 exit /b
 call :run copy /y "%BIN%\plpt-desktop.exe" "%STAGE%\PLPT\bin\"
 if errorlevel 1 exit /b

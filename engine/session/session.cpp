@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <stdexcept>
 namespace plpt::model {
+inline constexpr std::uint64_t kHostContextValue = ~std::uint64_t{0};
 Session::Session(SessionId id, SessionPolicy policy, IClock& clock)
     : id_(id), policy_(policy), clock_(clock), created_ms_(clock.now_monotonic_ms()) {
     if (id.value == 0 || policy.max_participants == 0 || policy.max_participants > 64 || policy.session_ttl_ms == 0)
@@ -34,18 +35,37 @@ Result<void> Session::transition_to(SessionState next) {
     if (next == S::Closing) controllers_.clear();
     return Result<void>::success();
 }
+Result<void> Session::open_for_guests() {
+    if (state_ == SessionState::Active) return Result<void>::success(); // idempotent.
+    if (state_ != SessionState::AwaitingGuests)
+        return Result<void>::failure({ErrorCode::InvalidState, "ouverture interdite depuis cet état", "session"});
+    if (is_expired()) return Result<void>::failure({ErrorCode::Expired, "session expirée", "session"});
+    state_ = SessionState::Active;
+    return Result<void>::success();
+}
 Result<void> Session::complete_cleanup(const CleanupReport& report) {
     if (state_ != SessionState::Cleanup) return Result<void>::failure({ErrorCode::InvalidState, "pas en nettoyage", "session"});
     if (!report.complete || !report.failures.empty())
         return Result<void>::failure({ErrorCode::IoError, "nettoyage incomplet", "session"});
-    participants_.clear(); shared_contexts_.clear(); controllers_.clear();
+    participants_.clear(); shared_contexts_.clear(); controllers_.clear(); host_.reset();
     state_ = SessionState::Closed;
     return Result<void>::success();
 }
 std::size_t Session::active_count() const {
     return static_cast<std::size_t>(std::count_if(participants_.begin(), participants_.end(), [](const auto& item) {
-        return item.second.state != ParticipantState::Revoked;
+        return item.second.state != ParticipantState::Revoked && item.second.role != Role::Host;
     })); // un invité déconnecté réserve sa place jusqu'à révocation/expiration.
+}
+Result<ParticipantId> Session::register_host() {
+    if (host_) return Result<ParticipantId>::success(*host_); // idempotent : un seul hôte.
+    if (state_ == SessionState::Closing || state_ == SessionState::Cleanup || state_ == SessionState::Closed)
+        return Result<ParticipantId>::failure({ErrorCode::InvalidState, "session en fermeture", "session"});
+    const ParticipantId pid{next_id_++};
+    // Contexte réservé, jamais attribuable à un invité : aucun invité ne peut
+    // prétendre partager le contexte de l'hôte.
+    participants_.emplace(pid, Participant{pid, Role::Host, ParticipantState::Connected, ContextId{kHostContextValue}});
+    host_ = pid;
+    return Result<ParticipantId>::success(pid);
 }
 Result<ParticipantId> Session::admit_verified_guest(Role role, ContextId context) {
     if (is_expired()) return Result<ParticipantId>::failure({ErrorCode::Expired, "session expirée", "session"});
