@@ -13,9 +13,13 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
+#include <memory>
+#include <mutex>
 #include <span>
 #include <string>
 #include <thread>
@@ -287,7 +291,40 @@ int main(int argc, char** argv) {
     log_line("service de démonstration en écoute sur " + address.value().text + ":" + std::to_string(port.value().value));
 
     unsigned served = 0;
-    std::vector<std::thread> workers;
+    // Pool d'ouvriers fixes et file bornée : aucun thread détaché, aucun join
+    // oublié, et la saturation mesurée est réelle (ouvriers occupés ou file pleine).
+    // Le retrait précédent testait joinable(), toujours vrai pour un std::thread
+    // vivant : le vecteur croissait donc jusqu'à refuser toute connexion.
+    struct Work {
+        std::shared_ptr<Socket> socket;
+        IpAddress peer;
+    };
+    std::mutex queue_mutex;
+    std::condition_variable queue_condition;
+    std::deque<Work> queue;
+    std::atomic<std::size_t> live{0};      // en file + en cours de service.
+    std::atomic<bool> accepting{true};
+    std::vector<std::thread> pool;
+    if (!once) {
+        pool.reserve(kMaxConnections);
+        for (std::size_t index = 0; index < kMaxConnections; ++index) {
+            pool.emplace_back([&] {
+                for (;;) {
+                    Work work;
+                    {
+                        std::unique_lock<std::mutex> guard(queue_mutex);
+                        queue_condition.wait(guard, [&] { return !queue.empty() || !accepting.load(); });
+                        if (queue.empty()) return; // arrêt demandé : plus rien à servir.
+                        work = std::move(queue.front());
+                        queue.pop_front();
+                    }
+                    --live;
+                    serve_connection(*work.socket, work.peer);
+                    work.socket->close();
+                }
+            });
+        }
+    }
     while (!g_stop.load()) {
         IpAddress peer;
         Port peer_port{};
@@ -297,33 +334,34 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "accept impossible : %s\n", accepted.error().message.c_str());
             break;
         }
-        if (workers.size() >= kMaxConnections) {
+        if (once) {
+            auto socket = std::move(accepted).value();
+            serve_connection(socket, peer);
+            socket.close();
+            ++served;
+            break;
+        }
+        if (live.load() >= kMaxConnections) {
             auto socket = std::move(accepted).value();
             const auto body = http_response(503, "Service Unavailable", "text/plain; charset=utf-8", "service de démonstration saturé");
             (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(body.data()), body.size()}, 1000ms);
             socket.close();
             continue;
         }
-        auto socket = std::make_shared<Socket>(std::move(accepted).value());
-        if (once) {
-            serve_connection(*socket, peer);
-            socket->close();
-            ++served;
-            break;
+        ++live;
+        {
+            std::lock_guard<std::mutex> guard(queue_mutex);
+            queue.push_back(Work{std::make_shared<Socket>(std::move(accepted).value()), peer});
         }
-        workers.emplace_back([socket, peer] {
-            serve_connection(*socket, peer);
-            socket->close();
-        });
-        // Les threads terminés sont retirés sans attente bloquante.
-        for (auto worker = workers.begin(); worker != workers.end();) {
-            if (!worker->joinable()) worker = workers.erase(worker);
-            else ++worker;
-        }
+        queue_condition.notify_one();
         ++served;
     }
+    // Arrêt propre : plus d'acceptation, les ouvriers finissent leur connexion
+    // courante puis sortent ; tous sont joints, aucun n'est détaché.
+    accepting.store(false);
+    queue_condition.notify_all();
     listener.close();
-    for (auto& worker : workers) if (worker.joinable()) worker.detach();
+    for (auto& worker : pool) if (worker.joinable()) worker.join();
     log_line("service arrêté après " + std::to_string(served) + " connexion(s)");
     return 0;
 }

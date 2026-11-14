@@ -21,6 +21,13 @@ Décisions techniques complémentaires :
 
 - [ADR-011 — Livraison par preuves, modèles isolés](ADR-011-proof-gates.md)
 - [ADR-012 — Renderer du moniteur, dépendances épinglées](ADR-012-monitor-renderer.md)
+- [ADR-013 — Rôle du proxy et frontière de confiance avec le rendu distant](ADR-013-proxy-vs-rendu-distant.md)
+- [ADR-014 — Identité du participant, reprise de place et exposition réseau](ADR-014-identite-reprise-exposition.md)
+
+À instruire (aucune décision prise à ce jour) : transport sécurisé des sessions
+réelles (comparaison de piles QUIC/TLS maintenues, compatible clang++ UCRT64 et
+clang++ Linux), et Browser Worker / capture de surface (prototype WebView2 et sa
+porte de validation avant toute interface définitive).
 
 Une modification future d'une décision VALIDÉE doit exposer contexte, options,
 conséquences, risques et tests, puis obtenir l'arbitrage du propriétaire. Le fait

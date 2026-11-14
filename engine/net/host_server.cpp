@@ -7,8 +7,10 @@
 #include <array>
 #include <cstring>
 #include <utility>
+#include "../core/digest.hpp"
 #include "../core/format.hpp"
 #include "../core/random.hpp"
+#include "../core/secrets.hpp"
 #include "../core/text.hpp"
 
 namespace plpt::net {
@@ -53,6 +55,9 @@ struct HostServer::Connection {
     std::uint64_t request_id = 0;
     std::string guest_name;
     std::string client;
+    std::string resume_secret; // présenté au Hello, puis remplacé à l'admission.
+    std::uint16_t protocol_minor = model::kProtocolMinor;
+    bool voluntary_leave = false;      // Bye reçu : la place n'est pas réservée.
     std::uint64_t opened_ms = 0;
     std::uint64_t last_activity_ms = 0;
     std::uint64_t next_heartbeat_ms = 0;
@@ -111,6 +116,13 @@ Result<std::uint16_t> HostServer::start(HostConfig config) {
     if (auto step = session_->transition_to(model::SessionState::AwaitingGuests); !step) return Result<std::uint16_t>::failure(step.error());
     if (auto step = session_->open_for_guests(); !step) return Result<std::uint16_t>::failure(step.error());
 
+    // Adresse d'écoute réellement déterminée : interface privée LAN, sinon boucle
+    // locale. Toutes les interfaces seulement si la configuration l'impose.
+    auto bind = resolve_bind_address(config_.bind_address, IpFamily::Ipv4);
+    if (!bind) return Result<std::uint16_t>::failure(bind.error());
+    bind_ = bind.value();
+    config_.bind_address = bind_.address;
+
     auto created = Socket::create(TransportProtocol::Tcp, config_.bind_address.family);
     if (!created) return Result<std::uint16_t>::failure(created.error());
     listener_ = std::move(created).value();
@@ -127,6 +139,10 @@ Result<std::uint16_t> HostServer::start(HostConfig config) {
     if (config_.control_address.empty()) config_.control_address = config_.bind_address.is_any() ? std::string("127.0.0.1") : config_.bind_address.text;
 
     record_event("session « " + config_.session_name + " » ouverte sur le port " + std::to_string(control_port_));
+    record_event("adresse d'écoute " + config_.bind_address.text + " : " + bind_.note);
+    if (bind_.any_interface) record_event("exposition sur toutes les interfaces : choix explicite de la configuration");
+    if (bind_.loopback_only && warnings_.size() < kMaxWarnings)
+        warnings_.push_back({ErrorCode::Unsupported, "aucune interface privée LAN : les invités du réseau ne peuvent pas rejoindre la session", "host"});
     running_.store(true);
     publish();
     worker_ = std::jthread([this](std::stop_token token) { run(token); });
@@ -725,6 +741,14 @@ void HostServer::handle_frame(Connection& connection, const model::Envelope& env
 }
 
 void HostServer::handle_hello(Connection& connection, const model::Envelope& envelope) {
+    // La reprise d'une place exige la révision 1.2 : sans secret de reprise, un pair
+    // est indiscernable d'un homonyme. Refus explicite, jamais de repli deviné.
+    if (envelope.protocol_minor < model::kProtocolMinor) {
+        counters_.invalid_frames++;
+        disconnect(connection, ErrorCode::UnsupportedVersion, "client trop ancien : protocole 1.2 requis", true);
+        return;
+    }
+    connection.protocol_minor = envelope.protocol_minor;
     auto hello = decode_guest_hello(envelope.payload);
     if (!hello) {
         counters_.invalid_frames++;
@@ -739,6 +763,7 @@ void HostServer::handle_hello(Connection& connection, const model::Envelope& env
     }
     connection.guest_name = name.value();
     connection.client = hello.value().client;
+    connection.resume_secret = hello.value().resume_secret; // preuve éventuelle de reprise.
     if (!invite_code_matches(hello.value().invite_code, config_.invite_code)) {
         counters_.bad_codes++;
         connection.code_failures++;
@@ -800,21 +825,30 @@ void HostServer::handle_hello(Connection& connection, const model::Envelope& env
 }
 
 void HostServer::admit(Connection& connection) {
-    // Reconnexion contrôlée : même nom dans le délai de grâce = même place,
-    // sinon le nombre de participants croirait à chaque coupure réseau.
+    // Reconnexion contrôlée : SEUL le secret de reprise rend une place, dans son
+    // délai de validité. Le nom n'est qu'un affichage : deux homonymes ne partagent
+    // jamais une place, et un invité révoqué ne retrouve rien (slot supprimé).
     const auto now = clock_.now_monotonic_ms();
     for (auto slot = reconnect_slots_.begin(); slot != reconnect_slots_.end();) {
         if (now - slot->disconnected_ms > config_.reconnect_grace_ms) slot = reconnect_slots_.erase(slot);
         else ++slot;
     }
-    const auto reusable = std::find_if(reconnect_slots_.begin(), reconnect_slots_.end(),
-        [&](const ReconnectSlot& slot) { return slot.name == connection.guest_name; });
+    const auto reusable = connection.resume_secret.empty() ? reconnect_slots_.end()
+        : std::find_if(reconnect_slots_.begin(), reconnect_slots_.end(), [&](const ReconnectSlot& slot) {
+              return slot.resume_secret.size() == connection.resume_secret.size() &&
+                  constant_time_equals(connection.resume_secret, slot.resume_secret);
+          });
     ParticipantId participant{};
     if (reusable != reconnect_slots_.end()) {
+        const auto previous_name = reusable->name;
         participant = reusable->participant;
         if (auto restored = session_->set_participant_state(participant, model::ParticipantState::Connected); restored) {
             reconnect_slots_.erase(reusable);
-            record_event("« " + connection.guest_name + " » a repris sa place");
+            ++counters_.resumed;
+            record_event("« " + connection.guest_name + " » a repris sa place (participant " +
+                std::to_string(participant.value) + ")");
+            if (previous_name != connection.guest_name)
+                record_event("reprise sous un nom différent de « " + previous_name + " » : le secret fait foi, pas le nom");
         } else {
             participant = ParticipantId{};
         }
@@ -833,9 +867,18 @@ void HostServer::admit(Connection& connection) {
     connection.phase = Connection::Phase::Authed;
     connection.last_activity_ms = now;
     connection.next_heartbeat_ms = now + config_.heartbeat_interval_ms;
+    const auto request_id = connection.request_id;
     connection.request_id = 0;
-    pending_.erase(std::remove_if(pending_.begin(), pending_.end(),
-        [&](const PendingJoin& join) { return join.guest_name == connection.guest_name && join.address == connection.address.text; }), pending_.end());
+    // La demande en attente est retirée par identifiant quand il existe : jamais par
+    // le nom, qui n'identifie personne.
+    pending_.erase(std::remove_if(pending_.begin(), pending_.end(), [&](const PendingJoin& join) {
+        return request_id != 0 ? join.request_id == request_id
+                               : (join.guest_name == connection.guest_name && join.address == connection.address.text);
+    }), pending_.end());
+    // Rotation : le secret présenté vient d'être consommé, un nouveau le remplace.
+    connection.resume_secret.clear();
+    if (auto issued = generate_resume_secret(); issued) connection.resume_secret = issued.value();
+    else if (warnings_.size() < kMaxWarnings) warnings_.push_back(issued.error());
     auto& meta = participant_meta_[participant];
     meta.id = participant;
     meta.name = connection.guest_name;
@@ -852,6 +895,10 @@ void HostServer::admit(Connection& connection) {
     accepted.host_name = config_.host_name;
     accepted.session_name = config_.session_name;
     accepted.approval_required = config_.approval_required;
+    // Délivré sur le canal déjà authentifié par le code d'invitation ; jamais
+    // annoncé sur le LAN, jamais écrit dans le journal.
+    accepted.resume_secret = connection.resume_secret;
+    accepted.resume_ttl_ms = connection.resume_secret.empty() ? 0 : config_.reconnect_grace_ms;
     queue_frame(connection, model::MessageType::Auth, encode(accepted));
     queue_frame(connection, model::MessageType::SessionState, [&] {
         auto info = build_session_info();
@@ -1041,6 +1088,10 @@ void HostServer::handle_heartbeat(Connection& connection, const model::Envelope&
 void HostServer::handle_bye(Connection& connection, const model::Envelope& envelope) {
     auto bye = decode_bye(envelope.payload);
     const auto reason = bye ? bye.value().text : std::string("départ de l'invité");
+    // Départ volontaire : la place est libérée immédiatement et aucun secret de
+    // reprise n'est conservé. Une coupure réseau, elle, réserve la place pendant
+    // son délai de grâce — les deux cas ne sont pas confondus.
+    connection.voluntary_leave = true;
     disconnect(connection, ErrorCode::Cancelled, reason, false);
 }
 
@@ -1070,16 +1121,32 @@ void HostServer::disconnect(Connection& connection, ErrorCode code, std::string 
     if (connection.participant.value != 0 && session_) {
         const auto* participant = session_->find_participant(connection.participant);
         if (participant && participant->state != model::ParticipantState::Revoked) {
-            (void)session_->set_participant_state(connection.participant, model::ParticipantState::Disconnected);
-            reconnect_slots_.push_back(ReconnectSlot{connection.participant, connection.guest_name, now});
-            if (reconnect_slots_.size() > 64) reconnect_slots_.pop_back();
-            record_event("« " + connection.guest_name + " » est déconnecté (" + text + ")");
             ChatText notice;
             notice.sender = host_participant_;
             notice.sender_name = config_.host_name;
-            notice.body = connection.guest_name + " est déconnecté";
             notice.sent_ms = clock_.now_wall_ms();
             notice.system = true;
+            if (connection.voluntary_leave) {
+                // La révocation est le seul mécanisme qui libère un siège : un départ
+                // voulu rend la place aux testeurs suivants, sans délai de grâce.
+                (void)session_->revoke_participant(connection.participant);
+                ++counters_.left;
+                record_event("« " + connection.guest_name + " » a quitté la session : place libérée");
+                notice.body = connection.guest_name + " a quitté la session";
+            } else {
+                (void)session_->set_participant_state(connection.participant, model::ParticipantState::Disconnected);
+                // Sans secret émis, aucune place n'est réservée : l'invité reviendra
+                // comme un nouvel arrivant, et le journal le dit.
+                if (!connection.resume_secret.empty()) {
+                    reconnect_slots_.push_back(
+                        ReconnectSlot{connection.participant, connection.guest_name, connection.resume_secret, now});
+                    if (reconnect_slots_.size() > 64) reconnect_slots_.pop_back();
+                } else {
+                    record_event("« " + connection.guest_name + " » ne pourra pas reprendre sa place (aucun secret émis)");
+                }
+                record_event("« " + connection.guest_name + " » est déconnecté (" + text + ")");
+                notice.body = connection.guest_name + " est déconnecté";
+            }
             broadcast(model::MessageType::Chat, encode(notice), connection.participant);
             broadcast_session_state();
         }

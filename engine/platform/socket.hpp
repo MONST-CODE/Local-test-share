@@ -32,6 +32,9 @@ struct IpAddress {
     bool is_multicast() const;
     // 10/8, 172.16/12, 192.168/16, fe80::/10 : le LAN réel, jamais Internet.
     bool is_private_lan() const;
+    // 169.254/16 et fe80::/10 : joignable sur le lien seulement, jamais routé.
+    // Une telle adresse est un repli, pas un choix : elle est signalée comme telle.
+    bool is_link_local() const;
     std::string display(Port port) const;
     static IpAddress any(IpFamily family);
     static IpAddress loopback(IpFamily family);
@@ -41,6 +44,27 @@ struct IpAddress {
 // Sélection d'interfaces LAN pour l'annonce et la liaison : aucune interface
 // « loopback », aucune interface down, IPv4 privé d'abord.
 std::vector<std::size_t> select_lan_interfaces(std::span<const NetworkInterfaceInfo> interfaces);
+
+// Énumération réelle : getifaddrs(3) sous Linux, GetAdaptersAddresses sous
+// Windows. Une ligne par adresse, car c'est l'adresse qui est liée, pas le nom.
+// Aucune liste codée en dur, aucune adresse devinée.
+Result<std::vector<NetworkInterfaceInfo>> enumerate_network_interfaces();
+
+// Résolution de l'adresse de liaison. Règle de sécurité : PLPT n'écoute jamais
+// sur toutes les interfaces par défaut. Une adresse invalide signifie « PLPT
+// choisit » et produit une interface privée LAN réellement présente ; en
+// l'absence de telle interface, la boucle locale est retenue et le dit.
+// `0.0.0.0`/`::` n'est accepté que comme choix explicite de l'appelant, et ce
+// choix est signalé en retour pour être montré à l'utilisateur.
+struct ResolvedBind {
+    IpAddress address;
+    std::string interface_name;   // nom réel (« eth0 », « Ethernet »), vide si inconnu.
+    std::string note;             // phrase affichable expliquant le choix retenu.
+    bool explicit_choice = false; // l'appelant a imposé l'adresse.
+    bool any_interface = false;   // écoute sur toutes les interfaces.
+    bool loopback_only = false;   // aucune interface privée LAN : boucle locale seule.
+};
+Result<ResolvedBind> resolve_bind_address(const IpAddress& configured, IpFamily preferred);
 
 struct PollEntry {
     NativeSocket socket = kInvalidSocket;

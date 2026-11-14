@@ -15,6 +15,7 @@
 namespace plpt::net {
 
 inline constexpr std::size_t kMaxNameBytes = 64;
+inline constexpr std::size_t kMaxSecretBytes = 64; // secret de reprise, hexadécimal.
 inline constexpr std::size_t kMaxChatBytes = 4096;
 inline constexpr std::size_t kMaxReasonBytes = 200;
 inline constexpr std::size_t kMaxUrlBytes = 300;
@@ -62,6 +63,9 @@ struct GuestHello {
     std::string guest_name;   // <= kMaxNameBytes, sans caractère de contrôle.
     std::string invite_code;  // <= 32 caractères, jamais journalisé en clair.
     std::string client;       // version lisible du pair, <= kMaxNameBytes.
+    // Secret de reprise reçu lors d'une admission précédente : vide à la première
+    // connexion. C'est la seule preuve qui rende une place ; le nom n'en est pas une.
+    std::string resume_secret; // <= kMaxSecretBytes, jamais journalisé en clair.
 };
 
 struct HostAuth {
@@ -75,6 +79,10 @@ struct HostAuth {
     // Troisième état réel : le code est valide, l'hôte n'a pas encore cliqué.
     // Sans lui, un invité ne peut pas distinguer « refusé » de « en attente ».
     bool awaiting_approval = false;
+    // Secret de reprise émis par l'hôte : aléatoire, lié à CETTE place, à durée
+    // limitée, révoqué avec elle. Vide si l'hôte n'a pas pu en générer.
+    std::string resume_secret;       // <= kMaxSecretBytes, jamais journalisé.
+    std::uint32_t resume_ttl_ms = 0; // validité après déconnexion ; 0 = aucune.
 };
 
 struct PeerInfo {

@@ -258,10 +258,11 @@ private:
                 if (!received || received.value() == 0) break;
                 request.append(reinterpret_cast<const char*>(buffer.data()), received.value());
             }
-            // La ligne de requête est renvoyée dans le corps : cela prouve que le
-            // proxy transmet la requête originale, jeton compris, sans la réécrire.
-            const auto request_line = request.substr(0, request.find("\r\n"));
-            const std::string payload = body_ + "\n" + request_line;
+            // Tout l'en-tête reçu est renvoyé dans le corps : c'est la preuve de ce
+            // que le service local voit réellement, après retrait de la capacité PLPT.
+            const auto head_end = request.find("\r\n\r\n");
+            const std::string head = request.substr(0, head_end == std::string::npos ? request.size() : head_end);
+            const std::string payload = body_ + "\n" + head;
             const auto response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " +
                 std::to_string(payload.size()) + "\r\nConnection: close\r\n\r\n" + payload;
             (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(response.data()), response.size()}, 2000ms);
@@ -325,7 +326,9 @@ void lan_control_plane_host_and_guest() {
         const auto view = host.snapshot();
         CHECK_EQ(view->pending[0].guest_name, std::string("Alice"));
         CHECK_EQ(view->invite_code, code.text);   // affiché à l'hôte, jamais annoncé sur le LAN.
-        CHECK_EQ(view->pending[0].client, std::string("PLPT 1.1"));
+        // Version lisible dérivée des constantes : l'attente ne vieillit pas toute seule.
+        CHECK_EQ(view->pending[0].client, std::string("PLPT ") + std::to_string(plpt::model::kProtocolMajor) + "." +
+            std::to_string(plpt::model::kProtocolMinor));
     }
     // Services publiés : port exposé et URL à jeton, pas le port local.
     auto token = generate_service_token(); REQUIRE(token);
@@ -464,11 +467,30 @@ void lan_data_plane_proxy_token_gate() {
         socket.close();
         return raw;
     };
-    {
+    // Corps renvoyé par l'amont = ce que le service local a réellement reçu.
+    const auto upstream_view = [](const std::string& response) {
+        const auto separator = response.find("\r\n\r\n");
+        return separator == std::string::npos ? std::string() : response.substr(separator + 4);
+    };
+    {   // Le jeton d'accès ne traverse jamais le proxy : ni URL, ni journal amont.
         const auto response = request("/?plpt=" + token.value(), "");
         CHECK(response.find("HTTP/1.1 200") == 0);
         CHECK(response.find("contenu réel du service local") != std::string::npos);
-        CHECK(response.find("/?plpt=") != std::string::npos); // requête transmise telle quelle.
+        const auto seen = upstream_view(response);
+        CHECK(seen.find("GET / HTTP/1.1") != std::string::npos); // cible réécrite, jeton retiré
+        CHECK(seen.find(token.value()) == std::string::npos);
+        CHECK(seen.find("plpt") == std::string::npos);
+        // La capacité est rendue à l'invité sous forme de cookie, pour les sous-ressources.
+        CHECK(response.find("Set-Cookie: plpt=" + token.value()) != std::string::npos);
+        CHECK(response.find("HttpOnly") != std::string::npos);
+        CHECK(response.find("SameSite=Strict") != std::string::npos);
+        CHECK(response.find("Max-Age") == std::string::npos);
+    }
+    {   // Autres paramètres conservés, seul le paramètre de capacité disparaît.
+        const auto response = request("/app?a=1&plpt=" + token.value() + "&b=2", "");
+        CHECK(response.find("HTTP/1.1 200") == 0);
+        CHECK(upstream_view(response).find("GET /app?a=1&b=2 HTTP/1.1") != std::string::npos);
+        CHECK(upstream_view(response).find(token.value()) == std::string::npos);
     }
     {
         const auto response = request("/", "");
@@ -479,8 +501,22 @@ void lan_data_plane_proxy_token_gate() {
         const auto response = request("/?plpt=00000000000000000000000000000000", "");
         CHECK(response.find("HTTP/1.1 403") == 0);
     }
-    CHECK(request("/", "X-PLPT-Token: " + token.value() + "\r\n").find("HTTP/1.1 200") == 0);
-    CHECK(request("/", "Cookie: plpt=" + token.value() + "\r\n").find("HTTP/1.1 200") == 0);
+    {   // En-tête dédié retiré, Referer nettoyé : aucune fuite vers le service local.
+        const auto response = request("/", "X-PLPT-Token: " + token.value() + "\r\nReferer: http://hote/?plpt=" + token.value() + "\r\n");
+        CHECK(response.find("HTTP/1.1 200") == 0);
+        const auto seen = upstream_view(response);
+        CHECK(seen.find("X-PLPT-Token") == std::string::npos);
+        CHECK(seen.find("Referer: http://hote/") != std::string::npos);
+        CHECK(seen.find(token.value()) == std::string::npos);
+    }
+    {   // Capacité présentée par cookie : autorisée, retirée, et non re-déposée.
+        const auto response = request("/", "Cookie: theme=dark; plpt=" + token.value() + "\r\n");
+        CHECK(response.find("HTTP/1.1 200") == 0);
+        const auto seen = upstream_view(response);
+        CHECK(seen.find("Cookie: theme=dark") != std::string::npos); // les autres cookies passent
+        CHECK(seen.find(token.value()) == std::string::npos);
+        CHECK(response.find("Set-Cookie:") == std::string::npos);   // déjà un cookie : rien à déposer
+    }
     // Requête sans fin d'en-têtes : le proxy répond et ferme, il n'attend pas indéfiniment.
     {
         auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4); REQUIRE(created);
@@ -493,8 +529,14 @@ void lan_data_plane_proxy_token_gate() {
     }
     {
         const auto view = proxy.snapshot();
-        CHECK(view->counters.authorized >= 3);
+        CHECK(view->counters.authorized >= 4);
         CHECK(view->counters.refused >= 2);
+        CHECK(view->counters.tokens_redacted >= 4);  // chaque requête autorisée est nettoyée
+        CHECK(view->counters.grants_issued >= 3);    // URL et en-tête dédié, pas le cookie
+        CHECK_EQ(view->counters.grants_failed, 0U);
+        CHECK(!view->any_interface);                 // boucle locale imposée par le test
+        CHECK(view->bind_address == "127.0.0.1");
+        CHECK(!view->bind_note.empty());
         CHECK(view->counters.bytes_to_upstream > 0);
         CHECK(view->counters.bytes_to_guest > 0);
         for (const auto& event : view->events) CHECK(event.find(token.value()) == std::string::npos);
@@ -626,6 +668,110 @@ void lan_discovery_announce_and_listen() {
     CHECK(!listener.running());
 }
 }
+
+void lan_resume_secret_binds_identity() {
+    SystemClock clock;
+    auto code = generate_invite_code(); REQUIRE(code);
+    HostServer host(clock);
+    HostConfig config;
+    config.session_name = "Reprise";
+    config.host_name = "poste-hôte";
+    config.bind_address = IpAddress::loopback(IpFamily::Ipv4);
+    config.approval_required = false;   // admission directe : le test porte sur la reprise.
+    config.max_participants = 4;
+    config.reconnect_grace_ms = 60000;
+    config.invite_code = code.value();
+    auto port = host.start(config); REQUIRE(port);
+
+    const auto base = [&] {
+        GuestConfig guest;
+        guest.address = IpAddress::loopback(IpFamily::Ipv4);
+        guest.control_port = port.value();
+        guest.invite_code = code.value();
+        return guest;
+    };
+    const auto connected = [](const GuestSnapshot& snapshot) { return snapshot.phase == GuestPhase::Connected; };
+
+    // 1. Première admission : un secret de reprise est délivré sur le canal authentifié.
+    GuestConfig first = base(); first.guest_name = "Alice";
+    GuestClient alice(clock);
+    REQUIRE(alice.start(first));
+    REQUIRE(alice.wait_for(connected, 10s));
+    const auto alice_id = alice.snapshot()->self;
+    CHECK(alice_id.value != 0);
+    const auto secret = alice.resume_secret();
+    CHECK_EQ(secret.size(), kResumeSecretChars);
+    CHECK(alice.snapshot()->resume_available);
+    CHECK_EQ(alice.snapshot()->resume_ttl_ms, config.reconnect_grace_ms);
+    for (const auto& event : alice.snapshot()->events) CHECK(event.find(secret) == std::string::npos);
+    for (const auto& event : host.snapshot()->events) CHECK(event.find(secret) == std::string::npos);
+
+    // 2. Coupure brute (socket fermée sans Bye) : la place est réservée.
+    alice.stop();
+    REQUIRE(host.wait_for([&](const HostSnapshot& snapshot) {
+        for (const auto& peer : snapshot.participants)
+            if (peer.id == alice_id) return peer.state == plpt::model::ParticipantState::Disconnected;
+        return false;
+    }, 10s));
+
+    // 3. Un homonyme sans secret n'hérite de rien : le nom n'identifie personne.
+    GuestConfig twin = base(); twin.guest_name = "Alice";
+    GuestClient homonym(clock);
+    REQUIRE(homonym.start(twin));
+    REQUIRE(homonym.wait_for(connected, 10s));
+    CHECK(homonym.snapshot()->self != alice_id);
+    CHECK_EQ(host.snapshot()->counters.resumed, 0U);
+    for (const auto& event : host.snapshot()->events) CHECK(event.find("a repris sa place") == std::string::npos);
+
+    // 4. Un secret inventé ne vaut rien non plus.
+    GuestConfig forged = base(); forged.guest_name = "Alice"; forged.resume_secret = std::string(kResumeSecretChars, '0');
+    GuestClient impostor(clock);
+    REQUIRE(impostor.start(forged));
+    REQUIRE(impostor.wait_for(connected, 10s));
+    CHECK(impostor.snapshot()->self != alice_id);
+    CHECK_EQ(host.snapshot()->counters.resumed, 0U);
+
+    // 5. Le vrai secret rend SA place, puis il est consommé (rotation).
+    GuestConfig back = base(); back.guest_name = "Alice"; back.resume_secret = secret;
+    GuestClient resumed(clock);
+    REQUIRE(resumed.start(back));
+    REQUIRE(resumed.wait_for(connected, 10s));
+    CHECK(resumed.snapshot()->self == alice_id);
+    CHECK(host.snapshot()->counters.resumed >= 1);
+    CHECK(!resumed.resume_secret().empty());
+    CHECK(resumed.resume_secret() != secret);
+    CHECK(host.wait_for([](const HostSnapshot& snapshot) {
+        for (const auto& event : snapshot.events)
+            if (event.find("a repris sa place") != std::string::npos) return true;
+        return false;
+    }, 10s));
+
+    // 6. Départ volontaire : la place est libérée, aucune reprise n'est réservée.
+    CHECK(resumed.leave());
+    CHECK(host.wait_for([&](const HostSnapshot& snapshot) {
+        for (const auto& peer : snapshot.participants)
+            if (peer.id == alice_id) return peer.state == plpt::model::ParticipantState::Revoked;
+        return false;
+    }, 10s));
+    const auto rotated = resumed.resume_secret();
+    resumed.stop();
+
+    // 7. Après libération, le secret précédent ne rend plus rien.
+    GuestConfig after = base(); after.guest_name = "Alice"; after.resume_secret = rotated;
+    GuestClient late(clock);
+    REQUIRE(late.start(after));
+    CHECK(late.wait_for([](const GuestSnapshot& snapshot) {
+        return snapshot.phase == GuestPhase::Connected || snapshot.phase == GuestPhase::Refused ||
+            snapshot.phase == GuestPhase::Disconnected;
+    }, 10s));
+    CHECK(late.snapshot()->self != alice_id);
+    for (const auto& event : host.snapshot()->events) CHECK(event.find(rotated) == std::string::npos);
+
+    late.stop(); impostor.stop(); homonym.stop();
+    host.stop();
+    CHECK(!host.running());
+}
+
 int main(int argc, char** argv) {
     if (argc == 2 && std::string_view(argv[1]) == "--ipv6") {
         DynamicPortAllocator allocator;
@@ -639,6 +785,7 @@ int main(int argc, char** argv) {
     CASE(proc_parsers_and_fixtures); CASE(repeated_allocation_releases_fds);
 #endif
     CASE(lan_control_plane_host_and_guest); CASE(lan_data_plane_proxy_token_gate);
+    CASE(lan_resume_secret_binds_identity);
     CASE(lan_discovery_announce_and_listen);
     return plpt_test::finish("platform");
 }

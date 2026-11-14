@@ -152,6 +152,7 @@ std::vector<std::uint8_t> encode(const GuestHello& message) {
     writer.text(message.guest_name);
     writer.text(message.invite_code);
     writer.text(message.client);
+    writer.text(message.resume_secret);
     return writer.take();
 }
 std::vector<std::uint8_t> encode(const HostAuth& message) {
@@ -164,6 +165,8 @@ std::vector<std::uint8_t> encode(const HostAuth& message) {
     writer.text(message.session_name);
     writer.boolean(message.approval_required);
     writer.boolean(message.awaiting_approval);
+    writer.text(message.resume_secret);
+    writer.u32(message.resume_ttl_ms);
     return writer.take();
 }
 std::vector<std::uint8_t> encode(const SessionInfo& message) {
@@ -236,14 +239,19 @@ Result<GuestHello> decode_guest_hello(std::span<const std::uint8_t> data) {
     if (!code) return Result<GuestHello>::failure(code.error());
     auto client = reader.text(kMaxNameBytes);
     if (!client) return Result<GuestHello>::failure(client.error());
+    auto secret = reader.text(kMaxSecretBytes);
+    if (!secret) return Result<GuestHello>::failure(secret.error());
     if (auto end = reader.require_end(); !end) return Result<GuestHello>::failure(end.error());
     message.guest_name = std::move(name).value();
     message.invite_code = std::move(code).value();
     message.client = std::move(client).value();
+    message.resume_secret = std::move(secret).value();
     if (!control_free(message.guest_name) || !valid_text(message.guest_name))
         return Result<GuestHello>::failure({ErrorCode::InvalidArgument, "nom d'invité invalide", "wire"});
     if (!control_free(message.invite_code))
         return Result<GuestHello>::failure({ErrorCode::InvalidArgument, "code d'invitation invalide", "wire"});
+    if (!control_free(message.resume_secret))
+        return Result<GuestHello>::failure({ErrorCode::InvalidArgument, "secret de reprise invalide", "wire"});
     return Result<GuestHello>::success(std::move(message));
 }
 
@@ -266,6 +274,10 @@ Result<HostAuth> decode_host_auth(std::span<const std::uint8_t> data) {
     if (!approval) return Result<HostAuth>::failure(approval.error());
     auto awaiting = reader.boolean();
     if (!awaiting) return Result<HostAuth>::failure(awaiting.error());
+    auto secret = reader.text(kMaxSecretBytes);
+    if (!secret) return Result<HostAuth>::failure(secret.error());
+    auto ttl = reader.u32();
+    if (!ttl) return Result<HostAuth>::failure(ttl.error());
     if (auto end = reader.require_end(); !end) return Result<HostAuth>::failure(end.error());
     message.accepted = accepted.value();
     message.reason = static_cast<ErrorCode>(reason.value());
@@ -276,6 +288,10 @@ Result<HostAuth> decode_host_auth(std::span<const std::uint8_t> data) {
     message.host_name = std::move(host_name).value();
     message.session_name = std::move(session_name).value();
     message.approval_required = approval.value();
+    if (!control_free(secret.value()))
+        return Result<HostAuth>::failure({ErrorCode::InvalidArgument, "secret de reprise invalide", "wire"});
+    message.resume_secret = std::move(secret).value();
+    message.resume_ttl_ms = ttl.value();
     message.awaiting_approval = awaiting.value();
     if (message.awaiting_approval && message.accepted)
         return Result<HostAuth>::failure({ErrorCode::ProtocolViolation, "accepté et en attente : états contradictoires", "wire"});
