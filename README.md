@@ -34,13 +34,13 @@ une autre racine MSYS2 passe uniquement par `PLPT_MSYS2_ROOT`. Votre copie ImGui
 existante peut être utilisée via `PLPT_IMGUI_DIR` après vérification du pin.
 
 ```bat
-build.bat deps --fetch
-build.bat doctor --verbose
-build.bat debug
-build.bat test debug --native-ui
-out\windows\debug\bin\plpt-desktop.exe
-build.bat release
-build.bat package
+./build.bat deps --fetch
+./build.bat doctor --verbose
+./build.bat debug
+./build.bat test debug --native-ui
+./out\windows\debug\bin\plpt-desktop.exe
+./build.bat release
+./build.bat package
 ```
 
 Les téléchargements sont **explicites, épinglés et vérifiés par SHA-256**. Les

@@ -84,19 +84,19 @@ téléchargent rien. Un fichier absent/corrompu donne une erreur, pas une autre 
 ### Commandes officielles Windows
 
 ```bat
-build.bat deps --fetch
-build.bat doctor --verbose
-build.bat debug
-build.bat release
-build.bat test
-build.bat test debug --native-ui
-build.bat test release --native-ui
-build.bat test asan --native-ui
-build.bat fuzz
-build.bat ide-check
-build.bat selftest
-build.bat clean
-build.bat package
+./build.bat deps --fetch
+./build.bat doctor --verbose
+./build.bat debug
+./build.bat release
+./build.bat test
+./build.bat test debug --native-ui
+./build.bat test release --native-ui
+./build.bat test asan --native-ui
+./build.bat fuzz
+./build.bat ide-check
+./build.bat selftest
+./build.bat clean
+./build.bat package
 ```
 
 `doctor` vérifie le chemin, `--version`, le triple **x86_64-w64-windows-gnu**,
