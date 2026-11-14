@@ -2,8 +2,8 @@
 > (26 cas unitaires / 12 449 vérifications, 6 cas plateforme / 286 vérifications,
 > « PASS 20 independent native headers »). Il est conservé tel quel comme preuve
 > historique et n'a pas été réécrit. L'état courant — moteur réseau LAN réel,
-> 33 cas unitaires / 20 882 vérifications, 10 cas plateforme / 513 vérifications,
-> 29 à 30 en-têtes indépendants selon le script — est dans
+> 33 cas unitaires / 20 882 vérifications, 12 cas plateforme / 622 vérifications,
+> 30 à 31 en-têtes indépendants selon le script — est dans
 > [CURRENT_STATUS.md](CURRENT_STATUS.md).
 
 # Native Windows MSYS2 UCRT64 validation
