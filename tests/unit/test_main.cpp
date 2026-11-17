@@ -1,4 +1,4 @@
-#include <algorithm>
+﻿#include <algorithm>
 #include <array>
 #include <atomic>
 #include <limits>
@@ -19,6 +19,9 @@
 #include "engine/net/discovery.hpp"
 #include "engine/net/proxy.hpp"
 #include "engine/net/wire.hpp"
+#include "engine/net/secure_channel.hpp"
+#include "engine/browser/remote_frame.hpp"
+#include "engine/browser/webview2_backend.hpp"
 
 using namespace plpt;
 using namespace plpt::model;
@@ -970,6 +973,130 @@ void resume_secret_is_the_only_proof_of_a_place() {
     }
 }
 
+void secure_channel_confidentiality_and_anti_replay() {
+    using namespace plpt::net;
+    std::vector<std::uint8_t> ikm = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    std::vector<std::uint8_t> c_nonce(16, 0xAA);
+    std::vector<std::uint8_t> s_nonce(16, 0x55);
+    auto keys_res = derive_session_keys(ikm, c_nonce, s_nonce);
+    REQUIRE(keys_res);
+
+    SecureChannel client_chan(keys_res.value(), false);
+    SecureChannel server_chan(keys_res.value(), true);
+
+    std::string secret_payload = "Contrat secret d'invitation DevLink 2026";
+    std::vector<std::uint8_t> plain(secret_payload.begin(), secret_payload.end());
+
+    auto sealed = client_chan.seal(plain, 1, 1000);
+    REQUIRE(sealed);
+    CHECK(sealed.value().size() > plain.size());
+
+    // Dechiffrement nominal
+    auto unsealed = server_chan.unseal(sealed.value(), 1050);
+    REQUIRE(unsealed);
+    std::string recovered(unsealed.value().begin(), unsealed.value().end());
+    CHECK_EQ(recovered, secret_payload);
+
+    // Rejet anti-rejeu : rejeu du meme paquet
+    auto replay_attempt = server_chan.unseal(sealed.value(), 1100);
+    CHECK(!replay_attempt);
+
+    // Rejet d'un paquet altere (integrite HMAC)
+    auto sealed2 = client_chan.seal(plain, 1, 2000);
+    REQUIRE(sealed2);
+    auto tampered = sealed2.value();
+    tampered[kSecureHeaderBytes + 2] ^= 0xFF;
+    auto tampered_attempt = server_chan.unseal(tampered, 2010);
+    CHECK(!tampered_attempt);
+
+    // Rejet d'un paquet expire (> max_skew)
+    auto sealed3 = client_chan.seal(plain, 1, 3000);
+    REQUIRE(sealed3);
+    auto expired_attempt = server_chan.unseal(sealed3.value(), 30000);
+    CHECK(!expired_attempt);
+}
+
+void remote_frame_and_input_serialization() {
+    using namespace plpt::media;
+    VideoFrame frame;
+    frame.header.width = 1280;
+    frame.header.height = 720;
+    frame.header.frame_index = 42;
+    frame.header.timestamp_ms = 1337;
+    frame.header.format = FrameFormat::RawRGBA32;
+    frame.header.flags = 1;
+    frame.pixels = {10, 20, 30, 40, 50, 60, 70, 80};
+
+    auto enc_frame = serialize_video_frame(frame);
+    auto dec_frame = deserialize_video_frame(enc_frame);
+    REQUIRE(dec_frame);
+    CHECK_EQ(dec_frame.value().header.width, 1280);
+    CHECK_EQ(dec_frame.value().header.height, 720);
+    CHECK_EQ(dec_frame.value().header.frame_index, 42U);
+    CHECK_EQ(dec_frame.value().header.timestamp_ms, 1337ULL);
+    CHECK_EQ(dec_frame.value().pixels.size(), 8U);
+    CHECK_EQ(dec_frame.value().pixels[0], 10);
+    CHECK_EQ(dec_frame.value().pixels[7], 80);
+
+    InputEvent ev;
+    ev.type = InputEventType::MouseDown;
+    ev.x_norm = 0.5f;
+    ev.y_norm = 0.25f;
+    ev.button = 1;
+    ev.modifiers = 2;
+    ev.wheel_delta = 120;
+    ev.key_code = 65;
+    ev.text[0] = 'A';
+    ev.text[1] = '\0';
+
+    auto enc_ev = serialize_input_event(ev);
+    auto dec_ev = deserialize_input_event(enc_ev);
+    REQUIRE(dec_ev);
+    CHECK_EQ(static_cast<int>(dec_ev.value().type), static_cast<int>(InputEventType::MouseDown));
+    CHECK_EQ(dec_ev.value().x_norm, 0.5f);
+    CHECK_EQ(dec_ev.value().y_norm, 0.25f);
+    CHECK_EQ(dec_ev.value().button, 1);
+    CHECK_EQ(dec_ev.value().modifiers, 2);
+    CHECK_EQ(dec_ev.value().wheel_delta, 120);
+    CHECK_EQ(dec_ev.value().key_code, 65U);
+    CHECK_EQ(dec_ev.value().text[0], 'A');
+}
+
+void browser_backend_selection_and_lifecycle() {
+    auto backend = plpt::browser::create_browser_backend();
+    REQUIRE(backend);
+
+    BrowserPolicy policy;
+    policy.allowed_origins.push_back("http://127.0.0.1:3000");
+
+    auto ctx_res = backend->create_context(ParticipantId{7}, policy);
+    REQUIRE(ctx_res);
+    CHECK_EQ(ctx_res.value().owner.value, 7U);
+    CHECK(!ctx_res.value().profile_id.empty());
+
+    auto nav_ok = backend->navigate(ctx_res.value().context, "http://127.0.0.1:3000/shop");
+    CHECK(nav_ok);
+
+    auto nav_bad = backend->navigate(ctx_res.value().context, "file:///etc/shadow");
+    CHECK(!nav_bad);
+    CHECK_EQ(nav_bad.error().code, ErrorCode::PermissionDenied);
+
+    auto nav_ext = backend->navigate(ctx_res.value().context, "http://malicious-external-site.com");
+    CHECK(!nav_ext);
+    CHECK_EQ(nav_ext.error().code, ErrorCode::PermissionDenied);
+
+    auto frame_res = backend->capture_frame(ctx_res.value().context);
+    REQUIRE(frame_res);
+    CHECK(!frame_res.value().empty());
+
+    std::vector<std::uint8_t> dummy_input = {1, 2, 3};
+    auto inject_res = backend->inject_input(ctx_res.value().context, dummy_input);
+    CHECK(inject_res);
+
+    auto destroy_res = backend->destroy_context(ctx_res.value().context);
+    CHECK(destroy_res);
+}
+
 int main() {
     CASE(result_invariants); CASE(exact_classifier_and_ancestry); CASE(cycles_missing_and_reused_pid);
     CASE(registry_grouping_and_no_auto_share); CASE(registry_churn_and_incomplete); CASE(unknown_owner_cannot_retain_selection);
@@ -985,5 +1112,9 @@ int main() {
     CASE(proxy_handshake_is_bounded_and_exact); CASE(discovery_announcement_codec_is_bounded);
     CASE(capability_is_never_forwarded_upstream); CASE(bind_resolution_never_defaults_to_any);
     CASE(resume_secret_is_the_only_proof_of_a_place);
+    CASE(secure_channel_confidentiality_and_anti_replay);
+    CASE(remote_frame_and_input_serialization);
+    CASE(browser_backend_selection_and_lifecycle);
     return plpt_test::finish("unit");
 }
+
