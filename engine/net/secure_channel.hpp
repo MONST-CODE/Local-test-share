@@ -48,8 +48,15 @@ Result<std::array<std::uint8_t, kMacBytes>> compute_hmac_sha256(
 class SecureChannel {
 public:
     SecureChannel() = default;
+    // Module de MIGRATION uniquement : cette construction maison (XOR avec une
+    // sortie HMAC repetee) ne doit PAS etre utilisee en production. Le transport
+    // exige par le mandat §24 est TLS 1.3 avec authentification des pairs ; ce
+    // canal est conserve le temps de la migration, hors des binaires produits,
+    // pour ne pas perdre les tests d'integrite et d'anti-rejeu.
+    // Les deux voies d'installation des cles ont la meme semantique : un canal
+    // construit avec des cles est etabli, exactement comme apres set_keys().
     explicit SecureChannel(SecureSessionKeys keys, bool is_server)
-        : keys_(keys), is_server_(is_server) {}
+        : keys_(std::move(keys)), is_server_(is_server), established_(true) {}
 
     bool is_established() const { return established_; }
     void set_keys(SecureSessionKeys keys, bool is_server) {

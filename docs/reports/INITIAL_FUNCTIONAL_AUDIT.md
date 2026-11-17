@@ -1,5 +1,14 @@
 # DevLink — Rapport d'Audit Fonctionnel Initial
 
+> **DOCUMENT OBSOLÈTE — NE PAS UTILISER COMME RÉFÉRENCE (mandat §9.6).**
+> Daté du 17 novembre 2026 mais établi sur le commit `aa4ed7d`, antérieur à `1e12c08`.
+> Contre-vérification effectuée le 17 novembre 2026 à 16:36 UTC sur `1e12c08` :
+> `app/desktop_ui/main.cpp` ne compile pas (22 erreurs) et la suite unitaire échoue
+> (`unit: 37 cases, 20946 checks, 1 failures` — cas `secure_channel_confidentiality_and_anti_replay`).
+> L'affirmation « assertions validées sans échec » n'est donc pas reproduite sur l'état courant.
+> **Rapport de référence : `docs/reports/BASELINE_AUDIT_1e12c08.md`.**
+> Ce fichier est conservé intact pour l'historique ; il n'a pas été supprimé ni réécrit.
+
 **Date :** 17 novembre 2026  
 **Commit de base :** `aa4ed7d` (Intégration de la PR #5 sur `main` post-`05b0c6c`)  
 **Compilateur de référence :** Clang++ 22.1.8 (MSYS2 UCRT64 x86_64-w64-windows-gnu)  

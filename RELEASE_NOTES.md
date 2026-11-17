@@ -1,61 +1,66 @@
-# Notes de Version — DevLink 1.0 (Windows x64)
+# Notes de version — DevLink 0.2.0-preview
 
-**Date de publication : 17 novembre 2026**  
-**Version : 1.0.0**  
-**Plateforme cible : Windows 10 / Windows 11 x64**  
-**Architecture : C++20 / MSYS2 UCRT64 / SDL3 / Dear ImGui**
-
----
-
-## Vue d'Ensemble de la Version
-
-La version 1.0.0 de **DevLink** marque l'aboutissement de la transition depuis le prototype initial PLPT vers un produit logiciel desktop natif complet, sécurisé, testé et prêt pour le partage applicatif sur réseau local.
-
-DevLink permet à tout développeur d'ouvrir instantanément ses serveurs locaux (Next.js, Vite, Flask, API conteneurisées, etc.) au test collaboratif sans avoir à déployer son code, sans transmettre son dépôt Git, sans exposer ses fichiers `.env` et sans exiger des testeurs l'installation d'outils de développement.
+**Date de publication : 17 novembre 2026**
+**Version : 0.2.0-preview** (source unique : `engine/core/product.hpp`)
+**Plateformes : Windows 10/11 x64 (MSYS2 UCRT64), Linux x64 (X11)**
+**Architecture : C++20 / SDL3 / Dear ImGui**
 
 ---
 
-## Nouveautés Majeures
+## Ce que cette version EST
 
-1. **Application Desktop Native Unifiée** :
-   - Interface graphique accélérée matériellement avec thème sombre soigné.
-   - Séparation claire entre **Espace Hôte** et **Espace Invité** dans un même exécutable portable.
-   - Prise en charge native du DPI élevé et du redimensionnement fluide.
+Une préversion de travail du poste de commande DevLink. Le socle réseau (plan de
+contrôle hôte/invité, découverte LAN, proxy applicatif à jeton, registre
+d'observation, messagerie de session) est implémenté et couvert par des tests
+automatisés ; l'interface desktop est branchée sur l'état réel de ce socle.
 
-2. **Moteur d'Isolation de Navigation** :
-   - Rendu exécuté côté hôte avec profils indépendants par invité.
-   - Isolation stricte des cookies, sessions et stockage local.
-   - Allowlist de sécurité empêchant toute tentative d'accès au système de fichiers (`file://`) ou aux ressources non partagées.
+Contenu vérifié par la chaîne de build et de tests (`build.bat` / `build.sh`,
+commande `test`) :
 
-3. **Plan de Contrôle et Réseau LAN Résilient** :
-   - Découverte automatique des sessions sur le réseau local via multicast UDP.
-   - Codes d'invitation haute entropie avec vérification en temps constant.
-   - Validation manuelle des participants à l'entrée et capacité de révocation en un clic.
+- moniteur local d'observation passive (processus, sockets TCP/UDP, origines probables) ;
+- session hôte transactionnelle : code d'invitation, approbation explicite de chaque
+  invité, révocation, reprise de place par secret, compteurs réels ;
+- client invité : authentification par code, attente d'autorisation, services publiés,
+  messagerie relayée par le moteur ;
+- annonce/écoute LAN multicast + repli broadcast + cible loopback explicite ;
+- proxy HTTP strict : jeton retiré côté amont, cookie déposé uniquement sur réponse
+  finale ≥ 200, 502 explicite si l'amont est injoignable ;
+- suite unitaire et d'intégration exécutée à chaque build (`devlink-unit-tests`,
+  `devlink-platform-tests`), sondes d'indépendance des en-têtes, auto-tests du script
+  de build lui-même.
 
-4. **Plan de Données Proxy Sécurisé** :
-   - Accès aux services protégés par un jeton de capacité secret à 32 caractères.
-   - Prise en charge complète de HTTP/1.1 et des WebSockets RFC 6455 (HMR, notifications en direct, flux bidirectionnels).
+## Ce que cette version N'EST PAS (et n'affiche jamais comme acquis)
 
-5. **Hub Collaboratif Intégré** :
-   - Messagerie de session sécurisée sans service cloud externe.
-   - Remontée d'anomalies (Feedback) contextuelle avec niveau de gravité.
+- **Pas de transport chiffré standard.** Les sessions circulent en TCP clair tant que
+  TLS 1.3 avec authentification des pairs n'est pas intégré (mandat §24). L'interface
+  l'affiche explicitement (« TCP clair — TLS non intégré ») et aucun écran, log ou
+  rapport ne parle de canal sécurisé.
+- **Pas de partage applicatif distant complet.** Le moteur WebView2 n'est utilisé que
+  s'il est réellement disponible ; à défaut l'interface affiche « moteur navigateur
+  indisponible » et bloque le démarrage d'un partage réel. Les trames synthétiques
+  restent réservées aux tests et au mode `--demo-synthetic-browser`, signalé en
+  permanence à l'écran.
+- **Pas de chaîne capture → encodage → transport → décodage → texture SDL3 validée de
+  bout en bout.** L'écran « Vue partagée » le dit au lieu de montrer une image factice.
 
----
+## Identité et noms
 
-## Vérification et Qualification
+- Exécutables livrés : `devlink-desktop`, `devlink-monitor`, `devlink-demo-service`
+  (tests : `devlink-unit-tests`, `devlink-platform-tests`, `devlink-fuzz-envelope`).
+- Racine de package : `DevLink/` ; archives :
+  `DevLink-0.2.0-preview-windows-ucrt64-x64.zip`, `DevLink-0.2.0-preview-linux-x64.tar.gz`.
+- Manifeste Windows : identité `DevLink.Desktop`, quadruplet `0.2.0.0` calculé depuis la
+  version unique et vérifié dans le PE par la sonde de build.
+- Identifiants internes volontairement stables (décision ADR-015) : namespace C++
+  `plpt`, magie de protocole `0x504C5054`, nom de paramètre/cookie `plpt`. Ce sont des
+  identifiants de fil, pas une identité publique.
+- Variables d'environnement publiques : `DEVLINK_MSYS2_ROOT`, `DEVLINK_CXX`,
+  `DEVLINK_CC`, `DEVLINK_EXTRA_CXXFLAGS`, `DEVLINK_EXTRA_LDFLAGS`,
+  `DEVLINK_EXPECT_FAILURE`. Les anciens noms `PLPT_*` restent honorés une release, avec
+  un avertissement ; sous Windows les knobs d'injection de drapeaux restent refusés.
 
-- **Compilateur** : Clang++ 22.1.8 UCRT64 (GNU ABI, x86_64-w64-windows-gnu).
-- **Couverture de tests** :
-  - 31 cas de tests unitaires : **13 835 assertions réussies, 0 échec**.
-  - 7 cas de tests plateforme réseau et sockets : **221 assertions réussies, 0 échec**.
-  - Smoke tests graphiques SDL3 / ImGui validés.
-  - Fermeture d'import PE vérifiée sans dépendance MSVCRT legacy.
-- **Packaging** : Archive portable autonome générée sous `out\windows\packages\`.
+## Installation
 
----
-
-## Instructions de Lancement
-
-1. Extraire l'archive `PLPT-0.1.0-preview-windows-ucrt64-x64.zip` dans un répertoire utilisateur.
-2. Lancer `bin\plpt-desktop.exe`.
-3. Sélectionner un service dans le Centre de Découverte, configurer le partage et inviter vos collaborateurs !
+Voir `docs/QUICKSTART.md` et `docs/INSTALLATION.md` : extraire l'archive complète dans
+un répertoire utilisateur (aucun droit administrateur), lancer `bin/devlink-desktop.exe`
+ou `bin/devlink-monitor.exe --help`. Ne pas déplacer un exécutable isolé.

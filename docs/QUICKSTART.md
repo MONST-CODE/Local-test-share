@@ -1,4 +1,4 @@
-# PLPT 0.1.0-preview — installation portable et utilisation
+# DevLink 0.2.0-preview — installation portable et utilisation
 
 ## Ce que contient cette version
 
@@ -13,14 +13,14 @@ son `clang++.exe` exclusif, voir [BUILD.md](BUILD.md). Aucun SDK/Visual Studio r
 Le script recompile Release, teste puis crée :
 
 ```text
-out\windows\packages\PLPT-0.1.0-preview-windows-ucrt64-x64.zip
+out\windows\packages\DevLink-0.2.0-preview-windows-ucrt64-x64.zip
 ```
 
 1. Extraire l'archive dans un dossier appartenant à votre compte, par exemple
    `%LOCALAPPDATA%\Programs\PLPT-Preview`. Aucun droit administrateur requis.
 2. Conserver **tout** le dossier `PLPT`, notamment les DLL à côté des EXE et les
-   licences. Ne pas déplacer seulement `plpt-desktop.exe`.
-3. Ouvrir `PLPT\bin\plpt-desktop.exe`, ou lancer `plpt-monitor.exe --help` depuis
+   licences. Ne pas déplacer seulement `devlink-desktop.exe`.
+3. Ouvrir `PLPT\bin\devlink-desktop.exe`, ou lancer `devlink-monitor.exe --help` depuis
    un terminal. Ne pas désactiver SmartScreen/antivirus si le binaire est bloqué.
 4. Pour retirer la preview : fermer ses processus puis supprimer **ce dossier
    d'extraction uniquement**. Aucun service, règle de pare-feu ou désinstalleur ajouté.
@@ -32,8 +32,8 @@ propre, installation/désinstallation complète, DPI/IME ou approbation de redis
 ## Linux
 
 `./build.sh package --native-ui` produit
-`out/linux/packages/PLPT-0.1.0-preview-linux-x64.tar.gz`. Extraire, conserver la
-bibliothèque SDL dans `PLPT/bin`, puis lancer `PLPT/bin/plpt-desktop` sous X11.
+`out/linux/packages/DevLink-0.2.0-preview-linux-x64.tar.gz`. Extraire, conserver la
+bibliothèque SDL dans `DevLink/bin`, puis lancer `DevLink/bin/devlink-desktop` sous X11.
 Le runtime glibc/libstdc++/X11 du système reste nécessaire ; ce n'est pas un binaire
 universel pour toute distribution. Le profil dummy sandbox n'est pas distribuable.
 

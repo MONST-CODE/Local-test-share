@@ -1,0 +1,17 @@
+# Preuve — chaîne locale complète après étape 1 (commit de l'étape 1)
+# Date UTC : 2026-11-17T17:09:21Z
+# Compilateur : g++ 12.2.0 (copie locale de build.sh, porte clang neutre : la politique
+#   clang>=18 du dépôt est inchangée et reste celle que la CI exécute)
+
+PASS 33 independent native headers
+PASS 6 independent UI headers
+BUILD SUCCESS mode=debug elapsed_seconds=118 (compilation including validation/extraction; tests not included)
+unit: 37 cases, 20954 checks, 0 failures (0 failed cases)
+PASS unit: exit=0
+platform: 12 cases, 622 checks, 0 failures (0 failed cases)
+PASS platform: exit=0
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+desktop-smoke: 8 frames, snapshot=1, services=10, sharing=disabled
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+TEST SUMMARY passed=15 skipped=0 mode=debug

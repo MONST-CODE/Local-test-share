@@ -1,11 +1,11 @@
-// PLPT — app/demo_service/main.cpp — service local de démonstration.
+// DevLink — app/demo_service/main.cpp — service local de démonstration.
 // Rôle : donner au proxy un amont RÉEL à ponter, pour qualifier le partage de
 // bout en bout. HTTP/1.1 minimal + WebSocket RFC 6455 (poignée de main, écho de
 // trames texte, ping/pong, fermeture). Il n'écoute que sur loopback : seule la
-// passerelle PLPT, avec son jeton, le rend joignable depuis le LAN.
+// passerelle DevLink, avec son jeton, le rend joignable depuis le LAN.
 //
 // Usage :
-//   plpt-demo-service [--port <num>] [--host <adresse>] [--quiet] [--once]
+//   devlink-demo-service [--port <num>] [--host <adresse>] [--quiet] [--once]
 // Le port réel est imprimé sur stdout (« port=<num> »), 0 demandant un port
 // éphémère. Codes de sortie : 0 arrêt propre, 2 usage invalide, 3 échec réseau.
 #include <algorithm>
@@ -65,9 +65,9 @@ std::string http_response(std::uint16_t status, std::string_view reason, std::st
 
 std::string index_page(std::string_view target) {
     std::string body = "<!doctype html>\n<html lang=\"fr\">\n<head>\n<meta charset=\"utf-8\">\n"
-                       "<title>Service de démonstration PLPT</title>\n</head>\n<body>\n"
-                       "<h1>Service de démonstration PLPT</h1>\n"
-                       "<p>Cette page est servie par le service local, puis pontée par la passerelle PLPT.</p>\n"
+                       "<title>Service de démonstration DevLink</title>\n</head>\n<body>\n"
+                       "<h1>Service de démonstration DevLink</h1>\n"
+                       "<p>Cette page est servie par le service local, puis pontée par la passerelle DevLink.</p>\n"
                        "<ul>\n<li><a href=\"/api/status\">/api/status</a> — état JSON</li>\n"
                        "<li>/ws — écho WebSocket</li>\n</ul>\n"
                        "<p>Requête observée : <code>" +
@@ -268,7 +268,7 @@ void install_stop_handlers() {
 }
 
 void usage() {
-    std::printf("Usage: plpt-demo-service [--port <num>] [--host <adresse>] [--quiet] [--once]\n"
+    std::printf("Usage: devlink-demo-service [--port <num>] [--host <adresse>] [--quiet] [--once]\n"
                 "  --port  port d'écoute loopback (0 = éphémère, défaut 0)\n"
                 "  --host  adresse d'écoute (défaut 127.0.0.1)\n"
                 "  --quiet pas de journal des requêtes\n"

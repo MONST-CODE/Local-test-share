@@ -6,12 +6,25 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+// Le SDK WebView2 fait partie des en-têtes mingw-w64 récents. S'il est absent de
+// la chaîne de compilation, ce backend se déclare explicitement indisponible au
+// lieu de casser le build : l'interface affiche alors « moteur navigateur
+// indisponible » et aucune session de partage réel n'est proposée. Ce n'est pas
+// un repli silencieux : kWebView2SdkCompiled distingue les deux causes.
+#if defined(__has_include)
+#if __has_include(<WebView2.h>)
 #include <WebView2.h>
+#define DEVLINK_WEBVIEW2_SDK 1
+#endif
+#else
+#include <WebView2.h>
+#define DEVLINK_WEBVIEW2_SDK 1
+#endif
 #endif
 
 namespace plpt::browser {
 
-#if defined(_WIN32)
+#if defined(_WIN32) && defined(DEVLINK_WEBVIEW2_SDK)
 
 namespace {
 
@@ -204,7 +217,8 @@ void WebView2Backend::cleanup_all() {
 
 #else
 
-// Implémentation stub pour plateformes non-Windows
+// Plateforme sans WebView2, ou SDK absent de la chaîne de compilation : échec
+// explicite et systématique. Aucun contexte, aucune trame, aucune injection.
 bool WebView2Backend::is_available() { return false; }
 WebView2Backend::WebView2Backend(std::string) {}
 WebView2Backend::~WebView2Backend() = default;
@@ -226,8 +240,12 @@ void WebView2Backend::cleanup_all() {}
 
 #endif
 
+// Fabrique EXPLICITE : elle retourne le backend synthétique quand aucun moteur
+// réel n'existe. Un build de production ne doit pas l'appeler sans vérifier
+// WebView2Backend::is_available() d'abord, sinon une trame synthétique pourrait
+// passer pour une application partagée (mandat §21).
 std::unique_ptr<IRemoteBrowserBackend> create_browser_backend(const std::string& custom_temp_dir) {
-#if defined(_WIN32)
+#if defined(_WIN32) && defined(DEVLINK_WEBVIEW2_SDK)
     if (WebView2Backend::is_available()) {
         return std::make_unique<WebView2Backend>(custom_temp_dir);
     }

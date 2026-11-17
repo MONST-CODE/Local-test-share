@@ -1,0 +1,35 @@
+== étape 3 : identité visuelle (marque vectorielle, typographie réelle, icônes vectorielles, ressources PE, icône SDL) ==
+commande: ./build_local_tmp.sh test debug --headless
+PASS 33 independent native headers
+PASS 6 independent UI headers
+unit: 37 cases, 20954 checks, 0 failures (0 failed cases)
+PASS unit: exit=0
+platform: 12 cases, 622 checks, 0 failures (0 failed cases)
+PASS platform: exit=0
+desktop-smoke: 8 frames, snapshot=2, services=10, sharing=disabled
+TEST SUMMARY passed=15 skipped=0 mode=debug
+
+== sonde ICO (fichier versionné) ==
+ico: assets/branding/devlink.ico type=ICO entries=7
+ico: entry 0 16x16 DIB32 bits=32 bytes=1128 offset=118
+ico: entry 1 24x24 DIB32 bits=32 bytes=2440 offset=1246
+ico: entry 2 32x32 DIB32 bits=32 bytes=4264 offset=3686
+ico: entry 3 48x48 DIB32 bits=32 bytes=9640 offset=7950
+ico: entry 4 64x64 DIB32 bits=32 bytes=16936 offset=17590
+ico: entry 5 128x128 DIB32 bits=32 bytes=67624 offset=34526
+ico: entry 6 256x256 PNG bits=32 bytes=4847 offset=102150
+ico: PASS 7 entries, all required Windows sizes present
+
+== exports raster ==
+devlink-16.png: 16x16 RGBA8 sha256=fd177df5466fcdb5
+devlink-24.png: 24x24 RGBA8 sha256=178a4f658074d659
+devlink-32.png: 32x32 RGBA8 sha256=ffdea1ef89d9d09d
+devlink-48.png: 48x48 RGBA8 sha256=16400f45e0de455d
+devlink-64.png: 64x64 RGBA8 sha256=be565fc2d30dc628
+devlink-128.png: 128x128 RGBA8 sha256=9abd6d99a88647ac
+devlink-256.png: 256x256 RGBA8 sha256=e8490577fe6f6570
+devlink.ico: type=ICO entrees=7
+  entree 0: 16x16 DIB32 bits=32 octets=1128 offset=118
+  entree 1: 24x24 DIB32 bits=32 octets=2440 offset=1246
+  entree 2: 32x32 DIB32 bits=32 octets=4264 offset=3686
+  entree 3: 48x48 DIB32 bits=32 octets=9640 offset=7950

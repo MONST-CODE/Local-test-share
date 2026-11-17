@@ -11,7 +11,7 @@ Ce document recense les problèmes de configuration et de réseau fréquents lor
 1. **Isolation des clients Wi-Fi** : De nombreux routeurs d'entreprise ou box Wi-Fi activent l'isolation AP (Access Point Isolation), ce qui bloque les paquets multicast/broadcast entre deux ordinateurs sans fil.
    - *Solution* : Utilisez la **connexion manuelle** dans l'Espace Invité en saisissant directement l'adresse IP de l'hôte (affichée dans le tableau de bord de l'hôte) et le port de contrôle.
 2. **Pare-feu Windows bloquant les paquets UDP** :
-   - *Solution* : Vérifiez que Windows Defender Firewall autorise `plpt-desktop.exe` sur les réseaux privés.
+   - *Solution* : Vérifiez que Windows Defender Firewall autorise `devlink-desktop.exe` sur les réseaux privés.
 3. **Multiples interfaces réseau (VPN, Docker, VirtualBox, WSL)** :
    - Si un VPN (ex. WireGuard, OpenVPN, Tailscale) ou un switch virtuel est actif, l'adresse de diffusion peut emprunter une interface virtuelle.
    - *Solution* : Vérifiez dans l'onglet Diagnostics quelle interface est utilisée et privilégiez la connexion par IP directe.

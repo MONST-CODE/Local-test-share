@@ -20,7 +20,7 @@ flask run --port 5000
 ```
 
 ### Étape 2 : Ouvrir DevLink et Découvrir les Services
-1. Lancez `plpt-desktop.exe`.
+1. Lancez `devlink-desktop.exe`.
 2. Dans la barre latérale gauche, sélectionnez **Centre de découverte**.
 3. DevLink affiche instantanément l'inventaire des sockets en écoute (TCP/UDP), les PIDs associés et l'origine probable (PowerShell, CMD, VS Code, Terminal).
 4. Cliquez sur le service Web que vous souhaitez partager (par exemple votre port Next.js `3000`), puis cliquez sur **Choisir** ou **Sélectionner comme point d'entrée**.
@@ -61,7 +61,7 @@ Cliquez sur **Fermer la Session Définitivement** :
 ## 2. Parcours Testeur (Espace Invité)
 
 ### Étape 1 : Rejoindre une Session
-1. Lancez `plpt-desktop.exe` sur votre ordinateur.
+1. Lancez `devlink-desktop.exe` sur votre ordinateur.
 2. Cliquez en haut à droite sur **[ Espace Invité ]**.
 3. Dans l'onglet **Rejoindre une session** :
    - Si la découverte réseau automatique est active, la session de votre collègue apparaît dans la liste **Sessions Détectées sur le Réseau**. Cliquez sur **Sélectionner**.

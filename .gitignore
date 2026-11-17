@@ -12,3 +12,4 @@
 *.ilk
 __pycache__/
 # Les tests/packagers écrivent sous out/, jamais les jetons ni les profils ici.
+imgui.ini

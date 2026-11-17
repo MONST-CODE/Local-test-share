@@ -5,7 +5,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: plpt-direct-${{ github.ref }}
+  group: devlink-direct-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   windows:

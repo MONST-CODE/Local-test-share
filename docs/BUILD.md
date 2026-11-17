@@ -178,7 +178,7 @@ modifier un script pendant son exécution.
 inspecte récursivement les imports PE, copie uniquement les DLL UCRT64 nécessaires
 avec provenance/hash/notices, puis exécute avec **PATH système uniquement**.
 Les DLL OS/UCRT Windows ne sont pas copiées. Le package Windows est nommé
-`PLPT-0.1.0-preview-windows-ucrt64-x64.zip`. Linux reste lié à son ABI glibc/libstdc++/X11.
+`DevLink-0.2.0-preview-windows-ucrt64-x64.zip`. Linux reste lié à son ABI glibc/libstdc++/X11.
 
 Archives de développement, pas installateurs signés. Voir `docs/QUICKSTART.md`,
 les trois rapports `docs/reports/UCRT64_*.md` et les preuves Linux associées.

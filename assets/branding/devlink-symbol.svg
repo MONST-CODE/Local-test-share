@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DevLink — symbole seul (sans tuile de fond).
+  Usage : sur les surfaces de l'application et tout support dont le fond est
+  maîtrisé. Sur un fond clair, utiliser devlink-mono-light.svg ; sur un fond
+  sombre, devlink-mono-dark.svg. Les couleurs ci-dessous sont les rôles du thème
+  DevDark (accent clair #C49A78, texte principal #F5E9DC) : remplacer par les
+  rôles DevLight (#A47A59 / #453329) pour le thème clair.
+
+  Géométrie identique à #dl-standard de devlink-icon-master.svg (grille 240).
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
+  <g fill="none" stroke="#C49A78" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 61 83 L 25 120 L 61 157"/>
+    <path d="M 179 83 L 215 120 L 179 157"/>
+  </g>
+  <g fill="none" stroke="#C49A78" stroke-width="13" stroke-linecap="round">
+    <path d="M 73 120 L 85 120"/>
+    <path d="M 155 120 L 167 120"/>
+  </g>
+  <g fill="none" stroke="#F5E9DC" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 94 166 L 94 74 C 126 74 146 94 146 120 C 146 146 126 166 94 166"/>
+  </g>
+</svg>

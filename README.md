@@ -73,7 +73,7 @@ Prérequis : **MSYS2 UCRT64** avec Clang++ (`C:\msys64\ucrt64\bin\clang++.exe`),
 .\build.bat test
 
 :: Lancement de l'application desktop DevLink
-.\out\windows\debug\bin\plpt-desktop.exe
+.\out\windows\debug\bin\devlink-desktop.exe
 
 :: Compilation et packaging de la version de production
 .\build.bat release

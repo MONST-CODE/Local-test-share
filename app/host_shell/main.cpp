@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string_view>
+#include "engine/core/product.hpp"
 #include "engine/discovery/monitor.hpp"
 #include "engine/platform/native.hpp"
 
@@ -13,11 +14,12 @@ std::string printable(std::string value) {
 
 int main(int argc, char** argv) {
     if (argc == 2 && std::string_view(argv[1]) == "--version") {
-        std::cout << "DevLink 0.2.0-preview / local monitor / no sharing\n";
+        std::cout << devlink::kProductName << ' ' << devlink::kProductVersion
+                  << " / local monitor / no sharing\n";
         return 0;
     }
     if (argc > 1) {
-        std::cout << "Usage: DevLink-Monitor [--help | --version]\n"
+        std::cout << "Usage: devlink-monitor [--help | --version]\n"
                      "Local TCP listeners / UDP endpoints; no probes, no server, no sharing.\n";
         return argc == 2 && std::string_view(argv[1]) == "--help" ? 0 : 2;
     }
@@ -34,7 +36,8 @@ int main(int argc, char** argv) {
     if (auto r = registry.ingest(data.sockets, data.processes, clock.now_monotonic_ms()); !r) {
         std::cerr << r.error().message << '\n'; return 2;
     }
-    std::cout << "DevLink — moniteur local 0.2.0-preview\nAucun partage actif. Aucun listener DevLink ouvert.\n"
+    std::cout << devlink::kProductName << " — moniteur local " << devlink::kProductVersion
+              << "\nAucun partage actif. Aucun listener DevLink ouvert.\n"
                  "PROTO\tADRESSE\tPORT\tPID\tPROCESSUS\tORIGINE PROBABLE\tCONFIANCE\tETAT\n";
     for (const auto& [id, service] : registry.services()) {
         (void)id;

@@ -11,6 +11,24 @@
 
 namespace plpt::browser {
 
+// Le SDK WebView2 était-il présent à la compilation ? Permet à l'interface de
+// distinguer « ce build ne contient pas de moteur réel » de « le runtime WebView2
+// n'est pas installé sur cette machine ». Les deux bloquent le partage réel,
+// mais ils n'ont pas la même cause ni le même remède.
+#if defined(__has_include)
+#if defined(_WIN32) && __has_include(<WebView2.h>)
+inline constexpr bool kWebView2SdkCompiled = true;
+#else
+inline constexpr bool kWebView2SdkCompiled = false;
+#endif
+#else
+#if defined(_WIN32)
+inline constexpr bool kWebView2SdkCompiled = true;
+#else
+inline constexpr bool kWebView2SdkCompiled = false;
+#endif
+#endif
+
 class WebView2Backend final : public IRemoteBrowserBackend {
 public:
     explicit WebView2Backend(std::string base_temp_dir = "");

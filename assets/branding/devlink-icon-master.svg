@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DevLink — icône maître (géométrie de référence).
+  Source de vérité des exports raster : assets/branding/devlink-*.png et
+  assets/branding/devlink.ico sont produits à partir de CE fichier (voir
+  BRAND_GUIDELINES.md, section « Régénérer les exports »).
+
+  Interprétation du glyphe de marque `<-D->` (mandat §14) :
+    - `<` et `>` sont des chevrons de code (délimiteurs d'inclusion), ouverts,
+      à angles arrondis : ce ne sont PAS des pointes de flèche ;
+    - deux petits tirets horizontaux séparent les chevrons du D ;
+    - le D est la forme centrale et dominante (capitale 86 u sur 240) ;
+    - aucune flèche triangulaire, aucun effet 3D, aucun dégradé, aucune ombre,
+      aucun slogan.
+
+  Deux variantes sont fournies, parce qu'une seule géométrie ne peut pas rester
+  lisible de 16 px à 256 px :
+    #dl-standard : géométrie complète (chevrons + tirets + D), exports >= 32 px ;
+    #dl-compact  : géométrie simplifiée (chevrons + D épaissis, tirets retirés),
+                   exports 16 px et 24 px uniquement.
+  La tuile de fond arrondie CUIVRE n'apparaît QUE dans les icônes d'application
+  (#dl-standard-tile / #dl-compact-tile), avec la marque monochrome crème,
+  conformément à la planche de direction artistique : le fond d'un bureau est
+  inconnu, la tuile garantit le contraste. Elle n'est jamais utilisée dans
+  l'interface, où le symbole bicolore vit sur les surfaces du thème.
+
+  Grille 240 x 240, marge optique 9 u, symétrie exacte autour de x = 120.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
+  <defs>
+    <symbol id="dl-standard" viewBox="0 0 240 240">
+      <g fill="none" stroke="#C49A78" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M 61 83 L 25 120 L 61 157"/>
+        <path d="M 179 83 L 215 120 L 179 157"/>
+      </g>
+      <g fill="none" stroke="#C49A78" stroke-width="13" stroke-linecap="round">
+        <path d="M 73 120 L 85 120"/>
+        <path d="M 155 120 L 167 120"/>
+      </g>
+      <g fill="none" stroke="#F5E9DC" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M 94 166 L 94 74 C 126 74 146 94 146 120 C 146 146 126 166 94 166"/>
+      </g>
+    </symbol>
+    <symbol id="dl-compact" viewBox="0 0 240 240">
+      <g fill="none" stroke="#C49A78" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M 62 74 L 20 120 L 62 166"/>
+        <path d="M 178 74 L 220 120 L 178 166"/>
+      </g>
+      <g fill="none" stroke="#F5E9DC" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M 94 178 L 94 62 C 126 62 146 84 146 120 C 146 156 126 178 94 178"/>
+      </g>
+    </symbol>
+    <symbol id="dl-standard-mono" viewBox="0 0 240 240">
+      <g fill="none" stroke="#F5E9DC" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M 61 83 L 25 120 L 61 157"/>
+        <path d="M 179 83 L 215 120 L 179 157"/>
+      </g>
+      <g fill="none" stroke="#F5E9DC" stroke-width="13" stroke-linecap="round">
+        <path d="M 73 120 L 85 120"/>
+        <path d="M 155 120 L 167 120"/>
+      </g>
+      <g fill="none" stroke="#F5E9DC" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M 94 166 L 94 74 C 126 74 146 94 146 120 C 146 146 126 166 94 166"/>
+      </g>
+    </symbol>
+    <symbol id="dl-compact-mono" viewBox="0 0 240 240">
+      <g fill="none" stroke="#F5E9DC" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M 62 74 L 20 120 L 62 166"/>
+        <path d="M 178 74 L 220 120 L 178 166"/>
+      </g>
+      <g fill="none" stroke="#F5E9DC" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M 94 178 L 94 62 C 126 62 146 84 146 120 C 146 156 126 178 94 178"/>
+      </g>
+    </symbol>
+    <!-- Icône d'application : tuile cuivre (rôle accent DevLight #A47A59, proche
+         de la direction artistique) + marque MONOCHROME crème, comme la planche
+         de référence. Jamais de slogan, jamais de deuxième couleur de marque. -->
+    <symbol id="dl-standard-tile" viewBox="0 0 240 240">
+      <rect x="0" y="0" width="240" height="240" rx="48" ry="48" fill="#A47A59"/>
+      <g transform="translate(18,18) scale(0.85)">
+        <use href="#dl-standard-mono"/>
+      </g>
+    </symbol>
+    <symbol id="dl-compact-tile" viewBox="0 0 240 240">
+      <rect x="0" y="0" width="240" height="240" rx="48" ry="48" fill="#A47A59"/>
+      <g transform="translate(12,12) scale(0.9)">
+        <use href="#dl-compact-mono"/>
+      </g>
+    </symbol>
+  </defs>
+  <use href="#dl-standard-tile"/>
+</svg>

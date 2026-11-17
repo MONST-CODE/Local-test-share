@@ -22,12 +22,12 @@ Ce document décrit les procédures d'installation, de prérequis et de déploie
 ## 2. Déploiement de l'Archive Autonome
 
 1. Récupérer l'archive de distribution générée par le système de build :
-   `PLPT-0.1.0-preview-windows-ucrt64-x64.zip` (ou package de release DevLink).
+   `DevLink-0.2.0-preview-windows-ucrt64-x64.zip` (ou package de release DevLink).
 2. Extraire l'archive dans un répertoire utilisateur dédié, par exemple :
    `C:\DevLink\`
 3. Vérifier la présence des fichiers essentiels dans `bin/` :
-   - `plpt-desktop.exe` (Application desktop complète DevLink)
-   - `plpt-monitor.exe` (Moniteur CLI d'inspection locale)
+   - `devlink-desktop.exe` (Application desktop complète DevLink)
+   - `devlink-monitor.exe` (Moniteur CLI d'inspection locale)
    - `SDL3.dll` (Runtime graphique SDL3 3.4.20)
    - Bibliothèques d'exécution UCRT64 (`libstdc++-6.dll`, `libwinpthread-1.dll`, `libgcc_s_seh-1.dll`, `libiconv-2.dll`).
 
@@ -36,17 +36,17 @@ Ce document décrit les procédures d'installation, de prérequis et de déploie
 ## 3. Lancement de l'Application
 
 ### Lancement de l'Interface Graphique (Recommandé)
-Double-cliquer sur `bin\plpt-desktop.exe` ou lancer via le terminal :
+Double-cliquer sur `bin\devlink-desktop.exe` ou lancer via le terminal :
 ```cmd
 cd C:\DevLink\bin
-plpt-desktop.exe
+devlink-desktop.exe
 ```
 
 ### Lancement en Mode Moniteur Console
 Pour inspecter rapidement les ports locaux et les processus sans interface graphique :
 ```cmd
 cd C:\DevLink\bin
-plpt-monitor.exe
+devlink-monitor.exe
 ```
 
 ---
@@ -54,7 +54,7 @@ plpt-monitor.exe
 ## 4. Configuration Réseau et Pare-Feu Windows
 
 Lors du premier lancement d'une session de partage :
-- Windows Defender Firewall peut afficher une invite d'autorisation réseau pour `plpt-desktop.exe`.
+- Windows Defender Firewall peut afficher une invite d'autorisation réseau pour `devlink-desktop.exe`.
 - Accepter l'accès sur les **Réseaux privés (domestiques ou de travail)**.
 - Ne pas désactiver le pare-feu global. DevLink réserve uniquement ses propres sockets dynamiques sur l'interface locale.
 
@@ -64,6 +64,6 @@ Lors du premier lancement d'une session de partage :
 
 DevLink ne crée aucune clé dans le Registre Windows, n'installe aucun pilote et n'enregistre aucun service d'arrière-plan.
 Pour désinstaller l'application :
-1. Fermer toutes les instances en cours d'exécution de `plpt-desktop.exe`.
+1. Fermer toutes les instances en cours d'exécution de `devlink-desktop.exe`.
 2. Supprimer simplement le dossier d'extraction (`C:\DevLink\`).
 3. Les profils temporaires de session résidant dans `%TEMP%\devlink_browser` sont automatiquement purgés à la fermeture de l'application.
