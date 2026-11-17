@@ -63,13 +63,16 @@ set "BROWSER_SOURCES=engine/browser/webview2_backend.cpp"
 rem Crypto maison de MIGRATION (mandat 9.2 et 24) : liee AUX TESTS SEULEMENT, jamais
 rem dans un executable livre. A remplacer par TLS 1.3 avec authentification des pairs.
 set "MIGRATION_SOURCES=engine/net/secure_channel.cpp"
+rem Transport versionne (mandat 24, ADR-016) : TCP clair + TLS 1.3 PSK reels.
+rem Lie AUX TESTS SEULEMENT jusqu au basculement (etape 5), jamais avant.
+set "TRANSPORT_SOURCES=engine/net/transport.cpp engine/net/transport_tls.cpp"
 rem Design system DevLink : themes.cpp porte les palettes DevDark/DevLight.
 set "UI_SOURCES=app/desktop_ui/design_system/themes.cpp app/desktop_ui/design_system/typography.cpp app/desktop_ui/design_system/window_icon_data.cpp"
 set "IMGUI_SOURCES=imgui.cpp imgui_draw.cpp imgui_tables.cpp imgui_widgets.cpp backends/imgui_impl_sdl3.cpp backends/imgui_impl_sdlrenderer3.cpp"
-set "HEADERS=engine/browser/browser.hpp engine/browser/remote_frame.hpp engine/browser/webview2_backend.hpp engine/core/clock.hpp engine/core/digest.hpp engine/core/format.hpp engine/core/random.hpp engine/core/result.hpp engine/core/secrets.hpp engine/core/text.hpp engine/core/types.hpp engine/diagnostics/audit.hpp engine/discovery/monitor.hpp engine/discovery/process_tree.hpp engine/discovery/terminal_classifier.hpp engine/messaging/messaging.hpp engine/net/chat.hpp engine/net/discovery.hpp engine/net/guest_client.hpp engine/net/host_server.hpp engine/net/proxy.hpp engine/net/secure_channel.hpp engine/net/wire.hpp engine/platform/connection_pool.hpp engine/platform/native.hpp engine/platform/platform.hpp engine/platform/socket.hpp engine/port_allocator/port_allocator.hpp engine/protocol/envelope.hpp engine/resource_manager/resource.hpp engine/service_registry/registry.hpp engine/session/session.hpp engine/platform/windows/windows_platform.hpp engine/platform/windows/winsock.hpp"
+set "HEADERS=engine/browser/browser.hpp engine/browser/remote_frame.hpp engine/browser/webview2_backend.hpp engine/core/clock.hpp engine/core/digest.hpp engine/core/format.hpp engine/core/random.hpp engine/core/result.hpp engine/core/secrets.hpp engine/core/text.hpp engine/core/types.hpp engine/diagnostics/audit.hpp engine/discovery/monitor.hpp engine/discovery/process_tree.hpp engine/discovery/terminal_classifier.hpp engine/messaging/messaging.hpp engine/net/chat.hpp engine/net/discovery.hpp engine/net/guest_client.hpp engine/net/host_server.hpp engine/net/proxy.hpp engine/net/secure_channel.hpp engine/net/transport.hpp engine/net/wire.hpp engine/platform/connection_pool.hpp engine/platform/native.hpp engine/platform/platform.hpp engine/platform/socket.hpp engine/port_allocator/port_allocator.hpp engine/protocol/envelope.hpp engine/resource_manager/resource.hpp engine/service_registry/registry.hpp engine/session/session.hpp engine/platform/windows/windows_platform.hpp engine/platform/windows/winsock.hpp"
 rem En-tetes du poste de commande : ils incluent <imgui.h>, donc leur sonde
 rem d'independance recoit les memes chemins -isystem que sa compilation reelle.
-set "UI_HEADERS=app/desktop_ui/design_system/tokens.hpp app/desktop_ui/design_system/themes.hpp app/desktop_ui/design_system/typography.hpp app/desktop_ui/design_system/icons.hpp app/desktop_ui/design_system/components.hpp app/desktop_ui/design_system/layout.hpp"
+set "UI_HEADERS=app/desktop_ui/design_system/tokens.hpp app/desktop_ui/design_system/themes.hpp app/desktop_ui/design_system/typography.hpp app/desktop_ui/design_system/icons.hpp app/desktop_ui/design_system/components.hpp app/desktop_ui/design_system/layout.hpp app/desktop_ui/design_system/window_icon_data.hpp"
 call :dispatch
 set "FINALRC=%errorlevel%"
 if "%LOCK%"=="1" rmdir "%OUT%\.build-lock"
@@ -555,6 +558,11 @@ exit /b 0
 call :cpp "%~1" || exit /b
 set "MIGRATION_OBJECTS=%MIGRATION_OBJECTS% "%OBJECT%""
 exit /b 0
+
+:transport_one
+call :cpp "%~1" || exit /b
+set "TRANSPORT_OBJECTS=%TRANSPORT_OBJECTS% "%OBJECT%""
+exit /b 0
 :ui_one
 call :cpp "%~1" || exit /b
 set "UI_OBJECTS=%UI_OBJECTS% "%OBJECT%""
@@ -677,6 +685,7 @@ set "NET_OBJECTS="
 set "GUI_OBJECTS="
 set "BROWSER_OBJECTS="
 set "MIGRATION_OBJECTS="
+set "TRANSPORT_OBJECTS="
 set "UI_OBJECTS="
 set "UI_INCLUDES="
 set "LINK_EXTRA="
@@ -690,6 +699,7 @@ if "%WITH_TESTS%"=="1" if "%CORE_ONLY%"=="1" (for %%S in (%NET_SOURCES%) do (cal
 if "%CORE_ONLY%"=="0" (for %%S in (%BROWSER_SOURCES%) do (call :browser_one "%%S" || exit /b))
 if "%WITH_TESTS%"=="1" if "%CORE_ONLY%"=="1" (for %%S in (%BROWSER_SOURCES%) do (call :browser_one "%%S" || exit /b))
 if "%WITH_TESTS%"=="1" (for %%S in (%MIGRATION_SOURCES%) do (call :migration_one "%%S" || exit /b))
+if "%WITH_TESTS%"=="1" (for %%S in (%TRANSPORT_SOURCES%) do (call :transport_one "%%S" || exit /b))
 call :cpp app/host_shell/main.cpp || exit /b
 set "LINK_OBJECTS=%CORE_OBJECTS% "%OBJECT%""
 call :link devlink-monitor CONSOLE || exit /b
@@ -830,10 +840,10 @@ exit /b 0
 :test_targets
 rem %MODEL_OBJECTS% and %NET_OBJECTS% were built during compilation; no rebuild.
 call :cpp tests/unit/test_main.cpp || exit /b
-set "LINK_OBJECTS=%CORE_OBJECTS% %MODEL_OBJECTS% %NET_OBJECTS% %BROWSER_OBJECTS% %MIGRATION_OBJECTS% "%OBJECT%""
+set "LINK_OBJECTS=%CORE_OBJECTS% %MODEL_OBJECTS% %NET_OBJECTS% %BROWSER_OBJECTS% %MIGRATION_OBJECTS% %TRANSPORT_OBJECTS% "%OBJECT%""
 call :link devlink-unit-tests CONSOLE || exit /b
 call :cpp tests/integration/platform_tests.cpp || exit /b
-set "LINK_OBJECTS=%CORE_OBJECTS% %MODEL_OBJECTS% %NET_OBJECTS% %BROWSER_OBJECTS% %MIGRATION_OBJECTS% "%OBJECT%""
+set "LINK_OBJECTS=%CORE_OBJECTS% %MODEL_OBJECTS% %NET_OBJECTS% %BROWSER_OBJECTS% %MIGRATION_OBJECTS% %TRANSPORT_OBJECTS% "%OBJECT%""
 call :link devlink-platform-tests CONSOLE || exit /b
 set "HEADER_COUNT=0"
 for %%H in (%HEADERS%) do (call :header_one "%%H" || exit /b)

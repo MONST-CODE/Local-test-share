@@ -1,6 +1,7 @@
 #include <array>
 #include <fstream>
 #include <filesystem>
+#include <cstdlib>
 #include <string_view>
 #ifdef _WIN32
 #include "engine/platform/windows/winsock.hpp"
@@ -11,6 +12,7 @@
 #endif
 #include "tests/test_harness.hpp"
 #include "engine/core/random.hpp"
+#include <atomic>
 #include <mutex>
 #include "engine/platform/connection_pool.hpp"
 #include "engine/platform/native.hpp"
@@ -1041,6 +1043,293 @@ void pool_saturation_with_held_open_connections() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Transport versionné (mandat §24) : TCP clair déclaré, TLS 1.3 PSK réel.
+// ---------------------------------------------------------------------------
+
+#include "engine/net/transport.hpp"
+
+using plpt::net::ITransportChannel;
+using plpt::net::ITransportEndpoint;
+using plpt::net::ITransportFactory;
+using plpt::net::TransportCredentials;
+using plpt::net::TransportInfo;
+using plpt::net::TransportKind;
+
+namespace {
+const TransportCredentials kTlsCredentials{"devlink-session-test", "secret-hors-bande-0123456789"};
+
+std::string exchange_round_trip(ITransportChannel& channel, std::string_view payload) {
+    const auto sent = channel.send(std::span<const std::uint8_t>(
+        reinterpret_cast<const std::uint8_t*>(payload.data()), payload.size()));
+    if (!sent) return std::string("envoi en echec : ") + sent.error().message;
+    std::uint8_t buffer[256] = {};
+    const auto got = channel.receive(buffer);
+    if (!got) return std::string("reception en echec : ") + got.error().message;
+    return std::string(reinterpret_cast<char*>(buffer), got.value());
+}
+} // namespace
+
+void transport_clear_declares_itself() {
+    auto factory = plpt::net::make_clear_tcp_factory();
+    CHECK(factory.has_value());
+    if (!factory.has_value()) return;
+    CHECK_EQ(factory.value()->interface_version(), plpt::net::kTransportInterfaceVersion);
+    CHECK(factory.value()->kind() == TransportKind::ClearTcp);
+    CHECK(factory.value()->available());
+    auto endpoint = factory.value()->listen("127.0.0.1", kTlsCredentials);
+    CHECK(endpoint.has_value());
+    if (!endpoint.has_value()) return;
+    std::string server_report;
+    std::thread server([&] {
+        auto channel = endpoint.value()->accept();
+        if (!channel) { server_report = "accept clair en echec : " + channel.error().message; return; }
+        const TransportInfo info = channel.value()->info();
+        server_report = std::string(info.protocol) + "|" + (info.peer_authenticated ? "auth" : "non-auth") +
+            "|" + info.cipher + "|" + exchange_round_trip(*channel.value(), "ping-clair");
+    });
+    auto client = factory.value()->connect("127.0.0.1", endpoint.value()->port(), kTlsCredentials);
+    CHECK(client.has_value());
+    if (client.has_value()) {
+        const TransportInfo info = client.value()->info();
+        CHECK(info.protocol == "tcp clair");
+        CHECK(!info.peer_authenticated); // le clair ne pretend JAMAIS authentifier
+        CHECK(info.cipher.empty());
+        CHECK_EQ(exchange_round_trip(*client.value(), "ping-clair"), std::string("ping-clair"));
+    }
+    server.join();
+    CHECK_EQ(server_report, std::string("tcp clair|non-auth||ping-clair"));
+    endpoint.value()->close();
+}
+
+void tls13_psk_loopback_authenticated() {
+    auto factory = plpt::net::make_tls13_factory();
+    CHECK(factory.has_value());
+    if (!factory.has_value()) return;
+    CHECK(factory.value()->available());
+    CHECK_EQ(factory.value()->kind(), TransportKind::Tls13Psk);
+    auto endpoint = factory.value()->listen("127.0.0.1", kTlsCredentials);
+    CHECK(endpoint.has_value());
+    if (!endpoint.has_value()) return;
+    std::string server_report;
+    bool server_authenticated = false;
+    std::thread server([&] {
+        auto channel = endpoint.value()->accept();
+        if (!channel) { server_report = "accept tls en echec : " + channel.error().message; return; }
+        const TransportInfo info = channel.value()->info();
+        server_authenticated = info.peer_authenticated;
+        server_report = info.protocol + "|" + info.cipher + "|" +
+            exchange_round_trip(*channel.value(), "marqueur-tls-serveur");
+    });
+    auto client = factory.value()->connect("127.0.0.1", endpoint.value()->port(), kTlsCredentials);
+    CHECK(client.has_value());
+    if (client.has_value()) {
+        const TransportInfo info = client.value()->info();
+        CHECK(info.protocol == "TLSv1.3");
+        CHECK(info.peer_authenticated);
+        CHECK(info.cipher.find("TLS_AES") == 0);
+        CHECK_EQ(exchange_round_trip(*client.value(), "marqueur-tls-client"), std::string("marqueur-tls-serveur"));
+    }
+    server.join();
+    CHECK(server_authenticated);
+    CHECK(server_report.rfind("TLSv1.3|", 0) == 0);
+    CHECK(server_report.find("marqueur-tls-client") != std::string::npos);
+    endpoint.value()->close();
+}
+
+void tls13_psk_wrong_secret_refused() {
+    auto factory = plpt::net::make_tls13_factory();
+    CHECK(factory.has_value());
+    if (!factory.has_value()) return;
+    auto endpoint = factory.value()->listen("127.0.0.1", kTlsCredentials);
+    CHECK(endpoint.has_value());
+    if (!endpoint.has_value()) return;
+    bool server_refused = false;
+    std::thread server([&] {
+        auto channel = endpoint.value()->accept();
+        server_refused = !channel.has_value();
+        if (channel.has_value()) channel.value()->close(); // ne doit JAMAIS arriver
+    });
+    const TransportCredentials impostor{"devlink-session-test", "mauvais-secret-0123456789!!"};
+    auto client = factory.value()->connect("127.0.0.1", endpoint.value()->port(), impostor);
+    CHECK(!client.has_value());
+    if (!client.has_value()) {
+        CHECK(client.error().code == plpt::ErrorCode::Unauthorized ||
+              client.error().code == plpt::ErrorCode::Disconnected);
+    }
+    server.join();
+    CHECK(server_refused); // poignée de main refusée des deux côtés, aucun canal rendu
+    endpoint.value()->close();
+}
+
+void tls13_downgrade_refused() {
+    // Politique incohérente (min > max) : refusée AVANT toute écoute, sans thread.
+    plpt::net::TlsPolicy inverted;
+    inverted.min_version = plpt::net::kTls13Version;
+    inverted.max_version = plpt::net::kTls12Version;
+    auto rejected = plpt::net::make_tls13_factory(inverted);
+    CHECK(!rejected.has_value()); // jamais de fabrique silencieusement « corrigée »
+
+    // Client qui n'offre que TLS 1.2 face au serveur TLS 1.3 strict : refus des
+    // deux côtés, aucun canal, aucun repli.
+    auto server_factory = plpt::net::make_tls13_factory();
+    CHECK(server_factory.has_value());
+    if (!server_factory.has_value()) return;
+    auto endpoint = server_factory.value()->listen("127.0.0.1", kTlsCredentials);
+    CHECK(endpoint.has_value());
+    if (!endpoint.has_value()) return;
+    bool server_refused = false;
+    std::thread server([&] {
+        auto channel = endpoint.value()->accept();
+        server_refused = !channel.has_value();
+        if (channel.has_value()) channel.value()->close(); // ne doit JAMAIS arriver
+    });
+    plpt::net::TlsPolicy legacy;
+    legacy.min_version = plpt::net::kTls12Version;
+    legacy.max_version = plpt::net::kTls12Version;
+    auto client_factory = plpt::net::make_tls13_factory(legacy);
+    CHECK(client_factory.has_value());
+    if (client_factory.has_value()) {
+        auto client = client_factory.value()->connect("127.0.0.1", endpoint.value()->port(), kTlsCredentials);
+        CHECK(!client.has_value()); // le serveur TLS 1.3 strict refuse la négociation 1.2
+    }
+    server.join();
+    CHECK(server_refused);
+    endpoint.value()->close();
+}
+
+void tls13_availability_is_honest() {
+    std::string reason;
+    const bool available = plpt::net::tls13_runtime_available(&reason);
+    const char* forced = std::getenv("DEVLINK_TLS_LIBRARY_PATH");
+    auto factory = plpt::net::make_tls13_factory();
+    CHECK(factory.has_value());
+    if (!factory.has_value()) return;
+    if (forced != nullptr) {
+        // Variable de test : bibliothèque volontairement introuvable. La fabrique
+        // doit le dire, et refuser listen/connect sans jamais replier sur du clair.
+        CHECK(!available);
+        CHECK(!reason.empty());
+        CHECK(!factory.value()->available());
+        CHECK(factory.value()->unavailability_reason() == reason);
+        auto listen = factory.value()->listen("127.0.0.1", kTlsCredentials);
+        CHECK(!listen.has_value());
+        if (!listen.has_value()) CHECK_EQ(listen.error().code, plpt::ErrorCode::Unsupported);
+        std::printf("tls-unavailable-proof: reason=%s\n", reason.c_str());
+    } else {
+        CHECK_EQ(factory.value()->available(), available);
+        if (!available) CHECK(!reason.empty()); // indisponible doit savoir pourquoi
+        std::printf("tls13 runtime: available=%d reason=%s\n", available ? 1 : 0, reason.c_str());
+    }
+}
+
+#ifndef _WIN32
+#include <poll.h>
+// Oracle d'écoute : un relais octet-par-octet enregistre tout ce qui traverse.
+// Le marqueur clair doit être ABSENT de l'enregistrement : la charge utile est
+// réellement chiffrée de bout en bout, pas simplement déclarée telle.
+void tls13_wire_oracle_no_plaintext() {
+    auto factory = plpt::net::make_tls13_factory();
+    CHECK(factory.has_value());
+    if (!factory.has_value()) return;
+    auto endpoint = factory.value()->listen("127.0.0.1", kTlsCredentials);
+    CHECK(endpoint.has_value());
+    if (!endpoint.has_value()) return;
+
+    const int relay_listener = ::socket(AF_INET, SOCK_STREAM, 0);
+    CHECK(relay_listener >= 0);
+    sockaddr_in relay_address{};
+    relay_address.sin_family = AF_INET;
+    relay_address.sin_port = 0;
+    CHECK_EQ(::inet_pton(AF_INET, "127.0.0.1", &relay_address.sin_addr), 1);
+    CHECK_EQ(::bind(relay_listener, reinterpret_cast<sockaddr*>(&relay_address), sizeof(relay_address)), 0);
+    CHECK_EQ(::listen(relay_listener, 1), 0);
+    sockaddr_in bound{};
+    socklen_t bound_len = sizeof(bound);
+    CHECK_EQ(::getsockname(relay_listener, reinterpret_cast<sockaddr*>(&bound), &bound_len), 0);
+    const std::uint16_t relay_port = static_cast<std::uint16_t>(ntohs(bound.sin_port));
+
+    std::mutex wire_mutex;
+    std::string wire;
+    std::atomic<bool> relay_done{false};
+    const std::uint16_t tls_port = endpoint.value()->port();
+    std::thread relay([&] {
+        const int client_fd = ::accept(relay_listener, nullptr, nullptr);
+        if (client_fd < 0) { relay_done.store(true); return; }
+        sockaddr_in upstream{};
+        upstream.sin_family = AF_INET;
+        upstream.sin_port = htons(tls_port);
+        ::inet_pton(AF_INET, "127.0.0.1", &upstream.sin_addr);
+        const int server_fd = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (::connect(server_fd, reinterpret_cast<sockaddr*>(&upstream), sizeof(upstream)) != 0) {
+            ::close(client_fd); relay_done.store(true); return;
+        }
+        pollfd watches[2] = {{client_fd, POLLIN, 0}, {server_fd, POLLIN, 0}};
+        char buffer[2048];
+        for (;;) {
+            const int ready = ::poll(watches, 2, 2000);
+            if (ready <= 0) break;
+            bool closed = false;
+            for (int side = 0; side < 2 && !closed; ++side) {
+                if (watches[side].revents & POLLIN) {
+                    const int got = ::recv(watches[side].fd, buffer, sizeof(buffer), 0);
+                    if (got <= 0) { closed = true; break; }
+                    {
+                        std::lock_guard<std::mutex> lock(wire_mutex);
+                        wire.append(buffer, static_cast<std::size_t>(got));
+                    }
+                    const int peer = side == 0 ? server_fd : client_fd;
+                    int offset = 0;
+                    while (offset < got) {
+                        const int sent = ::send(peer, buffer + offset, got - offset, 0);
+                        if (sent <= 0) { closed = true; break; }
+                        offset += sent;
+                    }
+                }
+            }
+            if (closed) break;
+        }
+        ::close(client_fd);
+        ::close(server_fd);
+        relay_done.store(true);
+    });
+
+    std::thread server([&] {
+        auto channel = endpoint.value()->accept();
+        if (!channel) return;
+        std::uint8_t buffer[256] = {};
+        const auto got = channel.value()->receive(buffer);
+        if (got) {
+            const auto echo = channel.value()->send(std::span<const std::uint8_t>(buffer, got.value()));
+            if (!echo) std::printf("oracle: echo tls en echec : %s\n", echo.error().message.c_str());
+        }
+    });
+
+    auto client = factory.value()->connect("127.0.0.1", relay_port, kTlsCredentials);
+    CHECK(client.has_value());
+    if (client.has_value()) {
+        CHECK_EQ(exchange_round_trip(*client.value(), "MARQUEUR-CLAIR-DEVLINK-4242"),
+            std::string("MARQUEUR-CLAIR-DEVLINK-4242"));
+        client.value()->close();
+    }
+    server.join();
+    for (int wait = 0; wait < 100 && !relay_done.load(); ++wait) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ::close(relay_listener);
+    relay.join();
+    std::string captured;
+    {
+        std::lock_guard<std::mutex> lock(wire_mutex);
+        captured = wire;
+    }
+    CHECK(captured.size() > 200); // du trafic a réellement traversé l'oracle
+    CHECK(captured.find("MARQUEUR-CLAIR-DEVLINK-4242") == std::string::npos); // jamais en clair
+    CHECK(captured.find("DevLink TLS13 PSK v1") == std::string::npos); // ni le libellé de dérivation
+    endpoint.value()->close();
+}
+#endif
+
 int main(int argc, char** argv) {
     if (argc == 2 && std::string_view(argv[1]) == "--ipv6") {
         DynamicPortAllocator allocator;
@@ -1057,5 +1346,22 @@ int main(int argc, char** argv) {
     CASE(lan_resume_secret_binds_identity);
     CASE(lan_discovery_announce_and_listen);
     CASE(lan_proxy_informational_and_upgrade_responses); CASE(pool_saturation_with_held_open_connections);
+    CASE(transport_clear_declares_itself);
+    CASE(tls13_availability_is_honest);
+    {
+        std::string tls_reason;
+        const bool tls_available = plpt::net::tls13_runtime_available(&tls_reason);
+        if (!tls_available) {
+            // SKIP n'est pas un PASS : les cas TLS ne sont pas comptes ici.
+            std::printf("SKIP tls13: runtime indisponible (%s)\n", tls_reason.c_str());
+        } else {
+            CASE(tls13_psk_loopback_authenticated);
+            CASE(tls13_psk_wrong_secret_refused);
+            CASE(tls13_downgrade_refused);
+#ifndef _WIN32
+            CASE(tls13_wire_oracle_no_plaintext);
+#endif
+        }
+    }
     return plpt_test::finish("platform");
 }

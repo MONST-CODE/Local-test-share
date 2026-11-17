@@ -1,0 +1,100 @@
+DevLink — ÉTAPE 4 : transport versionné + TLS 1.3 PSK réel (ADR-016)
+Date : 17 novembre 2026 — sandbox Linux Debian 12 (g++ 12.2.0, itération locale ;
+la toolchain mandatée clang>=18 reste la référence des barrières build.sh).
+OpenSSL runtime présent : 3.0.20 (/usr/lib/x86_64-linux-gnu/lib{ssl,crypto}.so.3).
+Aucun en-tête OpenSSL de développement sur la sandbox => conception dlopen
+(vérifiée symbole par symbole contre la table d'export réelle, voir §4).
+
+1) LIVRABLES
+   engine/net/transport.hpp        interface versionnée (kTransportInterfaceVersion=1)
+   engine/net/transport_socket.hpp détail sockets partagé (interne)
+   engine/net/transport.cpp        fabrique TCP clair (se déclare "tcp clair", non authentifié)
+   engine/net/transport_tls.cpp    fabrique TLS 1.3 PSK (dlopen OpenSSL, suite épinglée)
+   tests/integration/platform_tests.cpp  +6 cas (voir §3)
+   build.sh / build.bat            TRANSPORT_SOURCES liés AUX TESTS SEULEMENT (pré-basculement
+                                   étape 5) ; auto-test négatif tls-unavailable-proof
+   docs/ADR/ADR-016-transport-tls13-psk.md + registre README mis à jour
+   tests/build/toolchain_probe.cpp RECONSTRUCTION des contrôles perdus lors de la recréation
+   tests/build/synthetic_pe.py     d'environnement (étape 3) : --ico/--pe-icons/--version-info
+                                   fabrique de PE synthétiques (validation de la sonde)
+
+2) SUITE COMPLÈTE (build_local_tmp.sh test debug --headless, puis selftest)
+   unit: 37 cases, 20954 checks, 0 failures (0 failed cases)
+   platform: 18 cases, 670 checks, 0 failures (0 failed cases)   [12 préexistants + 6 nouveaux]
+   PASS 34 independent native headers   (transport.hpp compilé seul, +1 vs étape 3)
+   PASS 7 independent UI headers        (window_icon_data.hpp ajouté, +1 vs étape 3)
+   TEST SUMMARY passed=15 skipped=0 mode=debug   TEST_EXIT=0
+   desktop-smoke : 8 frames, snapshot=2, services=10, sharing=disabled (inchangé)
+   SELFTEST_EXIT=0 dont :
+     PASS brand-ico: exit=0                    (ICO 7 entrées vérifié octet par octet)
+     négatifs by-design : intentional-exit rc=23 conservé, renamed-ico rc=1 refusé
+     PASS tls-unavailable-proof: exit=0        (voir §5)
+
+3) CAS TLS — sorties réelles (runtime OpenSSL présent, available=1)
+   [PASS] transport_clear_declares_itself
+   [PASS] tls13_availability_is_honest          tls13 runtime: available=1 reason=
+   [PASS] tls13_psk_loopback_authenticated      info() des deux côtés :
+       protocol=TLSv1.3 cipher=TLS_AES_128_GCM_SHA256 peer_authenticated=true
+   [PASS] tls13_psk_wrong_secret_refused        mauvais secret => Unauthorized des
+       deux côtés, aucun objet canal rendu
+   [PASS] tls13_downgrade_refused               politique min>max refusée à la fabrique ;
+       client TLS 1.2-only refusé par serveur 1.3 strict, des deux côtés
+   [PASS] tls13_wire_oracle_no_plaintext        relais octet-par-octet : >200 octets
+       capturés sur le fil, marqueur "MARQUEUR-CLAIR-DEVLINK-4242" JAMAIS en clair,
+       libellé de dérivation jamais sur le fil => chiffrement effectif, pas déclaré
+
+4) CAUSE RACINE documentée (honnêteté : bug réel trouvé et corrigé par les tests)
+   Premier état du code : poignée refusée, serveur "no suitable signature algorithm".
+   Les deux callbacks PSK s'exécutaient pourtant (traces DEVLINK_TLS_TRACE=1).
+   Diagnostic contre les sources openssl-3.0.20 (ssl/statem/extensions_srvr.c
+   tls_parse_ctos_psk, ssl/t1_lib.c tls_choose_sigalg) : le serveur sélectionne sa
+   suite AVANT reprise ; par défaut TLS_AES_256_GCM_SHA384, dont le digest rend la
+   session PSK SHA-256 incompatible => session jetée => repli certificats => échec.
+   Correctif : suite unique épinglée des DEUX côtés (SSL_CTX_set_ciphersuites
+   "TLS_AES_128_GCM_SHA256") + callback client honorant le digest demandé (refus
+   si != SHA256). Après correctif : poignée mutuelle vérifiée.
+   Pièges d'ABI vérifiés contre la table d'export (nm -D) :
+     SSL_CTX_set_min/max_proto_version = MACROS => SSL_CTX_ctrl lié (ctrl 123/124,
+       constantes lues dans include/openssl/ssl.h.in tag openssl-3.0.20)
+     SSL_get_cipher_name = MACRO => SSL_get_current_cipher + SSL_CIPHER_get_name
+     SSL_SESSION_set_master_key => nom réel SSL_SESSION_set1_master_key
+
+5) PREUVE « indisponible ≠ PASS » (auto-test build.sh tls-unavailable-proof)
+   env DEVLINK_TLS_LIBRARY_PATH=/does/not/exist/libssl.so devlink-platform-tests :
+     tls-unavailable-proof: reason=libssl introuvable (dlopen) : /does/not/exist/
+       libssl.so: cannot open shared object file: No such file or directory
+     SKIP tls13: runtime indisponible (libssl introuvable (dlopen) : ...)
+     platform: 14 cases, 640 checks, 0 failures   (4 cas TLS en SKIP, pas en PASS)
+     exit 0 — la suite reste verte et honnête sans runtime TLS
+   Windows : la fabrique rapporte available()=false avec raison explicite
+   (« runtime TLS non câblé sur Windows (Schannel/OpenSSL MSYS2 : ADR-016) ») —
+   IMPLEMENTED_BUT_NOT_VERIFIED depuis Linux, aucun état sécurisé prétendu.
+
+6) SONDE RECONSTRUITE (contrôles d'étape 3 perdus dans la recréation d'environnement)
+   --ico : ICONDIR type 1, carré, planes=1 bits=32, reserved/colorCount=0, DIB32
+     taille EXACTE 40+w*h*4+((w+31)/32)*4*h, PNG IHDR BE RGBA8 cohérent avec le
+     répertoire, fin de fichier == fin des charges utiles, tailles requises
+     16/24/32/48/64/128/256. Vérifié sur assets/branding/devlink.ico réel :
+     7 entrées (16,24,32,48,64,128 DIB32 + 256 PNG RGBA8), RC=0 ; fichier texte
+     renommé .ico : RC=1 ; --expect-entries divergent : RC=1.
+   --pe-icons / --version-info : parseur PE32+ pur C++ (MZ/PE, COFF x86-64,
+     data directory 2, RVA->offset par sections, arbre type/id/langue borné,
+     toute charge utile devant être intégralement mappable). Validé depuis Linux
+     sur PE SYNTHÉTIQUES (tests/build/synthetic_pe.py) :
+       bon PE (2 RT_ICON, GRPICONDIR 2 entrées, quad 0.2.0.0) : RC=0
+       GRPICONDIR déclarant 3 entrées pour 2 RT_ICON : RC=1 « groupe incohérent »
+       RT_VERSION absent : RC=1 ; quad 0.3.0.0 vs attendu 0.2.0.0 : RC=1 « DIVERGE »
+       ELF renommé .exe : RC=1 « image MZ invalide »
+       --expect-icons divergent : RC=1
+   --manifest <exe> [--expect-version A.B.C.D] (Win32 + parseur pur) : gate
+     build.bat:595 — IMPLEMENTED_BUT_NOT_VERIFIED depuis Linux (LoadLibraryExA),
+     la partie pure (VS_FIXEDFILEINFO) étant validée via --version-info.
+   Bug du parseur trouvé par cette validation : racine de l'arbre amorcée en RVA
+   absolu au lieu d'offset relatif => corrigée AVANT tout usage en barrière.
+
+7) LIMITES HONNÊTES
+   - Vérifications exécutées sur loopback (127.0.0.1), une machine : pas de test
+     multi-hôtes réel (comme pour l'ensemble des tests réseau de ce dépôt).
+   - Runtime TLS Windows non exécuté (voir §5) ; le basculement production
+     (host_server/guest_client sur ITransport, retrait de secure_channel des
+     sources liées) est l'étape 5 du mandat, pas celle-ci.

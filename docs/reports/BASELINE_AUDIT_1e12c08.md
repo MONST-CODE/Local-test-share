@@ -263,3 +263,59 @@ attendant une chaîne terminée par zéro (plage `[begin, end)` explicite, aucun
   `TEST SUMMARY passed=15 skipped=0`, unit 37/20954/0, platform 12/622/0 ;
   selftest → `brand-ico` PASS, `renamed-ico` rejeté, `SELFTEST PASS` ;
   détails dans `docs/reports/evidence/2026-11-17-etape3-identite-visuelle.txt`.
+
+## 12. Étape 4 — transport versionné : TCP clair déclaré + TLS 1.3 PSK réel (ADR-016), 17 novembre 2026
+
+- **Non-conformité traitée** : `engine/net/secure_channel.cpp` (XOR + HMAC
+  SHA-256 maison, magie `0x444C4E4B`) était le seul canal « sécurisé » —
+  confidentiel mais malléable, sans authentification de pair, sans pile
+  maintenue. Le mandat §24 exige TLS 1.3 avec authentification du pair.
+- **Interface versionnée** : `engine/net/transport.hpp`
+  (`kTransportInterfaceVersion=1`) — `ITransportChannel` (send/receive/close/
+  **info**), `ITransportEndpoint` (accept/port/close), `ITransportFactory`
+  (listen/connect/**available**/**unavailability_reason**), `TlsPolicy`
+  (min=max=TLS 1.3 par défaut, politique incohérente refusée à la construction).
+  Tout canal se déclare : le clair dit `"tcp clair"` / `peer_authenticated=false`
+  — jamais d'état sécurisé prétendu sans poignée aboutie.
+- **TLS 1.3 PSK réel** : `engine/net/transport_tls.cpp` — OpenSSL chargé par
+  dlopen (pas d'en-têtes à la compilation ; sandbox Debian 12 sans libssl-dev),
+  symboles liés un à un avec raison explicite en cas de manque ; PSK externe
+  identité+secret ≥16 o, clé = SHA-256(`DevLink TLS13 PSK v1|id|secret`), suite
+  unique **épinglée des deux côtés** `TLS_AES_128_GCM_SHA256` (sans épinglage,
+  OpenSSL préfère AES-256-GCM-SHA384, le serveur jette la session PSK SHA-256
+  et retombe sur certificats — cause racine vérifiée contre les sources 3.0.20,
+  corrigée, re-testée) ; macros d'ABI traitées (`SSL_CTX_ctrl` 123/124,
+  `SSL_get_current_cipher`+`SSL_CIPHER_get_name`, `SSL_SESSION_set1_master_key`).
+  Échec de poignée ⇒ `Unauthorized`, aucun canal, aucun repli clair.
+- **Windows** : fabrique TLS `available()=false` avec raison (« runtime TLS non
+  câblé sur Windows (Schannel/OpenSSL MSYS2 : ADR-016) ») —
+  `IMPLEMENTED_BUT_NOT_VERIFIED` depuis Linux, décidé et documenté dans l'ADR.
+- **Pré-basculement** : `TRANSPORT_SOURCES` liés AUX TESTS SEULEMENT (build.sh
+  + build.bat), même régime que `MIGRATION_SOURCES` ; le basculement
+  `host_server`/`guest_client` + retrait de `secure_channel` est l'étape 5.
+- **6 nouveaux cas d'intégration** (platform 12→18 cas, 622→670 checks) :
+  clair auto-déclaré ; boucle TLS 1.3 authentifiée des deux côtés
+  (`TLSv1.3`/`TLS_AES_128_GCM_SHA256`/`peer_authenticated=true`) ; mauvais
+  secret refusé des deux côtés ; downgrade 1.2 refusé (fabrique + serveur) ;
+  **oracle de fil** (relais octet-par-octet : marqueur jamais en clair sur le
+  fil — chiffrement effectif prouvé, pas déclaré) ; honnêteté de disponibilité.
+  Auto-test négatif `tls-unavailable-proof` (build.sh selftest) : avec
+  `DEVLINK_TLS_LIBRARY_PATH=/does/not/exist`, raison explicite, `Unsupported`,
+  cas TLS en **SKIP** (14 cas, 0 échec) — SKIP ≠ PASS, suite verte et honnête.
+- **Sonde d'étape 3 RECONSTRUITE** : la recréation d'environnement avait perdu
+  les extensions de `tests/build/toolchain_probe.cpp` (`--ico`, `--pe-icons`,
+  `--expect-version`) alors que build.sh/build.bat les exigent — restauration
+  réelle, pas cosmétique : parseur ICO octet par octet (DIB32 taille exacte,
+  PNG IHDR BE RGBA8, fin de fichier == fin des charges, tailles requises
+  16–256) vérifié sur le vrai `devlink.ico` (7 entrées, RC=0) et sur des
+  contrefaçons (RC=1) ; parseur PE32+ pur C++ (ressources, GRPICONDIR coherent,
+  VS_FIXEDFILEINFO) validé depuis Linux sur **PE synthétiques**
+  (`tests/build/synthetic_pe.py`) : bon PE RC=0, groupe incohérent / RT_VERSION
+  absent / quad divergent / ELF renommé RC=1. Bug de racine (RVA absolu vs
+  offset relatif) trouvé par cette validation et corrigé avant usage en barrière.
+  `window_icon_data.hpp` ajouté à `UI_HEADERS` (6→7 en-têtes UI indépendants).
+- Vérification : `./build_local_tmp.sh test debug --headless` → `TEST SUMMARY
+  passed=15 skipped=0`, unit 37/20954/0, platform 18/670/0, 34 en-têtes natifs
+  + 7 UI indépendants ; selftest → `SELFTEST_EXIT=0` (brand-ico PASS, négatifs
+  by-design, tls-unavailable-proof PASS) ; détails dans
+  `docs/reports/evidence/2026-11-17-etape4-transport-tls13.txt`.

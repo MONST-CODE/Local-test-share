@@ -23,11 +23,16 @@ Décisions techniques complémentaires :
 - [ADR-012 — Renderer du moniteur, dépendances épinglées](ADR-012-monitor-renderer.md)
 - [ADR-013 — Rôle du proxy et frontière de confiance avec le rendu distant](ADR-013-proxy-vs-rendu-distant.md)
 - [ADR-014 — Identité du participant, reprise de place et exposition réseau](ADR-014-identite-reprise-exposition.md)
+- [ADR-015 — Identité publique DevLink, version unique et identifiants internes stables](ADR-015-identite-publique-et-version-unique.md)
+- [ADR-016 — Transport des sessions réelles : interface versionnée, TLS 1.3 PSK authentifié, disponibilité honnête](ADR-016-transport-tls13-psk.md)
 
-À instruire (aucune décision prise à ce jour) : transport sécurisé des sessions
-réelles (comparaison de piles QUIC/TLS maintenues, compatible clang++ UCRT64 et
-clang++ Linux), et Browser Worker / capture de surface (prototype WebView2 et sa
-porte de validation avant toute interface définitive).
+Décidé par ADR-016 : le transport sécurisé des sessions réelles est TLS 1.3 à
+PSK externe (pile OpenSSL chargée à l'exécution sur Linux ; Windows à câbler —
+IMPLEMENTED_BUT_NOT_VERIFIED, voir l'ADR). Le canal historique XOR/HMAC
+(`secure_channel`) reste lié aux tests de migration jusqu'au basculement.
+À instruire (aucune décision prise à ce jour) : Browser Worker / capture de
+surface (prototype WebView2 et sa porte de validation avant toute interface
+définitive).
 
 Une modification future d'une décision VALIDÉE doit exposer contexte, options,
 conséquences, risques et tests, puis obtenir l'arbitrage du propriétaire. Le fait
