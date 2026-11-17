@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <limits>
@@ -301,9 +302,10 @@ void protocol_golden_and_bounds() {
     for (auto offset : {std::size_t{0}, std::size_t{10}, std::size_t{48}, std::size_t{55}}) {
         auto corrupt = encoded.value(); corrupt[offset] = 0xFF; CHECK(!decode_envelope(corrupt));
     }
-    // Protocole 1.1 : même majeur obligatoire, mineur pair inférieur ou égal accepté.
-    CHECK(negotiate_version(1, 0)); CHECK(negotiate_version(1, 1));
-    CHECK(!negotiate_version(1, 2)); CHECK(!negotiate_version(2, 0)); CHECK(!negotiate_version(0, 1));
+    // Même majeur obligatoire, révision mineure inférieure ou égale acceptée.
+    // 1.2 porte le secret de reprise ; 1.3 n'existe pas et doit être refusé.
+    CHECK(negotiate_version(1, 0)); CHECK(negotiate_version(1, 1)); CHECK(negotiate_version(1, 2));
+    CHECK(!negotiate_version(1, 3)); CHECK(!negotiate_version(2, 0)); CHECK(!negotiate_version(0, 1));
     e.payload.resize(8193); CHECK(!encode_envelope(e));
     e = chat(); e.type = static_cast<MessageType>(999); CHECK(!encode_envelope(e));
     e = chat(); e.flags = 1; CHECK(!encode_envelope(e));
@@ -543,7 +545,7 @@ void worker_publishes_immutable_snapshots() {
 // ---- Réseau réel : fil de contrôle, secrets, mise en forme, proxy, découverte. ----
 void wire_messages_roundtrip_and_guard() {
     using namespace plpt::net;
-    GuestHello hello{"Alice", "FRYK-29GY-QASB-6M7H", "PLPT 1.1"};
+    GuestHello hello{"Alice", "FRYK-29GY-QASB-6M7H", "PLPT 1.2", ""}; // 4e champ : secret de reprise.
     auto hello_bytes = encode(hello);
     auto hello_back = decode_guest_hello(hello_bytes); REQUIRE(hello_back);
     CHECK_EQ(hello_back.value().guest_name, hello.guest_name);
@@ -801,6 +803,173 @@ void discovery_announcement_codec_is_bounded() {
     CHECK(!encode_announcement(control_char));
 }
 
+
+void capability_is_never_forwarded_upstream() {
+    using namespace plpt::net;
+    const std::string token = "0123456789abcdef0123456789abcdef";
+    const auto redact = [&](const std::string& head) {
+        const auto out = redact_capability({reinterpret_cast<const std::uint8_t*>(head.data()), head.size()}, "plpt");
+        CHECK(out.size() <= head.size()); // aucune inflation possible.
+        return std::string(out.begin(), out.end());
+    };
+    {   // Paramètre de capacité retiré, les autres paramètres conservés dans l'ordre.
+        CHECK_EQ(redact("GET /app?a=1&plpt=" + token + "&b=2 HTTP/1.1\r\nHost: x\r\n\r\n"),
+            std::string("GET /app?a=1&b=2 HTTP/1.1\r\nHost: x\r\n\r\n"));
+        // Paramètre unique : la cible redevient le chemin seul, sans « ? » vide.
+        CHECK_EQ(redact("GET /?plpt=" + token + " HTTP/1.1\r\nHost: x\r\n\r\n"),
+            std::string("GET / HTTP/1.1\r\nHost: x\r\n\r\n"));
+    }
+    {   // Cookie de capacité : retiré seul, la ligne disparaît s'il ne reste rien.
+        CHECK_EQ(redact("GET / HTTP/1.1\r\nCookie: theme=dark; plpt=" + token + "\r\nAccept: */*\r\n\r\n"),
+            std::string("GET / HTTP/1.1\r\nCookie: theme=dark\r\nAccept: */*\r\n\r\n"));
+        CHECK_EQ(redact("GET / HTTP/1.1\r\nCookie: plpt=" + token + "\r\n\r\n"),
+            std::string("GET / HTTP/1.1\r\n\r\n"));
+    }
+    {   // En-tête dédié et Referer : aucune trace du jeton ne traverse le proxy.
+        const auto out = redact("GET / HTTP/1.1\r\nX-PLPT-Token: " + token + "\r\nReferer: http://hote/?plpt=" + token + "\r\n\r\n");
+        CHECK(out.find("X-PLPT-Token") == std::string::npos);
+        CHECK(out.find(token) == std::string::npos);
+        CHECK(out.find("Referer: http://hote/\r\n") != std::string::npos);
+    }
+    {   // Sans capacité : l'en-tête est reproduit octet pour octet, jamais réécrit.
+        const std::string plain = "POST /api HTTP/1.1\r\nHost: x\r\nContent-Length: 0\r\n\r\n";
+        CHECK_EQ(redact(plain), plain);
+        // Un nom homonyme n'est pas touché : seule la clé exacte est retirée.
+        const std::string lookalike = "GET /?xplpt=abc&plpt2=def HTTP/1.1\r\nHost: x\r\n\r\n";
+        CHECK_EQ(redact(lookalike), lookalike);
+    }
+    // Cookie de capacité émis par PLPT : session, HttpOnly, SameSite, jamais persistant.
+    const auto line = capability_cookie_line("plpt", token);
+    CHECK(line.find("Set-Cookie: plpt=" + token) == 0);
+    CHECK(line.find("Path=/") != std::string::npos);
+    CHECK(line.find("HttpOnly") != std::string::npos);
+    CHECK(line.find("SameSite=Strict") != std::string::npos);
+    CHECK(line.find("Max-Age") == std::string::npos);
+    CHECK(line.find('\r') == std::string::npos);
+    CHECK(line.find('\n') == std::string::npos);
+    {   // Insertion dans la première réponse : avant la ligne vide, corps intact.
+        const std::string response = "HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabc";
+        const auto terminator = response.find("\r\n\r\n");
+        REQUIRE(terminator != std::string::npos);
+        const auto out = inject_response_header(
+            {reinterpret_cast<const std::uint8_t*>(response.data()), response.size()}, terminator, line);
+        const std::string text(out.begin(), out.end());
+        CHECK_EQ(text, "HTTP/1.1 200 OK\r\nContent-Length: 3\r\n" + line + "\r\n\r\nabc");
+        CHECK_EQ(text.size(), response.size() + line.size() + 2);
+    }
+    {   // Provenance de la capacité : cookie ou URL, distinguée sans ambiguïté.
+        const std::string via_cookie = "GET / HTTP/1.1\r\nCookie: plpt=" + token + "\r\n\r\n";
+        const auto parsed = parse_http_head({reinterpret_cast<const std::uint8_t*>(via_cookie.data()), via_cookie.size()}, 8192, "plpt");
+        REQUIRE(parsed); CHECK(parsed.value().token_via_cookie);
+        const std::string via_url = "GET /?plpt=" + token + " HTTP/1.1\r\n\r\n";
+        const auto other = parse_http_head({reinterpret_cast<const std::uint8_t*>(via_url.data()), via_url.size()}, 8192, "plpt");
+        REQUIRE(other); CHECK(!other.value().token_via_cookie);
+        const std::string via_header = "GET / HTTP/1.1\r\nX-PLPT-Token: " + token + "\r\n\r\n";
+        const auto third = parse_http_head({reinterpret_cast<const std::uint8_t*>(via_header.data()), via_header.size()}, 8192, "plpt");
+        REQUIRE(third); CHECK(!third.value().token_via_cookie);
+    }
+}
+
+void bind_resolution_never_defaults_to_any() {
+    {   // Choix explicite : conservé tel quel, et signalé comme un choix.
+        const auto chosen = resolve_bind_address(IpAddress::loopback(IpFamily::Ipv4), IpFamily::Ipv4);
+        REQUIRE(chosen);
+        CHECK(chosen.value().explicit_choice);
+        CHECK(!chosen.value().any_interface);
+        CHECK_EQ(chosen.value().address.text, std::string("127.0.0.1"));
+        // Toutes les interfaces restent possibles, mais jamais en silence.
+        const auto wide = resolve_bind_address(IpAddress::any(IpFamily::Ipv4), IpFamily::Ipv4);
+        REQUIRE(wide);
+        CHECK(wide.value().any_interface);
+        CHECK(wide.value().note.find("explicite") != std::string::npos);
+    }
+    {   // Adresse non précisée : PLPT choisit une adresse réelle, jamais 0.0.0.0.
+        const auto resolved = resolve_bind_address(IpAddress{}, IpFamily::Ipv4);
+        REQUIRE(resolved);
+        CHECK(!resolved.value().explicit_choice);
+        CHECK(!resolved.value().any_interface);
+        CHECK(resolved.value().address.valid());
+        CHECK(resolved.value().address.is_private_lan());
+        CHECK(!resolved.value().note.empty());
+        if (resolved.value().loopback_only) CHECK(resolved.value().address.is_loopback());
+        else CHECK(!resolved.value().address.is_loopback());
+    }
+    {   // Énumération réelle : adresses lisibles, boucle locale présente et marquée.
+        const auto interfaces = enumerate_network_interfaces();
+        REQUIRE(interfaces);
+        bool saw_loopback = false, saw_up = false;
+        for (const auto& info : interfaces.value()) {
+            CHECK(!info.name.empty());
+            CHECK(!info.address.empty());
+            CHECK(static_cast<bool>(IpAddress::parse(info.address)));
+            if (info.is_loopback) saw_loopback = true;
+            if (info.is_up) saw_up = true;
+        }
+        CHECK(saw_loopback);
+        CHECK(saw_up);
+        // La sélection LAN ne retient jamais la boucle locale ni une interface down.
+        for (const auto index : select_lan_interfaces(interfaces.value())) {
+            CHECK(!interfaces.value()[index].is_loopback);
+            CHECK(interfaces.value()[index].is_up);
+        }
+    }
+}
+
+void resume_secret_is_the_only_proof_of_a_place() {
+    using namespace plpt::net;
+    {   // Hello 1.2 : le secret de reprise traverse, octet pour octet.
+        GuestHello hello{"Alice", "FRYK-29GY-QASB-6M7H", "PLPT 1.2", "0123456789abcdef0123456789abcdef"};
+        const auto payload = encode(hello);
+        const auto decoded = decode_guest_hello(payload);
+        REQUIRE(decoded);
+        CHECK_EQ(decoded.value().guest_name, std::string("Alice"));
+        CHECK_EQ(decoded.value().resume_secret, hello.resume_secret);
+        // Champ obligatoire : un Hello amputé du secret est refusé, pas deviné.
+        REQUIRE(payload.size() > hello.resume_secret.size() + 2);
+        const std::span<const std::uint8_t> truncated(payload.data(), payload.size() - hello.resume_secret.size() - 2);
+        CHECK(!decode_guest_hello(truncated));
+        // Un secret porteur d'un caractère de contrôle est refusé.
+        GuestHello dirty = hello;
+        dirty.resume_secret = std::string("abc") + static_cast<char>(0x01);
+        CHECK(!decode_guest_hello(encode(dirty)));
+    }
+    {   // Auth : le secret et sa durée de validité sont délivrés ensemble.
+        HostAuth auth;
+        auth.accepted = true;
+        auth.participant = ParticipantId{7};
+        auth.host_name = "poste-hôte";
+        auth.session_name = "Session démo";
+        auth.resume_secret = "fedcba9876543210fedcba9876543210";
+        auth.resume_ttl_ms = 30000;
+        const auto decoded = decode_host_auth(encode(auth));
+        REQUIRE(decoded);
+        CHECK_EQ(decoded.value().resume_secret, auth.resume_secret);
+        CHECK_EQ(decoded.value().resume_ttl_ms, 30000U);
+        // Aucun secret : le champ reste vide et la durée nulle, jamais une valeur par défaut.
+        HostAuth none = auth;
+        none.resume_secret.clear();
+        none.resume_ttl_ms = 0;
+        const auto back = decode_host_auth(encode(none));
+        REQUIRE(back);
+        CHECK(back.value().resume_secret.empty());
+        CHECK_EQ(back.value().resume_ttl_ms, 0U);
+    }
+    {   // 200 secrets successifs : tous distincts, longueur fixe, hexadécimaux.
+        std::vector<std::string> seen;
+        seen.reserve(200);
+        for (int index = 0; index < 200; ++index) {
+            const auto secret = generate_resume_secret();
+            REQUIRE(secret);
+            CHECK_EQ(secret.value().size(), kResumeSecretChars);
+            for (const char character : secret.value())
+                CHECK((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f'));
+            CHECK(std::find(seen.begin(), seen.end(), secret.value()) == seen.end());
+            seen.push_back(secret.value());
+        }
+        CHECK_EQ(seen.size(), 200U);
+    }
+}
+
 int main() {
     CASE(result_invariants); CASE(exact_classifier_and_ancestry); CASE(cycles_missing_and_reused_pid);
     CASE(registry_grouping_and_no_auto_share); CASE(registry_churn_and_incomplete); CASE(unknown_owner_cannot_retain_selection);
@@ -814,5 +983,7 @@ int main() {
     CASE(worker_invalidates_selection_on_partial_or_error); CASE(worker_command_queue_is_bounded);
     CASE(wire_messages_roundtrip_and_guard); CASE(secrets_digests_and_formats_are_exact);
     CASE(proxy_handshake_is_bounded_and_exact); CASE(discovery_announcement_codec_is_bounded);
+    CASE(capability_is_never_forwarded_upstream); CASE(bind_resolution_never_defaults_to_any);
+    CASE(resume_secret_is_the_only_proof_of_a_place);
     return plpt_test::finish("unit");
 }

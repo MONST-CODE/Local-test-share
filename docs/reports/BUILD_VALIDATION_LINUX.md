@@ -1,3 +1,11 @@
+> **CHIFFRES DATÉS :** ce rapport décrit le build qualifié le 2026-11-13
+> (26 cas unitaires / 12 449 vérifications, 6 cas plateforme / 286 vérifications,
+> « PASS 20 independent native headers »). Il est conservé tel quel comme preuve
+> historique et n'a pas été réécrit. L'état courant — moteur réseau LAN réel,
+> 33 cas unitaires / 20 882 vérifications, 12 cas plateforme / 622 vérifications,
+> 30 à 31 en-têtes indépendants selon le script — est dans
+> [CURRENT_STATUS.md](CURRENT_STATUS.md).
+
 # Native Linux x64 — direct-build qualification
 
 Date: **2026-11-13**. Status: **PASS for the build-migration gate**.

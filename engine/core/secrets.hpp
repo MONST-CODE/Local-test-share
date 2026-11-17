@@ -16,6 +16,8 @@ inline constexpr std::size_t kInviteCodeBytes = 10;
 inline constexpr std::size_t kInviteCodeChars = 16; // base32 Crockford, 4x4.
 inline constexpr std::size_t kServiceTokenBytes = 16;
 inline constexpr std::size_t kServiceTokenChars = 32; // hexadécimal minuscule.
+inline constexpr std::size_t kResumeSecretBytes = 16;
+inline constexpr std::size_t kResumeSecretChars = 32; // hexadécimal minuscule.
 
 struct InviteCode {
     std::array<std::uint8_t, kInviteCodeBytes> bytes{};
@@ -35,5 +37,10 @@ std::string mask_secret(std::string_view text);
 // Jeton de capacité d'un service partagé, porté par l'URL et le cookie du proxy.
 Result<std::string> generate_service_token();
 bool service_token_matches(std::string_view presented, std::string_view expected);
+
+// Secret de reprise d'une place : 16 octets aléatoires en hexadécimal, émis par
+// l'hôte sur le canal authentifié, à durée limitée, révocable avec la place.
+// Jamais dérivé du nom, de l'adresse, d'un PID ou d'un identifiant déclaré.
+Result<std::string> generate_resume_secret();
 
 } // namespace plpt

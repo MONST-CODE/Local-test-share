@@ -175,6 +175,7 @@ HEADERS=(
     engine/net/host_server.hpp
     engine/net/proxy.hpp
     engine/net/wire.hpp
+    engine/platform/connection_pool.hpp
     engine/platform/native.hpp
     engine/platform/platform.hpp
     engine/platform/socket.hpp

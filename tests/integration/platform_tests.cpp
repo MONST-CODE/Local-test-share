@@ -11,6 +11,8 @@
 #endif
 #include "tests/test_harness.hpp"
 #include "engine/core/random.hpp"
+#include <mutex>
+#include "engine/platform/connection_pool.hpp"
 #include "engine/platform/native.hpp"
 #include "engine/discovery/monitor.hpp"
 #include "engine/port_allocator/port_allocator.hpp"
@@ -217,8 +219,14 @@ namespace {
 // proxy sans dépendre d'un binaire externe.
 class TinyUpstream {
 public:
-    bool start(std::string body) {
+    bool start(std::string body) { return start(std::move(body), std::string(), std::string()); }
+    // `prelude` : octets envoyés AVANT la réponse finale (100 Continue, 103 Early
+    // Hints). `raw` : réponse envoyée telle quelle, sans réponse finale (101, réponse
+    // illisible). `last_request()` expose ce que l'amont a réellement reçu.
+    bool start(std::string body, std::string prelude, std::string raw) {
         body_ = std::move(body);
+        prelude_ = std::move(prelude);
+        raw_ = std::move(raw);
         auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4);
         if (!created) return false;
         listener_ = std::move(created).value();
@@ -240,6 +248,10 @@ public:
     }
     std::uint16_t port() const { return port_; }
     unsigned served() const { return served_; }
+    std::string last_request() const {
+        const std::lock_guard<std::mutex> guard(mutex_);
+        return last_request_;
+    }
 private:
     void run(std::stop_token token) {
         while (!token.stop_requested()) {
@@ -258,10 +270,31 @@ private:
                 if (!received || received.value() == 0) break;
                 request.append(reinterpret_cast<const char*>(buffer.data()), received.value());
             }
-            // La ligne de requête est renvoyée dans le corps : cela prouve que le
-            // proxy transmet la requête originale, jeton compris, sans la réécrire.
-            const auto request_line = request.substr(0, request.find("\r\n"));
-            const std::string payload = body_ + "\n" + request_line;
+            {
+                const std::lock_guard<std::mutex> guard(mutex_);
+                last_request_ = request;
+            }
+            if (!raw_.empty()) {
+                // Réponse imposée (101, illisible) : envoyée telle quelle, puis on
+                // reste jusqu'à la fermeture du client ou un délai court.
+                (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(raw_.data()), raw_.size()}, 2000ms);
+                (void)socket.set_timeouts(400ms, 400ms);
+                std::vector<std::uint8_t> drain(1024);
+                for (int round = 0; round < 3; ++round) {
+                    auto received = socket.receive(drain);
+                    if (!received || received.value() == 0) break;
+                }
+                socket.close();
+                ++served_;
+                continue;
+            }
+            if (!prelude_.empty())
+                (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(prelude_.data()), prelude_.size()}, 2000ms);
+            // Tout l'en-tête reçu est renvoyé dans le corps : c'est la preuve de ce
+            // que le service local voit réellement, après retrait de la capacité PLPT.
+            const auto head_end = request.find("\r\n\r\n");
+            const std::string head = request.substr(0, head_end == std::string::npos ? request.size() : head_end);
+            const std::string payload = body_ + "\n" + head;
             const auto response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " +
                 std::to_string(payload.size()) + "\r\nConnection: close\r\n\r\n" + payload;
             (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(response.data()), response.size()}, 2000ms);
@@ -272,6 +305,10 @@ private:
     Socket listener_;
     std::jthread worker_;
     std::string body_;
+    std::string prelude_;
+    std::string raw_;
+    std::string last_request_;
+    mutable std::mutex mutex_;
     std::uint16_t port_ = 0;
     unsigned served_ = 0;
 };
@@ -325,7 +362,9 @@ void lan_control_plane_host_and_guest() {
         const auto view = host.snapshot();
         CHECK_EQ(view->pending[0].guest_name, std::string("Alice"));
         CHECK_EQ(view->invite_code, code.text);   // affiché à l'hôte, jamais annoncé sur le LAN.
-        CHECK_EQ(view->pending[0].client, std::string("PLPT 1.1"));
+        // Version lisible dérivée des constantes : l'attente ne vieillit pas toute seule.
+        CHECK_EQ(view->pending[0].client, std::string("PLPT ") + std::to_string(plpt::model::kProtocolMajor) + "." +
+            std::to_string(plpt::model::kProtocolMinor));
     }
     // Services publiés : port exposé et URL à jeton, pas le port local.
     auto token = generate_service_token(); REQUIRE(token);
@@ -427,6 +466,41 @@ void lan_control_plane_host_and_guest() {
     CHECK_EQ(final_view->connection_count, 0U);
 }
 
+// Échange HTTP complet sur la boucle locale : renvoie tout ce que le client reçoit.
+std::string http_exchange(std::uint16_t port, const std::string& target, const std::string& extra_headers,
+    std::chrono::milliseconds budget = std::chrono::milliseconds(6000)) {
+    auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4);
+    if (!created) return {};
+    auto socket = std::move(created).value();
+    if (!connect_with_timeout(socket, IpAddress::loopback(IpFamily::Ipv4), Port{port}, std::chrono::milliseconds(3000)))
+        return {};
+    const std::string text = "GET " + target + " HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n" + extra_headers + "\r\n";
+    if (!write_all(socket, {reinterpret_cast<const std::uint8_t*>(text.data()), text.size()}, std::chrono::milliseconds(3000)))
+        return {};
+    std::string raw;
+    std::vector<std::uint8_t> buffer(8192);
+    const auto deadline = std::chrono::steady_clock::now() + budget;
+    while (std::chrono::steady_clock::now() < deadline) {
+        auto received = socket.receive(buffer);
+        if (!received || received.value() == 0) break;
+        raw.append(reinterpret_cast<const char*>(buffer.data()), received.value());
+    }
+    socket.close();
+    return raw;
+}
+
+ProxyConfig loopback_proxy_for(const TinyUpstream& upstream, const std::string& token) {
+    ProxyConfig config;
+    config.label = "Démo";
+    config.bind_address = IpAddress::loopback(IpFamily::Ipv4);
+    config.upstream_address = IpAddress::loopback(IpFamily::Ipv4);
+    config.upstream_port = upstream.port();
+    config.token = token;
+    config.handshake_timeout_ms = 3000;
+    config.idle_timeout_ms = 20000;
+    return config;
+}
+
 void lan_data_plane_proxy_token_gate() {
     SystemClock clock;
     TinyUpstream upstream;
@@ -447,28 +521,35 @@ void lan_data_plane_proxy_token_gate() {
     CHECK_EQ(proxy.snapshot()->upstream, "127.0.0.1:" + std::to_string(upstream.port()));
     CHECK(proxy.snapshot()->url.find(token.value()) != std::string::npos);
 
+    // Même client HTTP que le cas des réponses informationnelles : une seule
+    // implémentation d'échange pour tout le plan de données.
     const auto request = [&](const std::string& target, const std::string& headers) {
-        auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4);
-        if (!created) return std::string();
-        auto socket = std::move(created).value();
-        if (!connect_with_timeout(socket, IpAddress::loopback(IpFamily::Ipv4), Port{started.value()}, 3s)) return std::string();
-        const std::string text = "GET " + target + " HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n" + headers + "\r\n";
-        if (!write_all(socket, {reinterpret_cast<const std::uint8_t*>(text.data()), text.size()}, 3s)) return std::string();
-        std::string raw; std::vector<std::uint8_t> buffer(8192);
-        const auto deadline = std::chrono::steady_clock::now() + 4s;
-        while (std::chrono::steady_clock::now() < deadline) {
-            auto received = socket.receive(buffer);
-            if (!received || received.value() == 0) break;
-            raw.append(reinterpret_cast<const char*>(buffer.data()), received.value());
-        }
-        socket.close();
-        return raw;
+        return http_exchange(started.value(), target, headers, 4s);
     };
-    {
+    // Corps renvoyé par l'amont = ce que le service local a réellement reçu.
+    const auto upstream_view = [](const std::string& response) {
+        const auto separator = response.find("\r\n\r\n");
+        return separator == std::string::npos ? std::string() : response.substr(separator + 4);
+    };
+    {   // Le jeton d'accès ne traverse jamais le proxy : ni URL, ni journal amont.
         const auto response = request("/?plpt=" + token.value(), "");
         CHECK(response.find("HTTP/1.1 200") == 0);
         CHECK(response.find("contenu réel du service local") != std::string::npos);
-        CHECK(response.find("/?plpt=") != std::string::npos); // requête transmise telle quelle.
+        const auto seen = upstream_view(response);
+        CHECK(seen.find("GET / HTTP/1.1") != std::string::npos); // cible réécrite, jeton retiré
+        CHECK(seen.find(token.value()) == std::string::npos);
+        CHECK(seen.find("plpt") == std::string::npos);
+        // La capacité est rendue à l'invité sous forme de cookie, pour les sous-ressources.
+        CHECK(response.find("Set-Cookie: plpt=" + token.value()) != std::string::npos);
+        CHECK(response.find("HttpOnly") != std::string::npos);
+        CHECK(response.find("SameSite=Strict") != std::string::npos);
+        CHECK(response.find("Max-Age") == std::string::npos);
+    }
+    {   // Autres paramètres conservés, seul le paramètre de capacité disparaît.
+        const auto response = request("/app?a=1&plpt=" + token.value() + "&b=2", "");
+        CHECK(response.find("HTTP/1.1 200") == 0);
+        CHECK(upstream_view(response).find("GET /app?a=1&b=2 HTTP/1.1") != std::string::npos);
+        CHECK(upstream_view(response).find(token.value()) == std::string::npos);
     }
     {
         const auto response = request("/", "");
@@ -479,8 +560,22 @@ void lan_data_plane_proxy_token_gate() {
         const auto response = request("/?plpt=00000000000000000000000000000000", "");
         CHECK(response.find("HTTP/1.1 403") == 0);
     }
-    CHECK(request("/", "X-PLPT-Token: " + token.value() + "\r\n").find("HTTP/1.1 200") == 0);
-    CHECK(request("/", "Cookie: plpt=" + token.value() + "\r\n").find("HTTP/1.1 200") == 0);
+    {   // En-tête dédié retiré, Referer nettoyé : aucune fuite vers le service local.
+        const auto response = request("/", "X-PLPT-Token: " + token.value() + "\r\nReferer: http://hote/?plpt=" + token.value() + "\r\n");
+        CHECK(response.find("HTTP/1.1 200") == 0);
+        const auto seen = upstream_view(response);
+        CHECK(seen.find("X-PLPT-Token") == std::string::npos);
+        CHECK(seen.find("Referer: http://hote/") != std::string::npos);
+        CHECK(seen.find(token.value()) == std::string::npos);
+    }
+    {   // Capacité présentée par cookie : autorisée, retirée, et non re-déposée.
+        const auto response = request("/", "Cookie: theme=dark; plpt=" + token.value() + "\r\n");
+        CHECK(response.find("HTTP/1.1 200") == 0);
+        const auto seen = upstream_view(response);
+        CHECK(seen.find("Cookie: theme=dark") != std::string::npos); // les autres cookies passent
+        CHECK(seen.find(token.value()) == std::string::npos);
+        CHECK(response.find("Set-Cookie:") == std::string::npos);   // déjà un cookie : rien à déposer
+    }
     // Requête sans fin d'en-têtes : le proxy répond et ferme, il n'attend pas indéfiniment.
     {
         auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4); REQUIRE(created);
@@ -493,8 +588,14 @@ void lan_data_plane_proxy_token_gate() {
     }
     {
         const auto view = proxy.snapshot();
-        CHECK(view->counters.authorized >= 3);
+        CHECK(view->counters.authorized >= 4);
         CHECK(view->counters.refused >= 2);
+        CHECK(view->counters.tokens_redacted >= 4);  // chaque requête autorisée est nettoyée
+        CHECK(view->counters.grants_issued >= 3);    // URL et en-tête dédié, pas le cookie
+        CHECK_EQ(view->counters.grants_failed, 0U);
+        CHECK(!view->any_interface);                 // boucle locale imposée par le test
+        CHECK(view->bind_address == "127.0.0.1");
+        CHECK(!view->bind_note.empty());
         CHECK(view->counters.bytes_to_upstream > 0);
         CHECK(view->counters.bytes_to_guest > 0);
         for (const auto& event : view->events) CHECK(event.find(token.value()) == std::string::npos);
@@ -626,6 +727,320 @@ void lan_discovery_announce_and_listen() {
     CHECK(!listener.running());
 }
 }
+
+void lan_resume_secret_binds_identity() {
+    SystemClock clock;
+    auto code = generate_invite_code(); REQUIRE(code);
+    HostServer host(clock);
+    HostConfig config;
+    config.session_name = "Reprise";
+    config.host_name = "poste-hôte";
+    config.bind_address = IpAddress::loopback(IpFamily::Ipv4);
+    config.approval_required = false;   // admission directe : le test porte sur la reprise.
+    config.max_participants = 4;
+    config.reconnect_grace_ms = 60000;
+    config.invite_code = code.value();
+    auto port = host.start(config); REQUIRE(port);
+
+    const auto base = [&] {
+        GuestConfig guest;
+        guest.address = IpAddress::loopback(IpFamily::Ipv4);
+        guest.control_port = port.value();
+        guest.invite_code = code.value();
+        return guest;
+    };
+    const auto connected = [](const GuestSnapshot& snapshot) { return snapshot.phase == GuestPhase::Connected; };
+
+    // 1. Première admission : un secret de reprise est délivré sur le canal authentifié.
+    GuestConfig first = base(); first.guest_name = "Alice";
+    GuestClient alice(clock);
+    REQUIRE(alice.start(first));
+    REQUIRE(alice.wait_for(connected, 10s));
+    const auto alice_id = alice.snapshot()->self;
+    CHECK(alice_id.value != 0);
+    const auto secret = alice.resume_secret();
+    CHECK_EQ(secret.size(), kResumeSecretChars);
+    CHECK(alice.snapshot()->resume_available);
+    CHECK_EQ(alice.snapshot()->resume_ttl_ms, config.reconnect_grace_ms);
+    for (const auto& event : alice.snapshot()->events) CHECK(event.find(secret) == std::string::npos);
+    for (const auto& event : host.snapshot()->events) CHECK(event.find(secret) == std::string::npos);
+
+    // 2. Coupure brute (socket fermée sans Bye) : la place est réservée.
+    alice.stop();
+    REQUIRE(host.wait_for([&](const HostSnapshot& snapshot) {
+        for (const auto& peer : snapshot.participants)
+            if (peer.id == alice_id) return peer.state == plpt::model::ParticipantState::Disconnected;
+        return false;
+    }, 10s));
+
+    // 3. Un homonyme sans secret n'hérite de rien : le nom n'identifie personne.
+    GuestConfig twin = base(); twin.guest_name = "Alice";
+    GuestClient homonym(clock);
+    REQUIRE(homonym.start(twin));
+    REQUIRE(homonym.wait_for(connected, 10s));
+    CHECK(homonym.snapshot()->self != alice_id);
+    CHECK_EQ(host.snapshot()->counters.resumed, 0U);
+    for (const auto& event : host.snapshot()->events) CHECK(event.find("a repris sa place") == std::string::npos);
+
+    // 4. Un secret inventé ne vaut rien non plus.
+    GuestConfig forged = base(); forged.guest_name = "Alice"; forged.resume_secret = std::string(kResumeSecretChars, '0');
+    GuestClient impostor(clock);
+    REQUIRE(impostor.start(forged));
+    REQUIRE(impostor.wait_for(connected, 10s));
+    CHECK(impostor.snapshot()->self != alice_id);
+    CHECK_EQ(host.snapshot()->counters.resumed, 0U);
+
+    // 5. Le vrai secret rend SA place, puis il est consommé (rotation).
+    GuestConfig back = base(); back.guest_name = "Alice"; back.resume_secret = secret;
+    GuestClient resumed(clock);
+    REQUIRE(resumed.start(back));
+    REQUIRE(resumed.wait_for(connected, 10s));
+    CHECK(resumed.snapshot()->self == alice_id);
+    CHECK(host.snapshot()->counters.resumed >= 1);
+    CHECK(!resumed.resume_secret().empty());
+    CHECK(resumed.resume_secret() != secret);
+    CHECK(host.wait_for([](const HostSnapshot& snapshot) {
+        for (const auto& event : snapshot.events)
+            if (event.find("a repris sa place") != std::string::npos) return true;
+        return false;
+    }, 10s));
+
+    // 6. Départ volontaire : la place est libérée, aucune reprise n'est réservée.
+    CHECK(resumed.leave());
+    CHECK(host.wait_for([&](const HostSnapshot& snapshot) {
+        for (const auto& peer : snapshot.participants)
+            if (peer.id == alice_id) return peer.state == plpt::model::ParticipantState::Revoked;
+        return false;
+    }, 10s));
+    const auto rotated = resumed.resume_secret();
+    resumed.stop();
+
+    // 7. Après libération, le secret précédent ne rend plus rien.
+    GuestConfig after = base(); after.guest_name = "Alice"; after.resume_secret = rotated;
+    GuestClient late(clock);
+    REQUIRE(late.start(after));
+    CHECK(late.wait_for([](const GuestSnapshot& snapshot) {
+        return snapshot.phase == GuestPhase::Connected || snapshot.phase == GuestPhase::Refused ||
+            snapshot.phase == GuestPhase::Disconnected;
+    }, 10s));
+    CHECK(late.snapshot()->self != alice_id);
+    for (const auto& event : host.snapshot()->events) CHECK(event.find(rotated) == std::string::npos);
+
+    late.stop(); impostor.stop(); homonym.stop();
+    host.stop();
+    CHECK(!host.running());
+}
+
+
+void lan_proxy_informational_and_upgrade_responses() {
+    SystemClock clock;
+    auto token = generate_service_token(); REQUIRE(token);
+
+    {   // 100 Continue puis 103 Early Hints puis réponse finale : le cookie n'est
+        // déposé que dans la réponse pertinente, les 1xx passent telles quelles.
+        TinyUpstream upstream;
+        const std::string prelude = "HTTP/1.1 100 Continue\r\n\r\n"
+            "HTTP/1.1 103 Early Hints\r\nLink: </app.css>; rel=preload; as=style\r\n\r\n";
+        REQUIRE(upstream.start("page réelle", prelude, std::string()));
+        ServiceProxy proxy(clock);
+        auto started = proxy.start(loopback_proxy_for(upstream, token.value())); REQUIRE(started);
+        const auto response = http_exchange(started.value(), "/?plpt=" + token.value(), "");
+        CHECK(response.find("HTTP/1.1 100 Continue\r\n\r\n") == 0);
+        const auto hints = response.find("HTTP/1.1 103 Early Hints");
+        const auto final_head = response.find("HTTP/1.1 200 OK");
+        CHECK(hints != std::string::npos);
+        CHECK(final_head != std::string::npos);
+        CHECK(hints < final_head);
+        CHECK(response.find("Link: </app.css>; rel=preload; as=style") != std::string::npos);
+        // Aucun cookie dans la partie informationnelle.
+        CHECK(response.substr(0, final_head).find("Set-Cookie:") == std::string::npos);
+        const auto cookie = response.find("Set-Cookie: plpt=" + token.value());
+        CHECK(cookie != std::string::npos);
+        CHECK(cookie > final_head);
+        CHECK(response.find("page réelle") != std::string::npos);
+        // Le service local n'a jamais vu le jeton.
+        CHECK(upstream.last_request().find(token.value()) == std::string::npos);
+        CHECK(upstream.last_request().find("GET / HTTP/1.1") != std::string::npos);
+        const auto view = proxy.snapshot();
+        CHECK_EQ(view->counters.informational_responses, 2U);
+        CHECK_EQ(view->counters.grants_issued, 1U);   // une seule réponse pertinente
+        CHECK_EQ(view->counters.grants_skipped, 0U);
+        CHECK_EQ(view->counters.grants_failed, 0U);
+        CHECK_EQ(view->counters.tokens_redacted, 1U);
+        proxy.stop();
+    }
+    {   // Upgrade WebSocket : la réponse 101 n'est jamais modifiée.
+        TinyUpstream upstream;
+        const std::string raw = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"
+            "Connection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n";
+        REQUIRE(upstream.start(std::string(), std::string(), raw));
+        ServiceProxy proxy(clock);
+        auto started = proxy.start(loopback_proxy_for(upstream, token.value())); REQUIRE(started);
+        const auto response = http_exchange(started.value(), "/ws?plpt=" + token.value(),
+            "Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+            "Sec-WebSocket-Version: 13\r\n");
+        CHECK(response.find("HTTP/1.1 101 Switching Protocols\r\n") == 0);
+        CHECK(response.find("Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=") != std::string::npos);
+        CHECK(response.find("Set-Cookie:") == std::string::npos);
+        const auto view = proxy.snapshot();
+        CHECK(view->counters.websocket_upgrades >= 1);
+        CHECK_EQ(view->counters.grants_issued, 0U);
+        CHECK_EQ(view->counters.grants_skipped, 0U); // interception jamais engagée
+        CHECK_EQ(view->counters.tokens_redacted, 1U);
+        CHECK(upstream.last_request().find(token.value()) == std::string::npos);
+        CHECK(upstream.last_request().find("GET /ws HTTP/1.1") != std::string::npos);
+        CHECK(upstream.last_request().find("Sec-WebSocket-Key") != std::string::npos);
+        proxy.stop();
+    }
+    {   // 101 sur une requête SANS upgrade : renoncement explicite, cookie non délivré.
+        TinyUpstream upstream;
+        const std::string raw = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n";
+        REQUIRE(upstream.start(std::string(), std::string(), raw));
+        ServiceProxy proxy(clock);
+        auto started = proxy.start(loopback_proxy_for(upstream, token.value())); REQUIRE(started);
+        const auto response = http_exchange(started.value(), "/?plpt=" + token.value(), "");
+        CHECK(response.find("HTTP/1.1 101 Switching Protocols\r\n") == 0);
+        CHECK(response.find("Set-Cookie:") == std::string::npos);
+        const auto view = proxy.snapshot();
+        CHECK_EQ(view->counters.grants_skipped, 1U);
+        CHECK_EQ(view->counters.grants_issued, 0U);
+        CHECK(!view->warnings.empty());
+        proxy.stop();
+    }
+    {   // Réponse amont illisible : transmise telle quelle, aucun cookie, avertissement.
+        TinyUpstream upstream;
+        REQUIRE(upstream.start(std::string(), std::string(), "PAS-UNE-REPONSE\r\n\r\n"));
+        ServiceProxy proxy(clock);
+        auto started = proxy.start(loopback_proxy_for(upstream, token.value())); REQUIRE(started);
+        const auto response = http_exchange(started.value(), "/?plpt=" + token.value(), "");
+        CHECK(response.find("PAS-UNE-REPONSE") == 0);
+        CHECK(response.find("Set-Cookie:") == std::string::npos);
+        const auto view = proxy.snapshot();
+        CHECK_EQ(view->counters.grants_skipped, 1U);
+        CHECK_EQ(view->counters.grants_issued, 0U);
+        CHECK(!view->warnings.empty());
+        proxy.stop();
+    }
+}
+
+void pool_saturation_with_held_open_connections() {
+    // Capacité explicite : 2 connexions ACTIVES et 2 tâches EN ATTENTE, soit 4 au
+    // total. Les connexions sont réelles et MAINTENUES OUVERTES : le traitement
+    // bloque tant que le client n'écrit pas, donc la saturation est observée, pas
+    // supposée.
+    auto created_listener = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4);
+    REQUIRE(created_listener);
+    auto listener = std::move(created_listener).value();
+    REQUIRE(listener.bind(IpAddress::loopback(IpFamily::Ipv4), Port{0}));
+    auto bound = listener.bound_port(); REQUIRE(bound);
+    REQUIRE(listener.listen(16));
+
+    ConnectionPool pool;
+    REQUIRE(pool.start(2, 2, [](Socket& socket, const IpAddress&) {
+        std::array<std::uint8_t, 1> byte{};
+        (void)read_some(socket, byte, std::chrono::milliseconds(10000)); // connexion tenue ouverte
+        const std::string done = "OK\n";
+        (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(done.data()), done.size()},
+            std::chrono::milliseconds(2000));
+    }));
+    CHECK(pool.running());
+    CHECK_EQ(pool.capacity(), 4U);
+
+    std::vector<Socket> clients;
+    std::vector<Socket> refused_sockets;
+    unsigned active_submitted = 0, queued_submitted = 0, refused_submitted = 0;
+    for (int index = 0; index < 6; ++index) {
+        auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4); REQUIRE(created);
+        auto client = std::move(created).value();
+        REQUIRE(connect_with_timeout(client, IpAddress::loopback(IpFamily::Ipv4), bound.value(), std::chrono::milliseconds(3000)));
+        IpAddress peer;
+        Port peer_port{};
+        auto accepted = listener.accept(&peer, &peer_port); REQUIRE(accepted);
+        // En cas de refus la socket n'est pas consommée : elle reste à l'appelant.
+        switch (pool.submit(std::move(accepted).value(), peer)) {
+        case PoolSubmission::Active: ++active_submitted; break;
+        case PoolSubmission::Queued: ++queued_submitted; break;
+        case PoolSubmission::Refused:
+            ++refused_submitted;
+            refused_sockets.push_back(std::move(accepted).value());
+            break;
+        }
+        clients.push_back(std::move(client));
+    }
+    CHECK_EQ(active_submitted, 2U);
+    CHECK_EQ(queued_submitted, 2U);
+    CHECK_EQ(refused_submitted, 2U);
+
+    // Les deux notions sont observées séparément, sur état réel et dans un délai borné.
+    REQUIRE(pool.wait_for([](std::size_t active, std::size_t queued, const PoolCounters&) {
+        return active == 2 && queued == 2;
+    }, std::chrono::milliseconds(5000)));
+    CHECK_EQ(pool.active(), 2U);
+    CHECK_EQ(pool.queued(), 2U);
+    {
+        const auto counters = pool.counters();
+        CHECK_EQ(counters.submitted, 4U);
+        CHECK_EQ(counters.refused, 2U);
+        CHECK_EQ(counters.completed, 0U);   // rien n'est terminé : tout est tenu ouvert
+        CHECK_EQ(counters.max_queued, 2U);
+    }
+    // Tant que rien ne se libère, toute soumission supplémentaire est refusée.
+    {
+        auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4); REQUIRE(created);
+        auto extra = std::move(created).value();
+        REQUIRE(connect_with_timeout(extra, IpAddress::loopback(IpFamily::Ipv4), bound.value(), std::chrono::milliseconds(3000)));
+        IpAddress peer;
+        Port peer_port{};
+        auto accepted = listener.accept(&peer, &peer_port); REQUIRE(accepted);
+        CHECK(pool.submit(std::move(accepted).value(), peer) == PoolSubmission::Refused);
+        accepted.value().close();
+        extra.close();
+    }
+    // Libération des deux connexions actives : les tâches en attente prennent la suite.
+    const std::string go = "x";
+    for (std::size_t index = 0; index < 2; ++index)
+        CHECK(write_all(clients[index], {reinterpret_cast<const std::uint8_t*>(go.data()), go.size()},
+            std::chrono::milliseconds(2000)));
+    REQUIRE(pool.wait_for([](std::size_t active, std::size_t queued, const PoolCounters& counters) {
+        return counters.completed == 2 && active == 2 && queued == 0;
+    }, std::chrono::milliseconds(5000)));
+    for (std::size_t index = 2; index < 4; ++index)
+        CHECK(write_all(clients[index], {reinterpret_cast<const std::uint8_t*>(go.data()), go.size()},
+            std::chrono::milliseconds(2000)));
+    REQUIRE(pool.wait_for([](std::size_t active, std::size_t queued, const PoolCounters& counters) {
+        return counters.completed == 4 && active == 0 && queued == 0;
+    }, std::chrono::milliseconds(5000)));
+    for (std::size_t index = 0; index < 4; ++index) {
+        std::array<char, 8> reply{};
+        const auto got = read_some(clients[index], {reinterpret_cast<std::uint8_t*>(reply.data()), reply.size()},
+            std::chrono::milliseconds(2000));
+        REQUIRE(got);
+        CHECK(std::string(reply.data(), got.value()).find("OK") != std::string::npos);
+    }
+    {
+        const auto counters = pool.counters();
+        CHECK_EQ(counters.submitted, 4U);
+        CHECK_EQ(counters.completed, 4U);
+        CHECK_EQ(counters.refused, 3U);
+        CHECK_EQ(counters.max_active, 2U);   // jamais plus d'ouvriers que configuré
+        CHECK_EQ(counters.max_queued, 2U);
+    }
+    // Arrêt : tous les ouvriers sont joints, plus aucune soumission n'est acceptée.
+    for (auto& client : clients) client.close();
+    for (auto& refused_socket : refused_sockets) refused_socket.close();
+    listener.close();
+    pool.stop();
+    CHECK(!pool.running());
+    CHECK_EQ(pool.active(), 0U);
+    CHECK_EQ(pool.queued(), 0U);
+    {   // Un pool arrêté refuse, il ne silently ignore pas.
+        auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4); REQUIRE(created);
+        auto socket = std::move(created).value();
+        CHECK(pool.submit(std::move(socket), IpAddress::loopback(IpFamily::Ipv4)) == PoolSubmission::Refused);
+        CHECK_EQ(pool.counters().refused, 4U);
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc == 2 && std::string_view(argv[1]) == "--ipv6") {
         DynamicPortAllocator allocator;
@@ -639,6 +1054,8 @@ int main(int argc, char** argv) {
     CASE(proc_parsers_and_fixtures); CASE(repeated_allocation_releases_fds);
 #endif
     CASE(lan_control_plane_host_and_guest); CASE(lan_data_plane_proxy_token_gate);
+    CASE(lan_resume_secret_binds_identity);
     CASE(lan_discovery_announce_and_listen);
+    CASE(lan_proxy_informational_and_upgrade_responses); CASE(pool_saturation_with_held_open_connections);
     return plpt_test::finish("platform");
 }

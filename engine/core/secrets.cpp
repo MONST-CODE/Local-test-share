@@ -123,6 +123,16 @@ Result<std::string> generate_service_token() {
     return Result<std::string>::success(std::move(token));
 }
 
+Result<std::string> generate_resume_secret() {
+    auto random = random_bytes(kResumeSecretBytes);
+    if (!random) return Result<std::string>::failure(random.error());
+    const auto& value = random.value();
+    auto secret = to_hex({value.data(), value.size()});
+    if (secret.size() != kResumeSecretChars)
+        return Result<std::string>::failure({ErrorCode::Internal, "secret de reprise mal formé", "secrets"});
+    return Result<std::string>::success(std::move(secret));
+}
+
 bool service_token_matches(std::string_view presented, std::string_view expected) {
     if (expected.empty() || presented.size() != expected.size()) return false;
     return constant_time_equals(presented, expected);

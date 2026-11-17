@@ -250,6 +250,7 @@ Result<void> GuestClient::connect_and_authenticate() {
     hello.guest_name = config_.guest_name;
     hello.invite_code = config_.invite_code.text; // seule occurrence en clair : sur le fil, jamais dans les journaux.
     hello.client = config_.client;
+    hello.resume_secret = config_.resume_secret; // vide à la première connexion.
     const auto payload = encode(hello);
     // Hello : session et participant inconnus, séquence nulle — c'est la seule
     // trame du protocole qui le permet.
@@ -330,8 +331,22 @@ Result<void> GuestClient::connect_and_authenticate() {
                     set_phase(GuestPhase::Refused, reply.reason_text.empty() ? std::string("demande refusée par l'hôte") : reply.reason_text, reply.reason);
                     return Result<void>::failure({reply.reason == ErrorCode::Ok ? ErrorCode::Unauthorized : reply.reason, reply.reason_text, "guest"});
                 }
+                const auto previous_place = state_.self;
                 state_.self = reply.participant;
                 state_.connected_ms = clock_.now_wall_ms();
+                {
+                    std::lock_guard<std::mutex> guard(mutex_);
+                    resume_secret_ = reply.resume_secret;
+                }
+                state_.resume_available = !reply.resume_secret.empty();
+                state_.resume_ttl_ms = reply.resume_ttl_ms;
+                if (state_.resume_available)
+                    record_event("reprise de place possible pendant " + std::to_string(reply.resume_ttl_ms / 1000) +
+                        " s après une coupure");
+                else if (reply.accepted)
+                    record_event("aucun secret de reprise délivré : une coupure fera perdre la place");
+                if (previous_place.value != 0 && previous_place == reply.participant)
+                    record_event("place reprise (participant " + std::to_string(reply.participant.value) + ")");
                 set_phase(GuestPhase::Connected, "admis dans « " + state_.session_name + " »");
                 // L'hôte envoie SessionState et ServiceList juste après Auth : les
                 // traiter ici évite à l'interface d'afficher « 0 service » alors que
@@ -555,6 +570,11 @@ void GuestClient::flush(std::chrono::milliseconds budget) {
         if (!sent) return;
         outbox_sent_ += sent.value();
     }
+}
+
+std::string GuestClient::resume_secret() const {
+    std::lock_guard<std::mutex> guard(mutex_);
+    return resume_secret_;
 }
 
 void GuestClient::publish() {

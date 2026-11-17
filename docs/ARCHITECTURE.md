@@ -51,12 +51,13 @@ Modèles de session (liés au poste de contrôle et aux tests, jamais au CLI) :
     protocol (codec borné, enveloppe 56 octets, trames TCP)
     resource_manager (estimation, sans collecte CPU/GPU)
 
-Réseau LAN réel (engine/net, engine/platform/socket, engine/core/digest+secrets) :
+Réseau LAN réel (engine/net, engine/platform/socket+connection_pool, engine/core/digest+secrets) :
     wire        trames et messages typés, assembleur borné
     discovery   annonceur/écouteur UDP multicast 239.255.77.88:47788
     host_server plan de contrôle hôte : authentification, approbation, révocation
     guest_client plan de contrôle invité : attente d'autorisation, messagerie
     proxy       plan de données : pont TCP autorisé par jeton de service
+    connection_pool  capacité bornée des connexions acceptées : actives + en attente
 
 Interfaces non implémentées : browser, ITemporaryStorage.
 ```
@@ -237,26 +238,42 @@ désormais appelée par un **handshake réel** (`engine/net/host_server.cpp`) : 
 d'invitation de 80 bits tiré du CSPRNG de l'OS, comparaison à temps constant, limite
 de tentatives par adresse et par connexion, puis — si l'approbation est requise —
 décision explicite de l'hôte avant toute admission. Aucun 0-RTT, aucune reprise sans
-code ; une reconnexion dans le délai de grâce rend la même place, pas une nouvelle.
+code. Depuis la révision **1.2** du protocole, une coupure rend la même place
+uniquement sur présentation d'un **secret de reprise** aléatoire (16 octets du
+CSPRNG de l'OS, émis sur le canal authentifié, comparé à temps constant, consommé
+puis rotaté, révoqué avec la place) : le nom ne réattribue plus rien, deux homonymes
+obtiennent deux places distinctes, et un départ volontaire (`Bye`) libère le siège
+immédiatement au lieu de le réserver. Voir
+[ADR-014](ADR/ADR-014-identite-reprise-exposition.md).
 
 Il n'y a toujours **ni TLS, ni preuve d'identité de l'hôte par clé publique** : le
 canal de contrôle circule en clair sur le LAN et l'identité de l'hôte repose sur
 l'adresse source observée et sur le code communiqué hors bande. Le jeton de service
-est une capacité d'URL, pas un chiffrement. Ce sont des limites déclarées.
+est une capacité d'URL, pas un chiffrement. Depuis l'incrément de stabilisation,
+cette capacité **ne franchit plus la frontière vers le service local** : le proxy la
+retire de la ligne de requête, des cookies, de l'en-tête dédié et du `Referer` avant
+transmission, et la redépose en cookie de session chez l'invité pour que les
+sous-ressources d'une page autorisée passent sans répéter le jeton dans les URL
+([ADR-013](ADR/ADR-013-proxy-vs-rendu-distant.md)). Ces limites restent déclarées :
+le proxy n'est pas le produit, et le rendu distant (Browser Worker, capture,
+encodage, décodage) est toujours absent.
 
 ### États réels de l'incrément « réseau LAN »
 
 | Composant | État | Preuve |
 | --- | --- | --- |
 | `platform/socket` (TCP/UDP, poll, multicast, `MSG_NOSIGNAL`) | **OPÉRATIONNEL** | cas `platform`, `lan_*` |
+| `platform/socket` — énumération réelle des interfaces et `resolve_bind_address` | **OPÉRATIONNEL** ; instantané au démarrage, pas de basculement en cours de session | `bind_resolution_never_defaults_to_any`, ADR-014 |
+| `platform/connection_pool` (capacité explicite : `workers` connexions actives + `queue_capacity` en attente, refus au-delà, ouvriers joints) | **OPÉRATIONNEL** ; le traitement doit être borné par des délais de socket, sinon l'arrêt attend la tâche en cours — déclaré, pas masqué | `pool_saturation_with_held_open_connections` (connexions réelles maintenues ouvertes) |
 | `core/digest` (CNG, AF_ALG, sinon dlopen libcrypto) | **OPÉRATIONNEL** | vecteurs FIPS SHA-1/SHA-256 |
 | `core/secrets` (codes d'invitation, jetons, masquage) | **OPÉRATIONNEL** | `secrets_digests_and_formats_are_exact` |
 | `net/wire` (trames, assembleur borné, gardes anti-DoS) | **OPÉRATIONNEL** | `wire_messages_roundtrip_and_guard` |
 | `net/discovery` (multicast, broadcast, saisie manuelle) | **OPÉRATIONNEL** en loopback ; **PARTIEL** : multicast inter-machines non qualifié | `lan_discovery_announce_and_listen` |
-| `net/host_server` (authentification, approbation, messagerie, révocation, délais, fermeture) | **OPÉRATIONNEL** sur TCP réel | `lan_control_plane_host_and_guest` |
-| `net/guest_client` (attente d'autorisation, services, messagerie, latence mesurée) | **OPÉRATIONNEL** sur TCP réel | idem |
-| `net/proxy` (pont TCP à jeton, HTTP et WebSocket transparents, 403/502/503) | **OPÉRATIONNEL** en loopback ; **PARTIEL** : pas de HTTP/2, pas de demi-fermeture, pas de débit limité par flux | `lan_data_plane_proxy_token_gate` |
-| `app/demo_service` (HTTP/1.1 + RFC 6455, écho) | **OPÉRATIONNEL** ; construit, non exécuté par les tests CI | qualifié par sonde locale |
+| `net/host_server` (authentification, approbation, messagerie, révocation, délais, fermeture, reprise par secret) | **OPÉRATIONNEL** sur TCP réel | `lan_control_plane_host_and_guest`, `lan_resume_secret_binds_identity` |
+| `net/guest_client` (attente d'autorisation, services, messagerie, latence mesurée, secret de reprise) | **OPÉRATIONNEL** sur TCP réel | idem |
+| `net/proxy` (pont TCP à jeton, capacité retirée avant l'amont, cookie de capacité, HTTP et WebSocket transparents, 403/502/503) | **OPÉRATIONNEL** en loopback ; **PARTIEL** : HTTP clair, pas de HTTP/2, pas de demi-fermeture, pas de débit limité par flux | `lan_data_plane_proxy_token_gate`, `capability_is_never_forwarded_upstream` |
+| `net/proxy` — réponses informationnelles et upgrade : `1xx` (sauf `101`) transmis tels quels puis interception poursuivie jusqu'à la réponse pertinente, cookie déposé seulement dans une `2xx`–`5xx`, `101` et réponse illisible jamais modifiés et renoncement compté | **OPÉRATIONNEL** en loopback | `lan_proxy_informational_and_upgrade_responses` (`100 Continue`, `103 Early Hints`, `200` final, `101`, réponse illisible) |
+| `app/demo_service` (HTTP/1.1 + RFC 6455, écho, `connection_pool` partagé avec les tests, délais bornés par connexion, écoute non bloquante pour observer l'arrêt demandé) | **OPÉRATIONNEL** sous Linux ; construit par les deux chaînes, non exécuté par les tests CI (le harnais ne lance aucun binaire externe). L'arrêt par `Ctrl+C` sous Windows repose sur le même code mais n'est pas qualifié ici | diagnostic local `.cache/demo_diag.sh` : 9 threads constants (1 + 8 ouvriers), 69 connexions prises en charge et 4 refusées en `503` (14 ms) pendant une saturation provoquée par 26 connexions réelles maintenues ouvertes, retour à `200` après libération, 30/30 `200` ensuite, `426` sans upgrade, arrêt en 200 ms après `SIGTERM` avec bilan écrit (`actives_pic=8 attente_pic=16 terminées=69`) ; client RFC 6455 jetable : `101`, écho texte exact, ping→pong, close |
 | Interface SDL/ImGui branchée sur `host_server`/`guest_client` | **NON IMPLÉMENTÉ** | le tableau de bord n'ouvre pas encore de session |
 | Enchaînement détection native → service partagé (`monitor` → `proxy`) | **NON IMPLÉMENTÉ** | la détection existe, le câblage n'est pas fait |
 | Entrée clavier/souris, flux vidéo, TLS, orchestrateur multi-processus | **NON IMPLÉMENTÉ** | aucun stub silencieux |

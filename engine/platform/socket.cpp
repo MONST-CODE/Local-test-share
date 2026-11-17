@@ -8,7 +8,14 @@
 
 #ifdef _WIN32
 #include "windows/winsock.hpp"
+// iphlpapi.h active transitivement la macro Microsoft `interface` (= struct).
+// Aucun identifiant PLPT ne porte donc ce nom : les paramètres d'interface locale
+// s'appellent `local_interface`. Les champs Winsock (`imr_interface`,
+// `ipv6mr_interface`) ne sont pas touchés : la macro ne remplace que le jeton exact.
+#include <iphlpapi.h>
 #else
+#include <ifaddrs.h>
+#include <net/if.h>
 #include <arpa/inet.h>
 #include <cerrno>
 #include <fcntl.h>
@@ -133,6 +140,14 @@ bool IpAddress::is_private_lan() const {
     return false;
 }
 
+bool IpAddress::is_link_local() const {
+    if (!valid()) return false;
+    if (family == IpFamily::Ipv6) return starts_with(text, "fe80");
+    unsigned a = 0, b = 0;
+    if (std::sscanf(text.c_str(), "%u.%u.", &a, &b) != 2) return false;
+    return a == 169 && b == 254;
+}
+
 std::string IpAddress::display(Port port) const {
     if (family == IpFamily::Ipv6) {
         auto out = "[" + text + "]:" + std::to_string(port.value);
@@ -203,6 +218,134 @@ std::vector<std::size_t> select_lan_interfaces(std::span<const NetworkInterfaceI
         if (info.family == IpFamily::Ipv6 && candidate(info)) chosen.push_back(index);
     }
     return chosen;
+}
+
+#ifdef _WIN32
+namespace {
+std::string wide_to_utf8(const wchar_t* text) {
+    if (text == nullptr || *text == L'\0') return {};
+    const int length = ::WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0, nullptr, nullptr);
+    if (length <= 1) return {};
+    std::string out(static_cast<std::size_t>(length - 1), '\0');
+    ::WideCharToMultiByte(CP_UTF8, 0, text, -1, out.data(), length, nullptr, nullptr);
+    return out;
+}
+} // namespace
+#endif
+
+Result<std::vector<NetworkInterfaceInfo>> enumerate_network_interfaces() {
+    std::vector<NetworkInterfaceInfo> found;
+#ifdef _WIN32
+    ULONG size = 15000; // taille initiale recommandée par Microsoft.
+    std::vector<unsigned char> buffer;
+    ULONG status = ERROR_BUFFER_OVERFLOW;
+    for (int attempt = 0; attempt < 3 && status == ERROR_BUFFER_OVERFLOW; ++attempt) {
+        buffer.resize(size);
+        auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+        status = ::GetAdaptersAddresses(AF_UNSPEC,
+            GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER, nullptr, adapters, &size);
+        if (status != ERROR_SUCCESS) continue;
+        for (auto* adapter = adapters; adapter != nullptr; adapter = adapter->Next) {
+            NetworkInterfaceInfo base;
+            auto friendly = wide_to_utf8(adapter->FriendlyName);
+            base.name = friendly.empty() ? std::string(adapter->AdapterName ? adapter->AdapterName : "") : friendly;
+            base.is_up = adapter->OperStatus == IfOperStatusUp;
+            base.is_loopback = adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK;
+            for (auto* unicast = adapter->FirstUnicastAddress; unicast != nullptr; unicast = unicast->Next) {
+                const sockaddr* sa = unicast->Address.lpSockaddr;
+                if (sa == nullptr) continue;
+                if (sa->sa_family != AF_INET && sa->sa_family != AF_INET6) continue;
+                NetworkInterfaceInfo info = base;
+                info.family = sa->sa_family == AF_INET ? IpFamily::Ipv4 : IpFamily::Ipv6;
+                char text[INET6_ADDRSTRLEN + 1] = {};
+                const void* source = sa->sa_family == AF_INET
+                    ? static_cast<const void*>(&reinterpret_cast<const sockaddr_in*>(sa)->sin_addr)
+                    : static_cast<const void*>(&reinterpret_cast<const sockaddr_in6*>(sa)->sin6_addr);
+                if (::inet_ntop(sa->sa_family, source, text, static_cast<DWORD>(sizeof(text))) == nullptr) continue;
+                info.address = text;
+                if (sa->sa_family == AF_INET6) info.scope_id = reinterpret_cast<const sockaddr_in6*>(sa)->sin6_scope_id;
+                found.push_back(std::move(info));
+            }
+        }
+        break;
+    }
+    if (status != ERROR_SUCCESS)
+        return Result<std::vector<NetworkInterfaceInfo>>::failure(
+            {ErrorCode::PlatformError, "énumération des interfaces impossible", "socket"});
+#else
+    ifaddrs* list = nullptr;
+    if (::getifaddrs(&list) != 0 || list == nullptr)
+        return Result<std::vector<NetworkInterfaceInfo>>::failure(
+            {ErrorCode::PlatformError, "énumération des interfaces impossible", "socket"});
+    for (ifaddrs* entry = list; entry != nullptr; entry = entry->ifa_next) {
+        if (entry->ifa_addr == nullptr || entry->ifa_name == nullptr) continue;
+        const int family = entry->ifa_addr->sa_family;
+        if (family != AF_INET && family != AF_INET6) continue;
+        NetworkInterfaceInfo info;
+        info.name = entry->ifa_name;
+        info.family = family == AF_INET ? IpFamily::Ipv4 : IpFamily::Ipv6;
+        info.is_up = (entry->ifa_flags & IFF_UP) != 0;
+        info.is_loopback = (entry->ifa_flags & IFF_LOOPBACK) != 0;
+        std::array<char, INET6_ADDRSTRLEN + 1> text{};
+        const void* source = family == AF_INET
+            ? static_cast<const void*>(&reinterpret_cast<sockaddr_in*>(entry->ifa_addr)->sin_addr)
+            : static_cast<const void*>(&reinterpret_cast<sockaddr_in6*>(entry->ifa_addr)->sin6_addr);
+        if (::inet_ntop(family, source, text.data(), static_cast<socklen_t>(text.size())) == nullptr) continue;
+        info.address = text.data();
+        if (family == AF_INET6) info.scope_id = reinterpret_cast<sockaddr_in6*>(entry->ifa_addr)->sin6_scope_id;
+        found.push_back(std::move(info));
+    }
+    ::freeifaddrs(list);
+#endif
+    if (found.empty())
+        return Result<std::vector<NetworkInterfaceInfo>>::failure(
+            {ErrorCode::NotFound, "aucune interface réseau adressable", "socket"});
+    return Result<std::vector<NetworkInterfaceInfo>>::success(std::move(found));
+}
+
+Result<ResolvedBind> resolve_bind_address(const IpAddress& configured, IpFamily preferred) {
+    ResolvedBind resolved;
+    if (configured.valid()) {
+        resolved.address = configured;
+        resolved.explicit_choice = true;
+        resolved.any_interface = configured.is_any();
+        resolved.note = resolved.any_interface ? "choix explicite : écoute sur toutes les interfaces"
+                                              : "adresse imposée par la configuration";
+        return Result<ResolvedBind>::success(std::move(resolved));
+    }
+    const IpFamily family = preferred == IpFamily::Ipv6 ? IpFamily::Ipv6 : IpFamily::Ipv4;
+    const auto interfaces = enumerate_network_interfaces();
+    if (interfaces) {
+        const auto& all = interfaces.value();
+        const auto chosen = select_lan_interfaces(all);
+        // Deux passes : une adresse routable du LAN d'abord, le lien local ensuite.
+        // Une adresse lien local fonctionne entre pairs du même lien, mais elle ne
+        // traverse aucun routeur : c'est un repli, et le retour le dit.
+        for (const int pass : {0, 1}) {
+            for (const auto index : chosen) {
+                const auto& info = all[index];
+                if (info.family != family) continue;
+                auto parsed = IpAddress::parse(info.address);
+                if (!parsed) continue;
+                if ((pass == 0) == parsed.value().is_link_local()) continue;
+                resolved.address = parsed.value();
+                if (info.scope_id != 0) resolved.address.scope_id = info.scope_id;
+                resolved.interface_name = info.name;
+                resolved.note = pass == 0 ? "interface privée LAN retenue : " + info.name
+                                          : "repli lien local (aucune adresse LAN routable) : " + info.name;
+                return Result<ResolvedBind>::success(std::move(resolved));
+            }
+        }
+        resolved.note = "aucune interface privée LAN " + std::string(family == IpFamily::Ipv6 ? "IPv6" : "IPv4") +
+            " : écoute limitée à la boucle locale";
+    } else {
+        resolved.note = std::string("énumération des interfaces impossible (") + interfaces.error().message +
+            ") : écoute limitée à la boucle locale";
+    }
+    // Repli sûr : jamais toutes les interfaces, jamais une adresse inventée.
+    resolved.address = IpAddress::loopback(family);
+    resolved.loopback_only = true;
+    return Result<ResolvedBind>::success(std::move(resolved));
 }
 
 int Socket::last_error() {
@@ -462,7 +605,7 @@ Result<bool> Socket::peer_reachable() const {
     return Result<bool>::success(true);
 }
 
-Result<void> Socket::join_multicast(const IpAddress& group, const IpAddress& interface) {
+Result<void> Socket::join_multicast(const IpAddress& group, const IpAddress& local_interface) {
     if (!valid()) return Result<void>::failure({ErrorCode::InvalidState, "socket fermé", "socket"});
     if (!group.is_multicast())
         return Result<void>::failure({ErrorCode::InvalidArgument, "groupe non multicast", "socket"});
@@ -472,8 +615,8 @@ Result<void> Socket::join_multicast(const IpAddress& group, const IpAddress& int
         ip_mreq request{};
         if (::inet_pton(AF_INET, group.text.c_str(), &request.imr_multiaddr) != 1)
             return Result<void>::failure({ErrorCode::InvalidArgument, "groupe IPv4 invalide", "socket"});
-        if (interface.valid() && interface.family == IpFamily::Ipv4) {
-            if (::inet_pton(AF_INET, interface.text.c_str(), &request.imr_interface) != 1)
+        if (local_interface.valid() && local_interface.family == IpFamily::Ipv4) {
+            if (::inet_pton(AF_INET, local_interface.text.c_str(), &request.imr_interface) != 1)
                 return Result<void>::failure({ErrorCode::InvalidArgument, "interface IPv4 invalide", "socket"});
         } else {
             request.imr_interface.s_addr = htonl(INADDR_ANY);
@@ -485,26 +628,26 @@ Result<void> Socket::join_multicast(const IpAddress& group, const IpAddress& int
     ipv6_mreq request{};
     if (::inet_pton(AF_INET6, group.text.c_str(), &request.ipv6mr_multiaddr) != 1)
         return Result<void>::failure({ErrorCode::InvalidArgument, "groupe IPv6 invalide", "socket"});
-    request.ipv6mr_interface = interface.scope_id;
+    request.ipv6mr_interface = local_interface.scope_id;
     if (::setsockopt(raw(handle_), IPPROTO_IPV6, IPV6_JOIN_GROUP, reinterpret_cast<const char*>(&request), sizeof(request)) != 0)
         return Result<void>::failure(io_error("IPV6_JOIN_GROUP", "socket", last_error()));
     return Result<void>::success();
 }
 
-Result<void> Socket::leave_multicast(const IpAddress& group, const IpAddress& interface) {
+Result<void> Socket::leave_multicast(const IpAddress& group, const IpAddress& local_interface) {
     if (!valid()) return Result<void>::success();
     if (family_ == IpFamily::Ipv4) {
         ip_mreq request{};
         if (::inet_pton(AF_INET, group.text.c_str(), &request.imr_multiaddr) != 1) return Result<void>::success();
         request.imr_interface.s_addr = htonl(INADDR_ANY);
-        if (interface.valid() && interface.family == IpFamily::Ipv4)
-            (void)::inet_pton(AF_INET, interface.text.c_str(), &request.imr_interface);
+        if (local_interface.valid() && local_interface.family == IpFamily::Ipv4)
+            (void)::inet_pton(AF_INET, local_interface.text.c_str(), &request.imr_interface);
         (void)::setsockopt(raw(handle_), IPPROTO_IP, IP_DROP_MEMBERSHIP, reinterpret_cast<const char*>(&request), sizeof(request));
         return Result<void>::success();
     }
     ipv6_mreq request{};
     if (::inet_pton(AF_INET6, group.text.c_str(), &request.ipv6mr_multiaddr) != 1) return Result<void>::success();
-    request.ipv6mr_interface = interface.scope_id;
+    request.ipv6mr_interface = local_interface.scope_id;
     (void)::setsockopt(raw(handle_), IPPROTO_IPV6, IPV6_LEAVE_GROUP, reinterpret_cast<const char*>(&request), sizeof(request));
     return Result<void>::success();
 }
@@ -546,19 +689,19 @@ Result<void> Socket::set_multicast_loop(bool enabled) {
 #endif
 }
 
-Result<void> Socket::set_multicast_interface(const IpAddress& interface) {
-    if (!interface.valid()) return Result<void>::failure({ErrorCode::InvalidArgument, "interface invalide", "socket"});
+Result<void> Socket::set_multicast_interface(const IpAddress& local_interface) {
+    if (!local_interface.valid()) return Result<void>::failure({ErrorCode::InvalidArgument, "interface invalide", "socket"});
     if (family_ == IpFamily::Ipv6) {
-        if (interface.scope_id == 0)
+        if (local_interface.scope_id == 0)
             return Result<void>::failure({ErrorCode::InvalidArgument, "IPv6 exige un scope d'interface", "socket"});
         // Index d'interface sur 4 octets : DWORD sous Windows, unsigned int sous POSIX.
-        const std::uint32_t index = interface.scope_id;
+        const std::uint32_t index = local_interface.scope_id;
         if (::setsockopt(raw(handle_), IPPROTO_IPV6, IPV6_MULTICAST_IF, reinterpret_cast<const char*>(&index), sizeof(index)) != 0)
             return Result<void>::failure(io_error("IPV6_MULTICAST_IF", "socket", last_error()));
         return Result<void>::success();
     }
     in_addr local{};
-    if (::inet_pton(AF_INET, interface.text.c_str(), &local) != 1)
+    if (::inet_pton(AF_INET, local_interface.text.c_str(), &local) != 1)
         return Result<void>::failure({ErrorCode::InvalidArgument, "interface IPv4 invalide", "socket"});
     if (::setsockopt(raw(handle_), IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&local), sizeof(local)) != 0)
         return Result<void>::failure(io_error("IP_MULTICAST_IF", "socket", last_error()));

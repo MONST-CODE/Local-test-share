@@ -57,9 +57,73 @@ std::string find_key_value(std::string_view list, char separator, std::string_vi
     }
     return {};
 }
+
+// Retire name=… d'une query : les autres paramètres et leur ordre sont conservés.
+std::string redact_query(std::string_view target, std::string_view name) {
+    const auto question = target.find('?');
+    if (question == std::string_view::npos) return std::string(target);
+    const auto query = target.substr(question + 1);
+    std::string kept;
+    std::size_t start = 0;
+    while (start <= query.size()) {
+        const auto end = query.find('&', start);
+        const auto item = query.substr(start, end == std::string_view::npos ? std::string_view::npos : end - start);
+        const auto equal = item.find('=');
+        const bool capability = equal != std::string_view::npos && equals_ignore_case(trim(item.substr(0, equal)), name);
+        if (!capability) {
+            if (!kept.empty()) kept += '&';
+            kept += std::string(item);
+        }
+        if (end == std::string_view::npos) break;
+        start = end + 1;
+    }
+    std::string out(target.substr(0, question));
+    if (!kept.empty()) {
+        out += '?';
+        out += kept;
+    }
+    return out;
+}
+
+// Réécrit la ligne de requête sans le paramètre de capacité.
+std::string redact_request_line(std::string_view line, std::string_view name) {
+    const auto first = line.find(' ');
+    const auto last = line.rfind(' ');
+    if (first == std::string_view::npos || last == first) return std::string(line);
+    std::string out(line.substr(0, first));
+    out += ' ';
+    out += redact_query(line.substr(first + 1, last - first - 1), name);
+    out += ' ';
+    out += std::string(line.substr(last + 1));
+    return out;
+}
+
+// Retire le cookie de capacité ; retourne une liste vide si rien d'autre n'était porté.
+std::string redact_cookie_list(std::string_view value, std::string_view name) {
+    const auto list = trim(value);
+    std::string kept;
+    std::size_t start = 0;
+    while (start <= list.size()) {
+        const auto end = list.find(';', start);
+        const auto item = trim(list.substr(start, end == std::string_view::npos ? std::string_view::npos : end - start));
+        const auto equal = item.find('=');
+        const bool capability = equal != std::string_view::npos && equals_ignore_case(trim(item.substr(0, equal)), name);
+        if (!item.empty() && !capability) {
+            if (!kept.empty()) kept += "; ";
+            kept += std::string(item);
+        }
+        if (end == std::string_view::npos) break;
+        start = end + 1;
+    }
+    return kept;
+}
+
+void append_bytes(std::vector<std::uint8_t>& out, std::string_view text) {
+    for (const char character : text) out.push_back(static_cast<std::uint8_t>(character));
+}
 } // namespace
 
-std::string extract_token(std::string_view target, std::string_view headers, std::string_view name) {
+std::string extract_token(std::string_view target, std::string_view headers, std::string_view name, bool* via_cookie) {
     if (name.empty()) return {};
     const auto question = target.find('?');
     if (question != std::string_view::npos) {
@@ -77,7 +141,10 @@ std::string extract_token(std::string_view target, std::string_view headers, std
             const auto value = trim(line.substr(colon + 1));
             if (equals_ignore_case(key, "cookie")) {
                 auto cookie = find_key_value(value, ';', name);
-                if (!cookie.empty()) return cookie;
+                if (!cookie.empty()) {
+                    if (via_cookie != nullptr) *via_cookie = true;
+                    return cookie;
+                }
             }
         }
         if (end == std::string_view::npos) break;
@@ -131,7 +198,9 @@ Result<HandshakeFacts> parse_http_head(std::span<const std::uint8_t> data, std::
         if (end == std::string_view::npos) break;
         start = end + 2;
     }
-    if (facts.token.empty()) facts.token = extract_token(facts.target, headers, token_name);
+    bool via_cookie = false;
+    if (facts.token.empty()) facts.token = extract_token(facts.target, headers, token_name, &via_cookie);
+    facts.token_via_cookie = via_cookie;
     return Result<HandshakeFacts>::success(std::move(facts));
 }
 
@@ -142,12 +211,107 @@ std::vector<std::uint8_t> http_status_response(std::uint16_t status, std::string
     return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
+std::vector<std::uint8_t> redact_capability(std::span<const std::uint8_t> head, std::string_view token_name) {
+    std::vector<std::uint8_t> out;
+    out.reserve(head.size());
+    if (token_name.empty() || head.empty()) {
+        out.assign(head.begin(), head.end());
+        return out;
+    }
+    const std::string_view text(reinterpret_cast<const char*>(head.data()), head.size());
+    std::size_t start = 0;
+    bool request_line = true;
+    while (start < text.size()) {
+        const auto end = text.find("\r\n", start);
+        const auto line = text.substr(start, end == std::string_view::npos ? std::string_view::npos : end - start);
+        std::string kept;
+        bool drop = false;
+        if (request_line) {
+            request_line = false;
+            kept = redact_request_line(line, token_name);
+        } else {
+            const auto colon = line.find(':');
+            if (colon == std::string_view::npos) {
+                kept = std::string(line); // ligne de fin d'en-têtes, ou ligne non conforme conservée.
+            } else {
+                const auto key = trim(line.substr(0, colon));
+                const auto value = line.substr(colon + 1);
+                if (equals_ignore_case(key, "x-plpt-token")) {
+                    drop = true; // l'en-tête dédié ne traverse jamais le proxy.
+                } else if (equals_ignore_case(key, "cookie")) {
+                    const auto cookies = redact_cookie_list(value, token_name);
+                    if (cookies.empty()) drop = true; // cookie vidé : la ligne entière disparaît.
+                    else kept = "Cookie: " + cookies;
+                } else if (equals_ignore_case(key, "referer")) {
+                    // Le navigateur recopie l'URL d'origine, jeton de capacité compris.
+                    kept = "Referer: " + redact_query(trim(value), token_name);
+                } else {
+                    kept = std::string(line);
+                }
+            }
+        }
+        if (!drop) {
+            append_bytes(out, kept);
+            out.push_back(static_cast<std::uint8_t>('\r'));
+            out.push_back(static_cast<std::uint8_t>('\n'));
+        }
+        if (end == std::string_view::npos) break;
+        start = end + 2;
+    }
+    return out;
+}
+
+int response_status_code(std::span<const std::uint8_t> head) {
+    const std::string_view text(reinterpret_cast<const char*>(head.data()), head.size());
+    const auto end = text.find("\r\n");
+    const auto line = end == std::string_view::npos ? text : text.substr(0, end);
+    if (line.size() < 12 || line.compare(0, 5, "HTTP/") != 0) return 0;
+    const auto space = line.find(' ');
+    if (space == std::string_view::npos || space + 3 >= line.size()) return 0;
+    const auto digits = line.substr(space + 1, 3);
+    for (const char character : digits)
+        if (character < '0' || character > '9') return 0;
+    if (space + 4 < line.size() && line[space + 4] != ' ') return 0; // « 200OK » refusé.
+    return static_cast<int>(digits[0] - '0') * 100 + static_cast<int>(digits[1] - '0') * 10 +
+        static_cast<int>(digits[2] - '0');
+}
+
+std::vector<std::uint8_t> inject_response_header(std::span<const std::uint8_t> response, std::size_t terminator,
+    std::string_view line) {
+    if (terminator + 2 > response.size()) return {response.begin(), response.end()};
+    std::vector<std::uint8_t> out;
+    out.reserve(response.size() + line.size() + 2);
+    const auto split = response.begin() + static_cast<std::ptrdiff_t>(terminator + 2);
+    out.insert(out.end(), response.begin(), split);
+    append_bytes(out, line);
+    out.push_back(static_cast<std::uint8_t>('\r'));
+    out.push_back(static_cast<std::uint8_t>('\n'));
+    out.insert(out.end(), split, response.end());
+    return out;
+}
+
+std::string capability_cookie_line(std::string_view token_name, std::string_view token) {
+    std::string line = "Set-Cookie: ";
+    line += token_name;
+    line += "=";
+    line += token;
+    // SameSite=Strict : le cookie ne quitte pas le site partagé. HttpOnly : le code
+    // de la page ne peut pas le lire. Aucun Max-Age : cookie de session.
+    line += "; Path=/; HttpOnly; SameSite=Strict";
+    return line;
+}
+
 struct ServiceProxy::Stream {
     Socket guest;
     Socket upstream;
     IpAddress peer;
     Port peer_port{};
     enum class Phase : std::uint8_t { AwaitHead, Bridging, Closing } phase = Phase::AwaitHead;
+    bool grant_pending = false;              // cookie de capacité à déposer.
+    bool grant_done = false;                 // réponse finale déjà traitée.
+    bool informational_logged = false;       // un seul événement par flux pour les 1xx.
+    std::string grant_cookie_line;           // ligne Set-Cookie à insérer.
+    std::vector<std::uint8_t> response_head; // en-têtes de la 1re réponse, bornés.
     std::vector<std::uint8_t> head;             // en-têtes reçus avant décision.
     std::vector<std::uint8_t> to_upstream;      // file bornée invité -> service.
     std::vector<std::uint8_t> to_guest;         // file bornée service -> invité.
@@ -164,6 +328,79 @@ struct ServiceProxy::Stream {
     std::uint64_t bytes_to_guest = 0;
     std::uint64_t bytes_to_upstream = 0;
 };
+
+void ServiceProxy::process_response_head(Stream& stream, std::span<const std::uint8_t> received) {
+    // Interception jusqu'à la réponse PERTINENTE : un 100 Continue ou un 103 Early
+    // Hints précède la réponse finale, et un cookie inséré là ne serait pas honoré
+    // par le navigateur. Plusieurs réponses informationnelles peuvent arriver dans
+    // le même segment TCP : la boucle les traite toutes, et elle est bornée par les
+    // octets effectivement reçus (chaque 1xx est retiré du tampon).
+    stream.response_head.insert(stream.response_head.end(), received.begin(), received.end());
+    for (;;) {
+        const auto terminator = find_bytes(stream.response_head, "\r\n\r\n");
+        if (terminator == std::string::npos) {
+            if (stream.response_head.size() >= kMaxHeadBytes) {
+                // En-têtes de réponse anormalement grands : renoncement explicite, les
+                // octets réels sont transmis plutôt que la réponse bloquée.
+                stream.to_guest.insert(stream.to_guest.end(), stream.response_head.begin(), stream.response_head.end());
+                stream.grant_pending = false;
+                stream.grant_done = true;
+                ++counters_.grants_failed;
+                record_warning({ErrorCode::TooLarge, "cookie de capacité non déposé : en-têtes de réponse hors borne", "proxy"});
+                stream.response_head.clear();
+                stream.response_head.shrink_to_fit();
+            }
+            return; // en-têtes incomplets : on attend la suite.
+        }
+        const auto status = response_status_code({stream.response_head.data(), terminator + 2});
+        if (status >= 100 && status <= 199 && status != 101) {
+            const auto next_head = stream.response_head.begin() + static_cast<std::ptrdiff_t>(terminator + 4);
+            stream.to_guest.insert(stream.to_guest.end(), stream.response_head.begin(), next_head);
+            stream.response_head.erase(stream.response_head.begin(), next_head);
+            ++counters_.informational_responses;
+            if (!stream.informational_logged) {
+                stream.informational_logged = true;
+                record_event("réponse informationnelle " + std::to_string(status) +
+                    " transmise sans cookie de capacité");
+            }
+            continue; // la réponse pertinente peut suivre dans les mêmes octets.
+        }
+        if (status >= 200 && status <= 599) {
+            const auto modified = inject_response_header(stream.response_head, terminator, stream.grant_cookie_line);
+            stream.to_guest.insert(stream.to_guest.end(), modified.begin(), modified.end());
+            ++counters_.grants_issued;
+            record_event("cookie de capacité déposé dans la réponse " + std::to_string(status) +
+                " pour " + stream.peer.text);
+        } else {
+            // 101 Switching Protocols ou réponse illisible : la réponse n'est jamais
+            // modifiée, et le renoncement est dit.
+            stream.to_guest.insert(stream.to_guest.end(), stream.response_head.begin(), stream.response_head.end());
+            ++counters_.grants_skipped;
+            record_warning({ErrorCode::ProtocolViolation,
+                status == 101 ? "réponse 101 : aucun cookie de capacité déposé"
+                              : "réponse amont illisible : aucun cookie de capacité déposé",
+                "proxy"});
+        }
+        stream.grant_pending = false;
+        stream.grant_done = true;
+        stream.response_head.clear();
+        stream.response_head.shrink_to_fit();
+        return;
+    }
+}
+
+void ServiceProxy::flush_pending_response_head(Stream& stream, const char* reason) {
+    if (!stream.grant_pending || stream.grant_done || stream.response_head.empty()) return;
+    // Des octets réels ont été reçus mais ne forment pas une réponse complète : ils
+    // sont transmis à l'invité plutôt que perdus, et l'échec du dépôt est dit.
+    stream.to_guest.insert(stream.to_guest.end(), stream.response_head.begin(), stream.response_head.end());
+    stream.grant_pending = false;
+    stream.grant_done = true;
+    ++counters_.grants_failed;
+    record_warning({ErrorCode::ProtocolViolation, std::string("cookie de capacité non déposé : ") + reason, "proxy"});
+    stream.response_head.clear();
+    stream.response_head.shrink_to_fit();
+}
 
 ServiceProxy::ServiceProxy(IClock& clock) : clock_(clock) {}
 ServiceProxy::~ServiceProxy() { stop(); }
@@ -197,6 +434,12 @@ Result<std::uint16_t> ServiceProxy::start(ProxyConfig config) {
     upstream_alive_ = false;
     upstream_checked_ms_ = 0;
 
+    // Adresse d'écoute réellement déterminée : jamais toutes les interfaces par défaut.
+    auto bind = resolve_bind_address(config_.bind_address, IpFamily::Ipv4);
+    if (!bind) return Result<std::uint16_t>::failure(bind.error());
+    bind_ = bind.value();
+    config_.bind_address = bind_.address;
+
     auto created = Socket::create(TransportProtocol::Tcp, config_.bind_address.family);
     if (!created) return Result<std::uint16_t>::failure(created.error());
     listener_ = std::move(created).value();
@@ -212,6 +455,10 @@ Result<std::uint16_t> ServiceProxy::start(ProxyConfig config) {
 
     record_event("proxy « " + config_.label + " » en écoute sur le port " + std::to_string(exposed_port_) + " vers " +
         config_.upstream_address.text + ":" + std::to_string(config_.upstream_port));
+    record_event("adresse d'écoute " + config_.bind_address.text + " : " + bind_.note);
+    if (bind_.any_interface) record_event("exposition sur toutes les interfaces : choix explicite de la configuration");
+    if (bind_.loopback_only)
+        record_warning({ErrorCode::Unsupported, "aucune interface privée LAN : le service partagé n'est joignable que depuis cette machine", "proxy"});
     running_.store(true);
     publish();
     worker_ = std::jthread([this](std::stop_token token) { run(token); });
@@ -473,10 +720,19 @@ void ServiceProxy::pump_streams(std::chrono::milliseconds timeout) {
                             stream.websocket = facts.upgrade_websocket;
                             if (facts.upgrade_websocket) counters_.websocket_upgrades++;
                             counters_.authorized++;
-                            // Les en-têtes sont transmis tels quels : le service local
-                            // voit la requête réelle, jeton compris.
-                            stream.to_upstream.insert(stream.to_upstream.end(), stream.head.begin(),
-                                stream.head.begin() + static_cast<std::ptrdiff_t>(facts.consumed));
+                            // La capacité PLPT est retirée avant transmission : le service
+                            // local ne voit jamais le jeton, ni dans ses journaux ni dans
+                            // son historique. Le reste de la requête passe octet à octet.
+                            const std::span<const std::uint8_t> authorized_head(stream.head.data(), facts.consumed);
+                            const auto forwarded = redact_capability(authorized_head, config_.token_name);
+                            stream.to_upstream.insert(stream.to_upstream.end(), forwarded.begin(), forwarded.end());
+                            ++counters_.tokens_redacted;
+                            if (config_.grant_cookie && !facts.token_via_cookie && !facts.upgrade_websocket) {
+                                // Le navigateur rejouera la capacité en cookie sur les
+                                // sous-ressources, sans la répéter dans les URL.
+                                stream.grant_pending = true;
+                                stream.grant_cookie_line = capability_cookie_line(config_.token_name, config_.token);
+                            }
                             // Le corps éventuel déjà reçu suit immédiatement.
                             if (stream.head.size() > facts.consumed)
                                 stream.to_upstream.insert(stream.to_upstream.end(), stream.head.begin() + static_cast<std::ptrdiff_t>(facts.consumed),
@@ -495,16 +751,28 @@ void ServiceProxy::pump_streams(std::chrono::milliseconds timeout) {
         if (stream.polled_upstream && upstream_entry.readable && stream.phase == Stream::Phase::Bridging) {
             auto received = stream.upstream.receive(buffer);
             if (!received) {
-                if (received.error().code != ErrorCode::WouldBlock) stream.upstream_eof = true;
+                if (received.error().code != ErrorCode::WouldBlock) {
+                    stream.upstream_eof = true;
+                    flush_pending_response_head(stream, "service local fermé avant une réponse complète");
+                }
             } else if (received.value() == 0) {
                 stream.upstream_eof = true;
+                flush_pending_response_head(stream, "service local fermé avant une réponse complète");
             } else {
                 stream.last_activity_ms = clock_.now_monotonic_ms();
-                stream.to_guest.insert(stream.to_guest.end(), buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(received.value()));
+                if (stream.grant_pending && !stream.grant_done) {
+                    process_response_head(stream, {buffer.data(), received.value()});
+                } else {
+                    const auto slice_end = buffer.begin() + static_cast<std::ptrdiff_t>(received.value());
+                    stream.to_guest.insert(stream.to_guest.end(), buffer.begin(), slice_end);
+                }
             }
         }
         if (guest_entry.failed) { stream.guest_eof = true; close_stream(stream, "erreur de socket invité"); }
-        if (stream.polled_upstream && upstream_entry.failed && stream.upstream.valid()) { stream.upstream_eof = true; }
+        if (stream.polled_upstream && upstream_entry.failed && stream.upstream.valid()) {
+            stream.upstream_eof = true;
+            flush_pending_response_head(stream, "erreur de socket du service local");
+        }
         if (guest_entry.writable && stream.to_guest_sent < stream.to_guest.size()) {
             auto sent = stream.guest.send({stream.to_guest.data() + stream.to_guest_sent, stream.to_guest.size() - stream.to_guest_sent});
             if (sent) {
@@ -592,6 +860,10 @@ void ServiceProxy::publish() {
     snapshot->revision = revision_;
     snapshot->label = config_.label;
     snapshot->bind_address = config_.bind_address.text;
+    snapshot->bind_interface = bind_.interface_name;
+    snapshot->bind_note = bind_.note;
+    snapshot->any_interface = bind_.any_interface;
+    snapshot->loopback_only = bind_.loopback_only;
     snapshot->exposed_port = exposed_port_;
     snapshot->upstream = config_.upstream_address.text + ":" + std::to_string(config_.upstream_port);
     snapshot->upstream_alive = upstream_alive_;

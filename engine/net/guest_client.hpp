@@ -98,6 +98,9 @@ struct GuestSnapshot {
     std::uint32_t latency_ms = 0;
     std::uint64_t connected_ms = 0;
     bool approval_required = true;
+    // Reprise de place : l'indication est publique, le secret ne l'est jamais.
+    bool resume_available = false;
+    std::uint32_t resume_ttl_ms = 0;
 };
 
 struct GuestConfig {
@@ -111,6 +114,9 @@ struct GuestConfig {
     std::uint32_t inactivity_timeout_ms = 30000;  // au-delà : connexion perdue.
     std::uint32_t heartbeat_interval_ms = 5000;
     bool auto_reconnect = false;                  // jamais sans consentement explicite.
+    // Secret de reprise obtenu lors d'une admission précédente (voir
+    // GuestClient::resume_secret). Vide pour une première connexion.
+    std::string resume_secret;
 };
 
 class GuestClient {
@@ -129,6 +135,11 @@ public:
     bool post_chat(std::string body);
     bool post_direct_message(ParticipantId peer, std::string body);
     bool leave();
+
+    // Secret matériel de reprise, à replacer dans un GuestConfig pour retrouver SA
+    // place après une coupure. Ne jamais l'afficher, le journaliser ni l'annoncer :
+    // c'est une preuve d'identité, pas une information de session.
+    std::string resume_secret() const;
 
 private:
     enum class CommandKind : std::uint8_t { PostChat, PostDirect, Leave, Stop };
@@ -174,6 +185,7 @@ private:
     std::size_t outbox_sent_ = 0;
 
     GuestSnapshot state_;              // propriété exclusive du thread d'entrées/sorties.
+    std::string resume_secret_;        // gardée par mutex_ : lue depuis d'autres threads.
     std::deque<ChatLine> chat_;        // anneau borné, même borne que l'hôte.
     std::deque<std::string> events_;
 

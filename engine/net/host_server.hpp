@@ -95,6 +95,8 @@ struct SharedServiceRecord {
 struct HostCounters {
     std::uint64_t connections_total = 0;
     std::uint64_t admitted = 0;
+    std::uint64_t resumed = 0;         // places rendues sur présentation du secret.
+    std::uint64_t left = 0;            // départs volontaires : place libérée aussitôt.
     std::uint64_t denied = 0;
     std::uint64_t revoked = 0;
     std::uint64_t bad_codes = 0;
@@ -113,6 +115,9 @@ struct HostSnapshot {
     std::string invite_code;      // affiché à l'hôte seulement, jamais annoncé sur le LAN.
     std::string control_address;  // adresse à dicter à un invité en secours.
     std::uint16_t control_port = 0;
+    std::string bind_note;        // pourquoi cette adresse d'écoute a été retenue.
+    bool any_interface = false;   // écoute sur toutes les interfaces : à montrer.
+    bool loopback_only = false;   // aucune interface privée LAN : session locale.
     model::SessionState state = model::SessionState::Initializing;
     std::uint64_t started_ms = 0;
     std::vector<ParticipantRecord> participants;
@@ -128,7 +133,10 @@ struct HostSnapshot {
 struct HostConfig {
     std::string session_name = "Session PLPT";
     std::string host_name = "hôte";
-    IpAddress bind_address = IpAddress::any(IpFamily::Ipv4);
+    // Adresse invalide = « PLPT choisit » : une interface privée LAN réellement
+    // présente, sinon la boucle locale. Jamais toutes les interfaces par défaut :
+    // IpAddress::any() reste possible, mais c'est un choix explicite, signalé.
+    IpAddress bind_address{};
     std::uint16_t control_port = 0;              // 0 = port éphémère choisi par l'OS.
     std::string control_address;                 // adresse annoncée aux invités.
     std::size_t max_participants = 5;
@@ -138,7 +146,7 @@ struct HostConfig {
     std::uint32_t approval_timeout_ms = 120000;  // demande en attente oubliée.
     std::uint32_t inactivity_timeout_ms = 30000; // au-delà : participant déconnecté.
     std::uint32_t heartbeat_interval_ms = 5000;
-    std::uint32_t reconnect_grace_ms = 30000;    // même code + même nom : même place.
+    std::uint32_t reconnect_grace_ms = 30000;    // validité du secret de reprise.
     InviteCode invite_code;
 };
 
@@ -240,6 +248,7 @@ private:
     IClock& clock_;
     HostConfig config_;
     Socket listener_;
+    ResolvedBind bind_{};                        // adresse d'écoute réelle.
     WakeupSignal wakeup_;
     std::atomic<bool> running_{false};
     std::uint16_t control_port_ = 0;
@@ -266,7 +275,14 @@ private:
     HostCounters counters_;
     struct AddressAttempt { std::uint64_t window_start_ms = 0; unsigned failures = 0; unsigned connections = 0; };
     std::vector<std::pair<std::string, AddressAttempt>> attempts_;
-    struct ReconnectSlot { ParticipantId participant{}; std::string name; std::uint64_t disconnected_ms = 0; };
+    // Place libérée par une coupure. Le secret est la seule clé de reprise ; le nom
+    // n'est conservé que pour expliquer un changement d'affichage dans le journal.
+    struct ReconnectSlot {
+        ParticipantId participant{};
+        std::string name;
+        std::string resume_secret;
+        std::uint64_t disconnected_ms = 0;
+    };
     std::vector<ReconnectSlot> reconnect_slots_;
 
     mutable std::mutex mutex_;               // protège commandes, instantané et révision.

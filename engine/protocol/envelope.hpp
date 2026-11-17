@@ -6,7 +6,10 @@
 namespace plpt::model {
 // 1.1 ajoute les messages du partage LAN (SessionState, ServiceList, Bye).
 // Un pair 1.0 reste acceptable : les mineures sont rétrocompatibles, jamais les majeures.
-inline constexpr std::uint16_t kProtocolMajor = 1, kProtocolMinor = 1;
+// 1.2 : Hello porte le secret de reprise, Auth le délivre. Un pair annonçant une
+// révision mineure inférieure est refusé explicitement par l'hôte (pas de repli
+// muet sur une identité devinée). Aucune révision n'a jamais retiré de champ.
+inline constexpr std::uint16_t kProtocolMajor = 1, kProtocolMinor = 2;
 inline constexpr std::size_t kEnvelopeHeaderBytes = 56;
 // Flux logiques multiplexés dans stream_id. Un seul est réellement utilisé par le
 // partage LAN (Control) ; les autres restent réservés et jamais acceptés en vrac.

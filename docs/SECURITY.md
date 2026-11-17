@@ -95,6 +95,64 @@ Le poste client standard, l'installation/désinstallation complète, la signatur
 SmartScreen **restent à qualifier** ; le manifeste asInvoker n'est pas une preuve
 que tous les tests CI ont tourné sous un compte non privilégié.
 
+## Incrément de stabilisation (2026-11-14)
+
+Garanties ajoutées, chacune adossée à un test réel et non à une intention :
+
+- **La capacité ne franchit pas la frontière.** Le jeton d'un service partagé est
+  vérifié par le proxy puis retiré de la requête transmise au service local :
+  paramètre d'URL, cookie, en-tête `X-PLPT-Token` et paramètre homonyme du `Referer`.
+  Le test LAN fait renvoyer à l'amont l'en-tête qu'il a réellement reçu et vérifie
+  l'absence du jeton dans les quatre modes d'autorisation. Le dépôt d'un cookie de
+  session (`HttpOnly`, `SameSite=Strict`, sans `Max-Age`) permet aux sous-ressources
+  de passer sans répéter le jeton dans les URL ; un échec de dépôt est compté et
+  averti, jamais masqué.
+- **Le cookie n'est jamais déposé dans une réponse qui ne peut pas le porter.** Les
+  réponses informationnelles (`100 Continue`, `103 Early Hints`, tout `1xx` sauf
+  `101`) sont transmises **telles quelles** et l'interception continue jusqu'à la
+  réponse pertinente : un `Set-Cookie` posé sur un `1xx` serait ignoré du navigateur
+  et donnerait l'illusion d'une capacité accordée. Le cookie n'est inséré que dans
+  une `2xx`–`5xx`, et son insertion est vérifiée octet par octet par le test
+  `lan_proxy_informational_and_upgrade_responses`.
+- **Un upgrade n'est jamais modifié.** Sur `101 Switching Protocols` — la réponse
+  d'un WebSocket — le proxy transmet sans toucher un octet : ajouter un en-tête à une
+  réponse `101` casserait la poignée de main et falsifierait le canal. Le renoncement
+  au cookie est compté (`grants_skipped`) et averti (`ProtocolViolation`), il n'est
+  pas silencieux. Même traitement pour une réponse amont illisible, et pour un
+  en-tête de réponse incomplet à la fermeture de l'amont : les octets réels sont
+  transmis à l'invité plutôt que perdus, et l'échec du dépôt est compté
+  (`grants_failed`).
+- **La saturation d'un service partagé est dite, pas absorbée.** Le pool de
+  connexions distingue les connexions **actives** des tâches **en attente** avec une
+  capacité totale unique (`workers + queue_capacity`) ; au-delà la soumission est
+  refusée, l'appelant reste propriétaire de la socket et répond `503`. Aucune file
+  infinie, aucun thread détaché, tous les ouvriers joints à l'arrêt. Une connexion
+  muette ne peut pas occuper un ouvrier indéfiniment : les délais de socket sont
+  bornés (`10 s` pour une requête, `120 s` d'inactivité WebSocket).
+- **L'identité ne repose plus sur le nom.** La reprise d'une place exige un secret
+  aléatoire de 16 octets émis par l'hôte sur le canal authentifié, comparé à temps
+  constant, consommé puis rotaté, supprimé par la révocation. Un homonyme et un
+  secret forgé obtiennent une autre place — vérifié sur TCP réel. Un pair annonçant
+  une révision de protocole inférieure à 1.2 est refusé explicitement, sans repli.
+- **Départ volontaire et coupure ne sont plus confondus.** Un `Bye` libère le siège
+  immédiatement ; une coupure le réserve pendant le délai de grâce. Sans cela, la
+  capacité d'accueil se consommait définitivement au fil des départs.
+- **L'exposition réseau est déterminée, pas subie.** Plus aucun composant réseau
+  n'écoute sur toutes les interfaces par défaut : l'adresse est choisie par
+  énumération réelle des interfaces (adresse privée LAN, routable de préférence),
+  avec repli sur la boucle locale signalé par un avertissement. `0.0.0.0`/`::`
+  exige un choix explicite, qui est alors publié et journalisé. L'adresse réellement
+  liée est celle qui est affichée.
+- **Aucun thread orphelin dans le service de démonstration.** Le pool d'ouvriers est
+  fixe et joint à l'arrêt ; le `detach()` et le retrait qui testait `joinable()`
+  (toujours vrai) ont disparu. Observation réelle : 9 threads stables après 85
+  requêtes dont 30 parallèles, arrêt en 100 ms après `SIGTERM`.
+
+Limites inchangées et toujours déclarées : pas de TLS ni de QUIC (canal de contrôle
+et proxy en clair sur le LAN), pas de preuve d'identité de l'hôte par clé publique,
+pas de rendu distant, découverte multicast non qualifiée entre deux machines, aucun
+secret n'est protégé contre un observateur passif du réseau local.
+
 ## Critères de refus de release
 
 Une V1 ne peut être annoncée avant les critères du maître §23, les tests natifs
