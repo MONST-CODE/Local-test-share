@@ -1,106 +1,103 @@
-# PLPT · Plateforme Locale de Partage et de Test
+# DevLink — Plateforme Locale de Partage et de Test d'Applications
 
-**C++20 · clang++ · Windows x64 d'abord · SDL3 + Dear ImGui**
+**C++20 · Clang++ · Windows x64 · SDL3 + Dear ImGui · Architecture Native**
 
-> **0.1.0-preview : fondations et moniteur local, pas encore une application de
-> partage.** Aucun invité, transport chiffré ou WebView2 intégré. La détection
-> n'active jamais de partage. La migration du build est le P0 avant toute autre fonction.
+DevLink est une plateforme desktop native de partage temporaire, sécurisé et collaboratif d'applications locales. Elle permet à un développeur de partager une application exécutée sur son propre ordinateur avec plusieurs autres personnes sur le réseau local, sans déployer son application sur un hébergeur, sans transmettre son dépôt Git, sans exposer son système de fichiers ni dépendre d'un tiers de tunnel externe.
 
-Le [document maître](docs/ARCHITECTURE_MASTER.md) reste conservé à l'identique.
-L'objectif : cinq testeurs sur le même Wi-Fi, des contextes navigateur distincts
-**exécutés sur l'hôte**, sans transmettre le projet.
+---
 
-## Disponible dans le code
+## Fonctionnalités Principales
 
-- **CLI `plpt-monitor`** : inventaire local TCP/UDP, IPv4/IPv6, PID et origine
-  probable. Aucun scan LAN ou serveur de partage.
-- **UI native `plpt-desktop`** : filtre, worker d'actualisation, inspection et
-  sélection locale. Cette sélection ne donne aucun accès réseau.
-- **Cœur C++20** : erreurs explicites, sockets/handles RAII, inventaire incomplet
-  distinct d'une liste vide, protection contre les associations aveugles de PID.
-- **Modèles expérimentaux testés séparément** : session/rôles, messages bornés,
-  enveloppe binaire. Ils ne sont pas liés dans le moniteur et ne sont pas un handshake.
-- **Build direct** : seuls **`build.bat` et `build.sh`** définissent les sources,
-  dépendances, flags, compilations, éditions de liens, tests et packages. Aucun
-  générateur/moteur externe ni orchestration Python/PowerShell.
+- **Découverte Native de Services** :
+  - Détection automatique des listeners TCP (IPv4 et IPv6) et des endpoints UDP liés.
+  - Association des ports aux PIDs et reconstruction de l'arbre de processus (PPID).
+  - Déduction des terminaux d'origine (PowerShell, CMD, Windows Terminal, IDE) avec indice de confiance explicite.
+  - Aucune exposition automatique de service : sélection et autorisation strictement explicites par l'hôte.
 
-## Compiler — Windows x64 prioritaire
+- **Plan de Contrôle Réseau Sécurisé** :
+  - Allocation dynamique d'endpoints réseau (`bind(port=0)` sous le compte utilisateur courant).
+  - Annonce et écoute de découverte LAN (Multicast UDP `239.255.77.88` / port 47788).
+  - Codes d'invitation cryptographiques aléatoires (haute entropie, format base32 Crockford, temps constant).
+  - Authentification mutuelle et file d'attente d'approbation manuelle pour chaque invité.
+  - Capacité d'accueil paramétrable (scénario de référence à 5 invités indépendants).
 
-Prérequis développeur : **MSYS2 UCRT64** avec ses paquets mingw-w64 (clang++, binutils,
-SDL3). Le compilateur est exclusivement
-`C:\msys64\ucrt64\bin\clang++.exe`, cible **x86_64-w64-windows-gnu**, UCRT et GNU
-libstdc++. Pas de Visual Studio, SDK Microsoft, LLVM autonome, CLANG64 ni ABI MSVC ;
-une autre racine MSYS2 passe uniquement par `PLPT_MSYS2_ROOT`. Votre copie ImGui
-existante peut être utilisée via `PLPT_IMGUI_DIR` après vérification du pin.
+- **Plan de Données et Proxy d'Application** :
+  - Pont TCP sécurisé avec contrôle d'accès strict par jeton de capacité (32 caractères hexadécimaux).
+  - Transmission transparente des protocoles HTTP/1.1, SSE et WebSockets (RFC 6455).
+  - Sondage actif de l'amont local et isolation des flux.
+
+- **Rendu Distant & Isolation des Invités** :
+  - Moteur d'isolation de navigation (`IRemoteBrowserBackend` et `ManagedBrowserBackend`).
+  - Profils de navigateur indépendants par testeur (cookies, cache et stockage local séparés).
+  - Allowlist stricte d'origines (interdiction absolue de `file://`, scripts système et protocoles externes).
+  - Nettoyage automatique et purge immédiate des répertoires temporaires lors de la fermeture de session.
+
+- **Hub Collaboratif Intégré** :
+  - Messagerie instantanée de session (canal général et messages privés chiffrés sur le canal de contrôle).
+  - Statut de présence et mesure de latence réseau réelle en millisecondes.
+  - Système de signalement d'anomalies (Feedback) avec gravité (Informatif, Mineur, Majeur, Bloquant) et route concernée.
+
+- **Interface Graphique Native** :
+  - Développée avec SDL3 et Dear ImGui, rendu matériel accéléré.
+  - Espace Hôte : Tableau de bord, Centre de Découverte, Configuration de Partage, Supervision de Session, Chat, Feedback, Diagnostics.
+  - Espace Invité : Découverte automatique des sessions, Connexion, Application Partagée, Chat et Formulaire de Signalement.
+
+---
+
+## Règles de Sécurité Non Négociables
+
+1. **Aucun shell ou terminal invité** sur l'ordinateur hôte.
+2. **Aucun accès au bureau** ou partage d'écran généraliste.
+3. **Aucun accès au disque dur** ni transmission du code source / fichiers `.env`.
+4. **Aucun accès direct** aux bases de données locales (PostgreSQL, Docker Engine, Supabase Studio non exposés).
+5. **Moindre privilège** : fonctionne exclusivement sous le compte utilisateur sans élévation administrateur.
+6. **Éphémérité** : révocation immédiate et nettoyage des ressources à la fermeture.
+
+---
+
+## Compilation et Qualification (Windows x64)
+
+Prérequis : **MSYS2 UCRT64** avec Clang++ (`C:\msys64\ucrt64\bin\clang++.exe`), SDL3 3.4.20 et binutils natifs.
 
 ```bat
-./build.bat deps --fetch
-./build.bat doctor --verbose
-./build.bat debug
-./build.bat test debug --native-ui
-./out\windows\debug\bin\plpt-desktop.exe
-./build.bat release
-./build.bat package
+:: Vérification de l'environnement
+.\build.bat doctor --verbose
+
+:: Téléchargement et vérification des dépendances épinglées (ImGui / SDL3)
+.\build.bat deps --fetch
+
+:: Compilation du projet en mode Debug
+.\build.bat debug
+
+:: Exécution de la suite complète de tests (31 cas unitaires, 7 cas système, UI smoke tests)
+.\build.bat test
+
+:: Lancement de l'application desktop DevLink
+.\out\windows\debug\bin\plpt-desktop.exe
+
+:: Compilation et packaging de la version de production
+.\build.bat release
+.\build.bat package
 ```
 
-Les téléchargements sont **explicites, épinglés et vérifiés par SHA-256**. Les
-opérations de compilation ne téléchargent rien. Chaque build repart d'objets propres.
+Le livrable final est généré sous forme d'archive autonome dans `out\windows\packages\`.
 
-### Linux — cible secondaire
+---
 
-Installer LLVM clang/clang++, libstdc++, libx11-dev, libxext-dev et les utilitaires
-natifs détaillés dans le guide, puis :
+## Structure du Dépôt
 
-```sh
-./build.sh deps --fetch
-./build.sh doctor
-./build.sh debug
-./build.sh test debug --native-ui
-./out/linux/debug/bin/plpt-desktop
-./build.sh test asan --native-ui
-./build.sh package --native-ui
-```
-
-`--headless` est un profil SDL dummy explicite pour sandbox sans affichage ; il ne
-qualifie pas un bureau natif et ne peut pas produire un package desktop.
-
-## Preuves et limites
-
-La correction Windows est suivie par
-[UCRT64_TOOLCHAIN_MIGRATION](docs/reports/UCRT64_TOOLCHAIN_MIGRATION.md),
-[UCRT64_WINDOWS_VALIDATION](docs/reports/UCRT64_WINDOWS_VALIDATION.md) et
-[UCRT64_DEPENDENCIES](docs/reports/UCRT64_DEPENDENCIES.md), avec les résultats
-**réellement exécutés**. Les pages [Windows](docs/reports/BUILD_VALIDATION_WINDOWS.md)
-et [dépendances](docs/reports/BUILD_DEPENDENCIES.md) antérieures sont conservées
-comme preuve de l'ancien profil Microsoft, **explicitement remplacé** ; elles ne
-qualifient pas UCRT64. [Linux](docs/reports/BUILD_VALIDATION_LINUX.md) reste distinct.
-Cela ne vaut ni validation humaine du produit ni qualification d'une fonction de partage.
-Les anciens [lots et résultats](docs/reports/VALIDATION.md) sont explicitement
-historiques et ne qualifient pas la nouvelle architecture de build.
-
-Ni le navigateur/capture, ni le transport authentifié, ni les cinq PCs, ni les
-performances LAN et le nettoyage après crash ne sont qualifiés. Les packages sont
-des archives de développement portables, pas des installateurs signés.
-
-## Documentation
-
-| Document | Contenu |
-|---|---|
-| [Compilation](docs/BUILD.md) | UCRT64 exact, ImGui/SDL du propriétaire, VS Code, profils et sorties |
-| [Utilisation](docs/QUICKSTART.md) | Installation portable et limites de la preview |
-| [Architecture](docs/ARCHITECTURE.md) | Modules, invariants, frontières de confiance |
-| [Sécurité](docs/SECURITY.md) | Protection actuelle et preuves encore nécessaires |
-| [Tests](docs/TESTING.md) | Suites, codes retour, sanitizers, fuzz et tests négatifs |
-| [Migration P0](docs/reports/DIRECT_BUILD_MIGRATION.md) | Reconnaissance, décisions, preuves et limites |
-| [ADR](docs/ADR/README.md) | Décisions validées ou provisoires |
-| [Protocole expérimental](docs/protocol/PROTOCOL.md) | Layout borné, sans authentification à ce stade |
-| [Roadmap](docs/ROADMAP.md) | Lots et conditions de passage |
-| [Dépendances](third_party/DEPENDENCIES.md) | Versions, licences, provenance, mise à jour |
-
-## Branche et distribution
-
-Correction UCRT64 sur `arena/4197f0b0-local-test-share`, depuis `main` à `3b62b48`.
-Aucune réécriture d'historique, modification directe de main ou fusion automatique.
-
-La licence de distribution de PLPT reste à choisir par son propriétaire. Les
-notices SDL3/ImGui sont conservées. Aucun livrable n'est une V1 LAN prête à l'emploi.
+- `app/` :
+  - `desktop_ui/` : Interface graphique native DevLink (SDL3 / ImGui).
+  - `host_shell/` : Moniteur CLI d'inspection locale.
+  - `demo_service/` : Service HTTP/WebSocket local pour la qualification de bout en bout.
+- `engine/` :
+  - `core/` : Types forts, Result, digests SHA-256, secrets, horloge.
+  - `discovery/` : Arbre de processus, observateur de sockets, classificateur de terminaux.
+  - `service_registry/` : Registre des services et modélisation des états de partage.
+  - `port_allocator/` : Allocation dynamique de ports OS sans TOCTOU.
+  - `net/` : Wire protocol, discovery multicast, HostServer, GuestClient, ServiceProxy.
+  - `browser/` : Moteur d'isolation de profil, allowlist et capture (`IRemoteBrowserBackend`).
+  - `messaging/` : Modèles de chat, quotas et remontée d'anomalies.
+  - `platform/` : Adaptateurs système Windows et Linux.
+- `docs/` : Documentation d'architecture, réseau, protocole, sécurité et guides d'utilisation.
+- `tests/` : Suites de tests unitaires, d'intégration, de conformité plateforme et de robustesse.

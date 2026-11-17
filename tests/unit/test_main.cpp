@@ -338,6 +338,64 @@ void audit_is_opt_in_typed_and_bounded() {
     CHECK_EQ(on.entries().size(), 256U); CHECK_EQ(on.entries().back().timestamp_ms, 500U);
     on.clear(); CHECK(on.entries().empty());
 }
+void managed_browser_isolation_and_allowlist() {
+    ManagedBrowserBackend backend;
+    BrowserPolicy policy;
+    policy.allowed_origins.push_back("http://127.0.0.1:8080");
+    policy.allowed_origins.push_back("http://localhost:3000");
+
+    // Invalid participant
+    CHECK(!backend.create_context(ParticipantId{0}, policy));
+
+    // Valid participant 1
+    auto c1 = backend.create_context(ParticipantId{1}, policy);
+    REQUIRE(c1);
+    CHECK(c1.value().context.value != 0);
+    CHECK_EQ(c1.value().owner, ParticipantId{1});
+    CHECK(!c1.value().profile_id.empty());
+
+    // Policy origin check
+    CHECK(!policy.is_origin_allowed(""));
+    CHECK(!policy.is_origin_allowed("file:///C:/Windows/win.ini"));
+    CHECK(!policy.is_origin_allowed("javascript:alert(1)"));
+    CHECK(!policy.is_origin_allowed("data:text/html,bad"));
+    CHECK(!policy.is_origin_allowed("http://malicious-site.com"));
+    CHECK(policy.is_origin_allowed("http://127.0.0.1:8080/dashboard"));
+    CHECK(policy.is_origin_allowed("http://localhost:3000/api"));
+
+    // Navigation security
+    CHECK(!backend.navigate(c1.value().context, "file:///etc/passwd"));
+    CHECK(!backend.navigate(c1.value().context, "http://192.168.1.50:9000"));
+    REQUIRE(backend.navigate(c1.value().context, "http://127.0.0.1:8080/app"));
+
+    // Frame capture
+    auto frame = backend.capture_frame(c1.value().context);
+    REQUIRE(frame);
+    CHECK(frame.value().size() >= 8 + 128 * 64 * 4);
+    CHECK_EQ(frame.value()[0], 0); // width high
+    CHECK_EQ(frame.value()[1], 128); // width low
+    CHECK_EQ(frame.value()[2], 0); // height high
+    CHECK_EQ(frame.value()[3], 64); // height low
+
+    // Input injection
+    CHECK(!backend.inject_input(c1.value().context, {}));
+    std::vector<std::uint8_t> click_event = {0x01, 0x10, 0x20};
+    REQUIRE(backend.inject_input(c1.value().context, click_event));
+
+    // Distinct context 2
+    auto c2 = backend.create_context(ParticipantId{2}, policy);
+    REQUIRE(c2);
+    CHECK(c2.value().context != c1.value().context);
+    CHECK(c2.value().profile_id != c1.value().profile_id);
+    CHECK_EQ(backend.active_contexts(), 2U);
+
+    // Context destruction
+    REQUIRE(backend.destroy_context(c1.value().context));
+    CHECK_EQ(backend.active_contexts(), 1U);
+    CHECK(!backend.capture_frame(c1.value().context)); // ctx1 is destroyed
+    REQUIRE(backend.destroy_context(c2.value().context));
+    CHECK_EQ(backend.active_contexts(), 0U);
+}
 void unavailable_backends_fail_closed() {
     NullBrowserBackend browser;
     CHECK(!browser.create_context(ParticipantId{1}, {})); CHECK(!browser.capture_frame(ContextId{1}));
@@ -749,7 +807,7 @@ int main() {
     CASE(state_expiry_and_cleanup); CASE(closing_revokes_without_waiting_for_expiry); CASE(roles_contexts_control_and_revocation);
     CASE(five_model_guests_and_capacity); CASE(messages_dm_privacy_and_read_receipts); CASE(messages_quotas_and_feedback_redaction);
     CASE(text_validation); CASE(protocol_golden_and_bounds); CASE(protocol_deterministic_mutations); CASE(estimates_are_bounded);
-    CASE(audit_is_opt_in_typed_and_bounded); CASE(unavailable_backends_fail_closed);
+    CASE(audit_is_opt_in_typed_and_bounded); CASE(managed_browser_isolation_and_allowlist); CASE(unavailable_backends_fail_closed);
     CASE(observation_brackets_process_identity); CASE(observation_keeps_first_snapshot_warning);
     CASE(partial_registry_history_is_bounded); CASE(partial_process_inventory_invalidates_selection);
     CASE(registry_capacity_failure_invalidates_selection); CASE(worker_publishes_immutable_snapshots);
