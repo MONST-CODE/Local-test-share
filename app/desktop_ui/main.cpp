@@ -738,11 +738,31 @@ void render_dashboard(AppState& state, const plpt::MonitorView& view) {
         ImGui::SameLine();
         text_card_title("Transport");
         ImGui::Spacing();
-        status_pill("TCP CLAIR - TLS NON INTEGRE", colors.status_warning);
-        ImGui::Spacing();
-        ImGui::TextWrapped(
-            "Le canal chiffre standard exige par le mandat (TLS 1.3 avec authentification "
-            "des pairs) n'est pas encore integre. Aucune session n'est annoncee comme securisee.");
+        // Transport RÉEL de la session hôte, jamais une espérance (ADR-016).
+        {
+            const auto host_view = state.host ? state.host->snapshot() : nullptr;
+            const std::string transport = host_view && !host_view->transport.empty()
+                ? host_view->transport : std::string("aucune session demarree");
+            const bool secure = transport.rfind("TLS 1.3", 0) == 0;
+            status_pill(transport.c_str(), secure ? colors.status_success : colors.status_warning);
+            ImGui::Spacing();
+            if (secure) {
+                ImGui::TextWrapped(
+                    "Canal TLS 1.3 a secret partage : chaque pair admis a prouve le secret de "
+                    "session par la poignee de main ; l'upgrade a lieu a l'admission, avant toute "
+                    "trame utile (ADR-016).");
+            } else {
+                ImGui::TextWrapped(
+                    "Session NON chiffree : TLS 1.3 indisponible ou desactive par configuration "
+                    "(tls_required=false). Aucun pair n'est annonce securise.");
+            }
+            if (host_view) {
+                for (const auto& peer : host_view->participants) {
+                    if (!peer.transport.empty())
+                        ImGui::Text("  - %s : %s", peer.name.c_str(), peer.transport.c_str());
+                }
+            }
+        }
         ImGui::Spacing();
         if (button_secondary("Diagnostics detailles", ImVec2(220, 32))) {
             state.tab = MainNavigationTab::Diagnostics;
@@ -1664,11 +1684,20 @@ void render_diagnostics(AppState& state, const plpt::MonitorView& view, const Ru
         ImGui::Text("Contexte navigateur : %llu",
             static_cast<unsigned long long>(state.browser_ctx.value));
         ImGui::Spacing();
-        status_pill("TRANSPORT TCP CLAIR", colors.status_warning);
-        ImGui::Spacing();
-        ImGui::TextWrapped("Aucun canal chiffre standard n'est integre. Le module maison "
-            "XOR/HMAC est hors du chemin de production et doit etre remplace par TLS 1.3 "
-            "avec authentification des pairs (mandat §24).");
+        // Côté invité : le transport affiché est celui du canal réel (ADR-016).
+        {
+            const auto guest_view = state.guest ? state.guest->snapshot() : nullptr;
+            const std::string transport = guest_view && !guest_view->transport.empty()
+                ? guest_view->transport : std::string("aucune session invitée");
+            const bool secure = transport.rfind("TLSv1.3", 0) == 0 || transport.rfind("TLS 1.3", 0) == 0;
+            status_pill(transport.c_str(), secure ? colors.status_success : colors.status_warning);
+            ImGui::Spacing();
+            ImGui::TextWrapped(secure
+                ? "Canal invite TLS 1.3 PSK : l'hote a ete authentifie par la poignee de main "
+                  "avant toute trame utile (ADR-016)."
+                : "Session invitee NON chiffree (hote sans TLS, assume des deux cotes) : "
+                  "aucune donnee n'est annoncee securisee.");
+        }
     }
     card_end();
 

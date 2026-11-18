@@ -23,6 +23,9 @@
 #include <cstring>
 #include <utility>
 #include <vector>
+#ifndef _WIN32
+#include <signal.h>   // sigaction : structure et constantes POSIX
+#endif
 
 #ifndef _WIN32
 #include <dlfcn.h>
@@ -210,6 +213,23 @@ Result<std::array<std::uint8_t, 32>> derive_psk(const OpenSslApi& api,
     return Result<std::array<std::uint8_t, 32>>::success(key);
 }
 
+// L'identité PSK est publique et de longueur libre (elle porte la session et le
+// défi), mais l'identifiant de SESSION OpenSSL est borné à 32 octets
+// (SSL_MAX_SSL_SESSION_ID_LENGTH) : au-delà, SSL_SESSION_set1_id lève
+// « ssl session id too long » et la poignée de main échoue des deux côtés.
+// L'identifiant de session local est donc l'empreinte SHA-256 de l'identité,
+// tandis que l'identité complète reste celle envoyée sur le fil.
+bool session_id_of(const OpenSslApi& api, const unsigned char* identity, std::size_t length,
+    std::array<std::uint8_t, 32>& out) {
+    if (identity == nullptr || length == 0) return false;
+    std::size_t out_len = 0;
+    if (api.evp_q_digest(nullptr, "SHA256", nullptr, identity, length, out.data(), &out_len) != 1 ||
+        out_len != out.size()) {
+        return false;
+    }
+    return true;
+}
+
 // Les rappels PSK tournent pendant SSL_connect/SSL_accept, sur LE thread
 // appelant (poignée de main synchrone par conception). Le pointeur de secret
 // est donc transmis par variable thread-local, posée avant la poignée de main
@@ -239,6 +259,11 @@ int psk_use_session_client(SslObject* ssl, const EvpMd* md, const unsigned char*
     auto key = derive_psk(api, *credentials);
     if (!key) { tls_trace("use_session: derive_psk en echec"); return 0; }
     g_psk_key = key.value();
+    std::array<std::uint8_t, 32> session_id{};
+    if (!session_id_of(api, g_psk_identity_buffer.data(), g_psk_identity_buffer.size(), session_id)) {
+        tls_trace("use_session: identifiant de session impossible");
+        return 0;
+    }
     SslSession* session = api.ssl_session_new();
     if (session == nullptr) return 0;
     static const unsigned char cipher_id[2] = {0x13, 0x01}; // TLS_AES_128_GCM_SHA256
@@ -247,7 +272,7 @@ int psk_use_session_client(SslObject* ssl, const EvpMd* md, const unsigned char*
         api.ssl_session_set_protocol_version(session, kTls13Version) != 1 ||
         api.ssl_session_set_cipher(session, cipher) != 1 ||
         api.ssl_session_set1_master_key(session, g_psk_key.data(), g_psk_key.size()) != 1 ||
-        api.ssl_session_set1_id(session, g_psk_identity_buffer.data(), g_psk_identity_buffer.size()) != 1) {
+        api.ssl_session_set1_id(session, session_id.data(), session_id.size()) != 1) {
         tls_trace("use_session: construction de session refusee");
         api.ssl_session_free(session);
         return 0;
@@ -272,6 +297,8 @@ int psk_find_session_server(SslObject* ssl, const unsigned char* identity,
     auto key = derive_psk(api, *credentials);
     if (!key) return 0;
     g_psk_key = key.value();
+    std::array<std::uint8_t, 32> session_id{};
+    if (!session_id_of(api, identity, identity_len, session_id)) return 0;
     SslSession* session = api.ssl_session_new();
     if (session == nullptr) return 0;
     static const unsigned char cipher_id[2] = {0x13, 0x01};
@@ -280,7 +307,7 @@ int psk_find_session_server(SslObject* ssl, const unsigned char* identity,
         api.ssl_session_set_protocol_version(session, kTls13Version) != 1 ||
         api.ssl_session_set_cipher(session, cipher) != 1 ||
         api.ssl_session_set1_master_key(session, g_psk_key.data(), g_psk_key.size()) != 1 ||
-        api.ssl_session_set1_id(session, identity, identity_len) != 1) {
+        api.ssl_session_set1_id(session, session_id.data(), session_id.size()) != 1) {
         api.ssl_session_free(session);
         return 0;
     }
@@ -591,6 +618,14 @@ private:
         }
         const detail::socket_t fd = static_cast<detail::socket_t>(connected);
         const std::uint32_t timeout = handshake_timeout_ms == 0 ? 5000 : handshake_timeout_ms;
+        // L'appelant peut avoir mis le fd en non bloquant (hôtes/invités le font) :
+        // la poignée de main est bornée par des délais socket, donc BLOQUANTS. Le
+        // fd repasse non bloquant après, une fois le canal établi.
+        if (!detail::set_socket_nonblocking(fd, false)) {
+            detail::close_socket(fd);
+            return Result<std::unique_ptr<ITransportChannel>>::failure(Error{ErrorCode::PlatformError,
+                detail::socket_error_text(detail::socket_error()), "tls wrap bloquant", 0});
+        }
         if (!detail::set_socket_timeouts_ms(fd, timeout)) {
             detail::close_socket(fd);
             return Result<std::unique_ptr<ITransportChannel>>::failure(Error{ErrorCode::PlatformError,
@@ -616,12 +651,19 @@ private:
         const int err = api.ssl_get_error(ssl, rc);
         g_handshake_credentials = nullptr;
         if (rc != 1) {
-            const std::string diagnostic = openssl_last_error(api);
+            // SSL_ERROR_WANT_READ/WANT_WRITE ici signifient que les delais socket
+            // temporaires ont expire : le pair n'a pas repondu dans le temps
+            // imparti. Le dire explicitement, plutot qu'une erreur OpenSSL vide.
+            const bool timed_out = err == 2 || err == 3;   // WANT_READ / WANT_WRITE
+            const std::string diagnostic = timed_out
+                ? "delai de poignee de main depasse (" + std::to_string(timeout) + " ms) : le pair n'a pas repondu"
+                : openssl_last_error(api);
             api.ssl_free(ssl);
             api.ssl_ctx_free(context);
             detail::close_socket(fd);
-            return Result<std::unique_ptr<ITransportChannel>>::failure(Error{ErrorCode::Unauthorized,
-                "poignee de main TLS 1.3 d'upgrade refusee : " + diagnostic +
+            return Result<std::unique_ptr<ITransportChannel>>::failure(Error{
+                timed_out ? ErrorCode::TimedOut : ErrorCode::Unauthorized,
+                std::string("poignee de main TLS 1.3 d'upgrade refusee : ") + diagnostic +
                     " (ssl_error=" + std::to_string(err) + ")",
                 server ? "tls wrap serveur" : "tls wrap client", err});
         }
@@ -643,7 +685,31 @@ private:
 
 } // namespace
 
+namespace {
+// OpenSSL écrit sur le descripteur via son BIO socket, SANS MSG_NOSIGNAL : un
+// pair qui ferme pendant une émission TLS lèverait SIGPIPE et tuerait tout le
+// processus (exit 141) au lieu de rendre une erreur. Le signal est donc ignoré
+// une seule fois, à la construction de la fabrique. Nos propres sockets
+// utilisent déjà MSG_NOSIGNAL (engine/platform/socket.cpp) : leur comportement
+// (EPIPE -> ErrorCode::Disconnected) est inchangé, et l'émission TLS échoue
+// alors proprement en SSL_ERROR_SYSCALL. Windows n'a pas de SIGPIPE.
+void ignore_sigpipe_once() {
+#ifndef _WIN32
+    static const bool ignored = [] {
+        struct sigaction action{};
+        action.sa_handler = SIG_IGN;
+        sigemptyset(&action.sa_mask);
+        action.sa_flags = 0;
+        ::sigaction(SIGPIPE, &action, nullptr);
+        return true;
+    }();
+    (void)ignored;
+#endif
+}
+} // namespace
+
 Result<std::unique_ptr<ITransportFactory>> make_tls13_factory(const TlsPolicy& policy) {
+    ignore_sigpipe_once();
     if (policy.min_version > policy.max_version ||
         policy.min_version < kTls12Version || policy.max_version > kTls13Version) {
         return Result<std::unique_ptr<ITransportFactory>>::failure(Error{ErrorCode::InvalidArgument,

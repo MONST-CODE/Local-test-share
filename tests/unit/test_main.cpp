@@ -14,12 +14,12 @@
 #include "engine/protocol/envelope.hpp"
 #include "engine/resource_manager/resource.hpp"
 #include "engine/core/digest.hpp"
+#include "engine/core/mac.hpp"
 #include "engine/core/format.hpp"
 #include "engine/core/secrets.hpp"
 #include "engine/net/discovery.hpp"
 #include "engine/net/proxy.hpp"
 #include "engine/net/wire.hpp"
-#include "engine/net/secure_channel.hpp"
 #include "engine/browser/remote_frame.hpp"
 #include "engine/browser/webview2_backend.hpp"
 
@@ -317,6 +317,203 @@ void protocol_golden_and_bounds() {
     e = chat(); e.participant = {}; CHECK(!encode_envelope(e));
     e = chat(); e.sequence = 0; CHECK(!encode_envelope(e));
 }
+// ---------------------------------------------------------------------------
+// ADR-017 : HMAC-SHA256 (RFC 2104) sur le fournisseur d'empreintes de l'OS.
+// Les vecteurs RFC 4231 sont la preuve que la construction est exacte : une
+// erreur de construction donnerait des MAC différents de la norme.
+// ---------------------------------------------------------------------------
+void hmac_sha256_matches_rfc4231() {
+    const auto provider = digest_provider();
+    REQUIRE(provider.available);   // sans fournisseur, aucune preuve n'est possible.
+    struct Vector { std::vector<std::uint8_t> key; std::string data; const char* hex; };
+    const std::vector<Vector> vectors = {
+        {std::vector<std::uint8_t>(20, 0x0b), "Hi There",
+            "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"},
+        {std::vector<std::uint8_t>{'J', 'e', 'f', 'e'}, "what do ya want for nothing?",
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"},
+        {std::vector<std::uint8_t>(20, 0xaa), std::string(50, '\xdd'),
+            "773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe"},
+        {std::vector<std::uint8_t>(131, 0xaa), "Test Using Larger Than Block-Size Key - Hash Key First",
+            "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"},
+        {std::vector<std::uint8_t>(131, 0xaa),
+            "This is a test using a larger than block-size key and a larger than block-size data. "
+            "The key needs to be hashed before being used by the HMAC algorithm.",
+            "9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2"},
+    };
+    for (std::size_t index = 0; index < vectors.size(); ++index) {
+        const auto& vector = vectors[index];
+        auto mac = hmac_sha256(vector.key,
+            {reinterpret_cast<const std::uint8_t*>(vector.data.data()), vector.data.size()});
+        REQUIRE(mac);
+        CHECK_EQ(mac.value().size(), kHmacSha256Size);
+        CHECK_EQ(to_hex(mac.value()), std::string(vector.hex));  // vecteur RFC 4231
+    }
+    // Clé vide et message vide : définis, pas une erreur silencieuse.
+    auto empty = hmac_sha256(std::span<const std::uint8_t>{}, std::span<const std::uint8_t>{});
+    REQUIRE(empty);
+    CHECK_EQ(to_hex(empty.value()),
+        std::string("b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad"));
+    // Surcharge string_view cohérente avec la surcharge binaire.
+    auto by_string = hmac_sha256(std::string_view("clé"), std::string_view("message"));
+    REQUIRE(by_string);
+    const std::string key = "clé";
+    const std::string message = "message";
+    auto by_span = hmac_sha256({reinterpret_cast<const std::uint8_t*>(key.data()), key.size()},
+        {reinterpret_cast<const std::uint8_t*>(message.data()), message.size()});
+    REQUIRE(by_span);
+    CHECK(mac_equals(by_string.value(), by_span.value()));
+    // Comparaison à temps constant : une seule différence invalide la preuve.
+    auto altered = by_string.value();
+    altered[altered.size() - 1] ^= 0x01;
+    CHECK(!mac_equals(by_string.value(), altered));
+    CHECK(!mac_equals(by_string.value(), std::span<const std::uint8_t>(by_string.value()).first(31)));
+}
+
+// ---------------------------------------------------------------------------
+// ADR-017 : défi-réponse du protocole 1.3. Aucun secret ne transite ; les
+// preuves sont liées au nonce, à la session et à la nature du secret.
+// ---------------------------------------------------------------------------
+void challenge_response_codec_and_derivation() {
+    using namespace plpt::net;
+    auto code = generate_invite_code(); REQUIRE(code);
+    auto resume = generate_resume_secret(); REQUIRE(resume);
+    std::vector<std::uint8_t> nonce(kAuthNonceBytes);
+    SecureRandom random; REQUIRE(random.fill(nonce));
+    const std::vector<std::uint8_t> code_bytes(code.value().bytes.begin(), code.value().bytes.end());
+    const std::vector<std::uint8_t> resume_bytes(resume.value().begin(), resume.value().end());
+
+    // Défi : aller-retour exact, nonce public de taille imposée.
+    AuthChallenge challenge; challenge.nonce = nonce;
+    auto encoded_challenge = encode_auth_challenge(challenge); REQUIRE(encoded_challenge);
+    auto challenge_back = decode_auth_challenge(encoded_challenge.value()); REQUIRE(challenge_back);
+    CHECK_EQ(challenge_back.value().nonce, nonce);
+    AuthChallenge short_nonce; short_nonce.nonce.assign(nonce.begin(), nonce.begin() + 16);
+    CHECK(!encode_auth_challenge(short_nonce));            // encodeur : jamais un nonce tronqué
+    auto truncated = encoded_challenge.value(); truncated.pop_back();
+    CHECK(!decode_auth_challenge(truncated));              // décodeur : troncature refusée
+    auto padded = encoded_challenge.value(); padded.push_back(0);
+    CHECK(!decode_auth_challenge(padded));                 // octets surnuméraires refusés
+
+    // Preuve : une ou deux preuves, jamais aucune.
+    auto invite_proof = compute_auth_proof(code_bytes, nonce, 4242, AuthProofKind::InviteCode);
+    REQUIRE(invite_proof);
+    auto resume_proof = compute_auth_proof(resume_bytes, nonce, 4242, AuthProofKind::ResumeSecret);
+    REQUIRE(resume_proof);
+    CHECK_EQ(invite_proof.value().size(), kAuthProofBytes);
+    CHECK(!mac_equals(invite_proof.value(), resume_proof.value()));
+    AuthProof both; both.invite_proof = invite_proof.value(); both.resume_proof = resume_proof.value();
+    auto encoded_both = encode_auth_proof(both); REQUIRE(encoded_both);
+    auto both_back = decode_auth_proof(encoded_both.value()); REQUIRE(both_back);
+    CHECK_EQ(both_back.value().invite_proof, invite_proof.value());
+    CHECK_EQ(both_back.value().resume_proof, resume_proof.value());
+    AuthProof invite_only; invite_only.invite_proof = invite_proof.value();
+    auto encoded_invite = encode_auth_proof(invite_only); REQUIRE(encoded_invite);
+    auto invite_back = decode_auth_proof(encoded_invite.value()); REQUIRE(invite_back);
+    CHECK(invite_back.value().resume_proof.empty());
+    AuthProof none;
+    CHECK(!encode_auth_proof(none));                       // aucune preuve = refus
+    auto tampered = encoded_invite.value(); tampered.pop_back();
+    CHECK(!decode_auth_proof(tampered));
+    // Une preuve de mauvaise taille est refusée à l'encodage comme au décodage.
+    AuthProof bogus; bogus.invite_proof.assign(31, 0x5a);
+    CHECK(!encode_auth_proof(bogus));
+
+    // La preuve dépend du nonce, de la session et de la nature du secret :
+    // aucune réutilisation possible d'une capture.
+    std::vector<std::uint8_t> other_nonce(kAuthNonceBytes, 0x11);
+    auto other = compute_auth_proof(code_bytes, other_nonce, 4242, AuthProofKind::InviteCode);
+    REQUIRE(other);
+    CHECK(!mac_equals(other.value(), invite_proof.value()));
+    auto other_session = compute_auth_proof(code_bytes, nonce, 4243, AuthProofKind::InviteCode);
+    REQUIRE(other_session);
+    CHECK(!mac_equals(other_session.value(), invite_proof.value()));
+    auto other_kind = compute_auth_proof(code_bytes, nonce, 4242, AuthProofKind::ResumeSecret);
+    REQUIRE(other_kind);
+    CHECK(!mac_equals(other_kind.value(), invite_proof.value()));
+    // Le message authentifié est explicite et borné.
+    const auto message = auth_proof_message(nonce, 4242, AuthProofKind::InviteCode);
+    CHECK_EQ(message.size(), kAuthNonceBytes + 9);
+    CHECK_EQ(message.back(), static_cast<std::uint8_t>(AuthProofKind::InviteCode));
+    // Nonce hors taille : refus, jamais de preuve sur un contexte faux.
+    CHECK(!compute_auth_proof(code_bytes, std::span<const std::uint8_t>(nonce).first(8), 4242,
+        AuthProofKind::InviteCode));
+    // Secret vide : refus explicite (pas de MAC sur clé vide silencieuse).
+    CHECK(!compute_auth_proof(std::span<const std::uint8_t>{}, nonce, 4242, AuthProofKind::InviteCode));
+
+    // Notice d'upgrade : publique, sans secret, liée au nonce vérifié.
+    TlsUpgradeNotice notice;
+    notice.identity = "dl-s4242-abcd";
+    notice.secret_kind = AuthProofKind::ResumeSecret;
+    notice.nonce = nonce;
+    auto encoded_notice = encode_tls_upgrade(notice); REQUIRE(encoded_notice);
+    auto notice_back = decode_tls_upgrade(encoded_notice.value()); REQUIRE(notice_back);
+    CHECK_EQ(notice_back.value().identity, notice.identity);
+    CHECK(notice_back.value().secret_kind == AuthProofKind::ResumeSecret);
+    CHECK_EQ(notice_back.value().nonce, nonce);
+    TlsUpgradeNotice empty_identity = notice; empty_identity.identity.clear();
+    CHECK(!encode_tls_upgrade(empty_identity));
+    TlsUpgradeNotice control_identity = notice; control_identity.identity = "dl\ns7";
+    CHECK(!encode_tls_upgrade(control_identity));
+    TlsUpgradeNotice long_identity = notice; long_identity.identity.assign(129, 'a');
+    CHECK(!encode_tls_upgrade(long_identity));
+    TlsUpgradeNotice wrong_nonce = notice; wrong_nonce.nonce.assign(kAuthNonceBytes - 1, 0x22);
+    CHECK(!encode_tls_upgrade(wrong_nonce));
+    auto notice_truncated = encoded_notice.value(); notice_truncated.pop_back();
+    CHECK(!decode_tls_upgrade(notice_truncated));
+
+    // Secret de transport : dérivé localement, identique des deux côtés, lié au
+    // contexte, et jamais égal au secret ni à sa simple empreinte.
+    auto host_secret = derive_transport_secret(code_bytes, nonce, 4242, notice.identity);
+    REQUIRE(host_secret);
+    auto guest_secret = derive_transport_secret(code_bytes, nonce, 4242, notice.identity);
+    REQUIRE(guest_secret);
+    CHECK_EQ(host_secret.value(), guest_secret.value());
+    CHECK(host_secret.value().size() >= 16);               // borne de la fabrique TLS
+    CHECK_EQ(host_secret.value().size(), 64U);             // hexadécimal de 32 octets
+    for (const char digit : host_secret.value())
+        CHECK((digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f'));
+    CHECK(host_secret.value() != to_hex(code_bytes));
+    auto other_identity = derive_transport_secret(code_bytes, nonce, 4242, "dl-s4242-autre");
+    REQUIRE(other_identity);
+    CHECK(other_identity.value() != host_secret.value());
+    auto other_nonce_secret = derive_transport_secret(code_bytes, other_nonce, 4242, notice.identity);
+    REQUIRE(other_nonce_secret);
+    CHECK(other_nonce_secret.value() != host_secret.value());
+    auto resume_secret_derived = derive_transport_secret(resume_bytes, nonce, 4242, notice.identity);
+    REQUIRE(resume_secret_derived);
+    CHECK(resume_secret_derived.value() != host_secret.value());
+    CHECK(!derive_transport_secret(code_bytes, std::span<const std::uint8_t>(nonce).first(4), 4242,
+        notice.identity));
+    CHECK(!derive_transport_secret(std::span<const std::uint8_t>{}, nonce, 4242, notice.identity));
+    CHECK(!derive_transport_secret(code_bytes, nonce, 4242, std::string()));
+
+    // Trames d'AVANT admission (ADR-017) : participant nul accepté pour le défi,
+    // la preuve et la notice d'upgrade ; refusé pour le reste du protocole, qui
+    // exige une place attribuée. Séquence et session restent obligatoires :
+    // aucune de ces trames n'est rejouable.
+    auto framed_proof = frame(MessageType::AuthProof, SessionId{4242}, ParticipantId{}, 1, encoded_invite.value());
+    REQUIRE(framed_proof);
+    auto framed_notice = frame(MessageType::TlsUpgrade, SessionId{4242}, ParticipantId{}, 1, encoded_notice.value());
+    REQUIRE(framed_notice);
+    CHECK(!frame(MessageType::Chat, SessionId{4242}, ParticipantId{}, 1, encoded_challenge.value()));
+    CHECK(!frame(MessageType::ServiceList, SessionId{4242}, ParticipantId{}, 1, encoded_challenge.value()));
+    CHECK(!frame(MessageType::AuthChallenge, SessionId{4242}, ParticipantId{}, 0, encoded_challenge.value()));
+    CHECK(!frame(MessageType::AuthProof, SessionId{4242}, ParticipantId{}, 0, encoded_invite.value()));
+    CHECK(!frame(MessageType::TlsUpgrade, SessionId{4242}, ParticipantId{}, 0, encoded_notice.value()));
+    CHECK(!frame(MessageType::AuthChallenge, SessionId{}, ParticipantId{}, 1, encoded_challenge.value()));
+    CHECK(!frame(MessageType::TlsUpgrade, SessionId{}, ParticipantId{}, 1, encoded_notice.value()));
+
+    // Les nouvelles trames respectent les bornes de charge utile du protocole.
+    CHECK(max_payload_size(MessageType::AuthChallenge) >= encoded_challenge.value().size());
+    CHECK(max_payload_size(MessageType::AuthProof) >= encoded_both.value().size());
+    CHECK(max_payload_size(MessageType::TlsUpgrade) >= encoded_notice.value().size());
+    auto framed_challenge = frame(MessageType::AuthChallenge, SessionId{4242}, ParticipantId{}, 1,
+        encoded_challenge.value());
+    REQUIRE(framed_challenge);
+    auto framed_back = decode_envelope(framed_challenge.value()); REQUIRE(framed_back);
+    CHECK(framed_back.value().type == MessageType::AuthChallenge);
+}
+
 void protocol_deterministic_mutations() {
     std::mt19937 rng(20261113); // tests uniquement, jamais un secret.
     const auto seed = encode_envelope(chat()); REQUIRE(seed);
@@ -572,10 +769,21 @@ void wire_messages_roundtrip_and_guard() {
 
     SessionInfo info; info.session = SessionId{42}; info.session_name = "Session démo"; info.host_name = "poste-hôte";
     info.state = 3; info.max_participants = 5; info.started_ms = 1234;
-    info.peers.push_back(PeerInfo{ParticipantId{2}, "Alice", 0, 999, 12, true});
+    // ADR-016 : le transport RÉEL de la session et de chaque pair est annoncé.
+    info.transport = "TLS 1.3 PSK (pairs authentifiés)";
+    info.peers.push_back(PeerInfo{ParticipantId{2}, "Alice", 0, 999, 12, true,
+        "TLSv1.3 TLS_AES_128_GCM_SHA256 (pair authentifié)"});
     auto info_back = decode_session_info(encode(info)); REQUIRE(info_back);
     CHECK_EQ(info_back.value().peers.size(), 1U); CHECK(info_back.value().peers[0].self);
     CHECK_EQ(info_back.value().peers[0].latency_ms, 12U);
+    CHECK_EQ(info_back.value().transport, info.transport);
+    CHECK_EQ(info_back.value().peers[0].transport, info.peers[0].transport);
+    // Bloc 1.3 vide : encodage court, décodage identique (les pairs 1.2 aussi).
+    SessionInfo plain = info; plain.transport.clear(); plain.peers[0].transport.clear();
+    auto plain_back = decode_session_info(encode(plain)); REQUIRE(plain_back);
+    CHECK(plain_back.value().transport.empty());
+    CHECK(plain_back.value().peers[0].transport.empty());
+    CHECK_EQ(plain_back.value().peers[0].name, std::string("Alice"));
 
     ServiceList list{{ServiceInfo{1, "Démo HTTP", 43211, "http://192.168.1.10:43211/?plpt=abcd", true}}, "192.168.1.10:40000"};
     auto list_back = decode_service_list(encode(list)); REQUIRE(list_back);
@@ -975,49 +1183,6 @@ void resume_secret_is_the_only_proof_of_a_place() {
     }
 }
 
-void secure_channel_confidentiality_and_anti_replay() {
-    using namespace plpt::net;
-    std::vector<std::uint8_t> ikm = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
-    std::vector<std::uint8_t> c_nonce(16, 0xAA);
-    std::vector<std::uint8_t> s_nonce(16, 0x55);
-    auto keys_res = derive_session_keys(ikm, c_nonce, s_nonce);
-    REQUIRE(keys_res);
-
-    SecureChannel client_chan(keys_res.value(), false);
-    SecureChannel server_chan(keys_res.value(), true);
-
-    std::string secret_payload = "Contrat secret d'invitation DevLink 2026";
-    std::vector<std::uint8_t> plain(secret_payload.begin(), secret_payload.end());
-
-    auto sealed = client_chan.seal(plain, 1, 1000);
-    REQUIRE(sealed);
-    CHECK(sealed.value().size() > plain.size());
-
-    // Dechiffrement nominal
-    auto unsealed = server_chan.unseal(sealed.value(), 1050);
-    REQUIRE(unsealed);
-    std::string recovered(unsealed.value().begin(), unsealed.value().end());
-    CHECK_EQ(recovered, secret_payload);
-
-    // Rejet anti-rejeu : rejeu du meme paquet
-    auto replay_attempt = server_chan.unseal(sealed.value(), 1100);
-    CHECK(!replay_attempt);
-
-    // Rejet d'un paquet altere (integrite HMAC)
-    auto sealed2 = client_chan.seal(plain, 1, 2000);
-    REQUIRE(sealed2);
-    auto tampered = sealed2.value();
-    tampered[kSecureHeaderBytes + 2] ^= 0xFF;
-    auto tampered_attempt = server_chan.unseal(tampered, 2010);
-    CHECK(!tampered_attempt);
-
-    // Rejet d'un paquet expire (> max_skew)
-    auto sealed3 = client_chan.seal(plain, 1, 3000);
-    REQUIRE(sealed3);
-    auto expired_attempt = server_chan.unseal(sealed3.value(), 30000);
-    CHECK(!expired_attempt);
-}
-
 void remote_frame_and_input_serialization() {
     using namespace plpt::media;
     VideoFrame frame;
@@ -1104,7 +1269,8 @@ int main() {
     CASE(registry_grouping_and_no_auto_share); CASE(registry_churn_and_incomplete); CASE(unknown_owner_cannot_retain_selection);
     CASE(state_expiry_and_cleanup); CASE(closing_revokes_without_waiting_for_expiry); CASE(roles_contexts_control_and_revocation);
     CASE(five_model_guests_and_capacity); CASE(messages_dm_privacy_and_read_receipts); CASE(messages_quotas_and_feedback_redaction);
-    CASE(text_validation); CASE(protocol_golden_and_bounds); CASE(protocol_deterministic_mutations); CASE(estimates_are_bounded);
+    CASE(text_validation); CASE(protocol_golden_and_bounds);
+    CASE(hmac_sha256_matches_rfc4231); CASE(challenge_response_codec_and_derivation); CASE(protocol_deterministic_mutations); CASE(estimates_are_bounded);
     CASE(audit_is_opt_in_typed_and_bounded); CASE(managed_browser_isolation_and_allowlist); CASE(unavailable_backends_fail_closed);
     CASE(observation_brackets_process_identity); CASE(observation_keeps_first_snapshot_warning);
     CASE(partial_registry_history_is_bounded); CASE(partial_process_inventory_invalidates_selection);
@@ -1114,7 +1280,6 @@ int main() {
     CASE(proxy_handshake_is_bounded_and_exact); CASE(discovery_announcement_codec_is_bounded);
     CASE(capability_is_never_forwarded_upstream); CASE(bind_resolution_never_defaults_to_any);
     CASE(resume_secret_is_the_only_proof_of_a_place);
-    CASE(secure_channel_confidentiality_and_anti_replay);
     CASE(remote_frame_and_input_serialization);
     CASE(browser_backend_selection_and_lifecycle);
     return plpt_test::finish("unit");

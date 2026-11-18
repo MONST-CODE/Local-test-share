@@ -153,7 +153,7 @@ toolchain() {
 }
 # Explicit DevLink targets. The CLI monitor stays model-free; the desktop control
 # post and the tests link the session models and the real LAN networking.
-CORE_SOURCES=(engine/core/random.cpp engine/core/digest.cpp engine/core/secrets.cpp
+CORE_SOURCES=(engine/core/random.cpp engine/core/digest.cpp engine/core/mac.cpp engine/core/secrets.cpp
     engine/core/format.cpp engine/diagnostics/audit.cpp
     engine/discovery/process_tree.cpp engine/discovery/terminal_classifier.cpp
     engine/discovery/monitor.cpp engine/service_registry/registry.cpp
@@ -162,20 +162,16 @@ CORE_SOURCES=(engine/core/random.cpp engine/core/digest.cpp engine/core/secrets.
 MODEL_SOURCES=(engine/session/session.cpp engine/messaging/messaging.cpp
     engine/protocol/envelope.cpp engine/resource_manager/resource.cpp)
 # Real networking: control plane (host/guest), discovery, data plane (proxy).
+# Transport versionné (mandat §24, ADR-016) : TCP clair qui se déclare clair et
+# TLS 1.3 PSK avec authentification mutuelle. Depuis le basculement (étape 5)
+# il est EN PRODUCTION : l'hôte et l'invité l'utilisent pour le canal de
+# contrôle, donc il suit le régime des autres sources réseau.
 NET_SOURCES=(engine/net/wire.cpp engine/net/discovery.cpp engine/net/host_server.cpp
-    engine/net/guest_client.cpp engine/net/proxy.cpp)
+    engine/net/guest_client.cpp engine/net/proxy.cpp
+    engine/net/transport.cpp engine/net/transport_tls.cpp)
 # Moteur navigateur reel : la fabrique selectionne WebView2 quand il existe et
 # gere le repli. Lie au poste de commande et aux tests, jamais au moniteur CLI.
 BROWSER_SOURCES=(engine/browser/webview2_backend.cpp)
-# Crypto maison de MIGRATION (mandat §9.2 et §24) : XOR + HMAC, non conforme pour
-# la production. Liee AUX TESTS SEULEMENT, le temps de la remplacer par TLS 1.3
-# avec authentification des pairs. Jamais dans un binaire livre.
-MIGRATION_SOURCES=(engine/net/secure_channel.cpp)
-# Transport versionné (mandat §24, ADR-016) : TCP clair qui se déclare clair et
-# TLS 1.3 PSK avec authentification mutuelle. Lié AUX TESTS SEULEMENT jusqu'au
-# basculement (étape 5) : aucun binaire livré ne l'emporte avant que le canal
-# historique XOR/HMAC ne soit réellement remplacé, pas avant.
-TRANSPORT_SOURCES=(engine/net/transport.cpp engine/net/transport_tls.cpp)
 # Design system DevLink : themes.cpp porte les palettes DevDark/DevLight et
 # l'application du style ImGui. Sans cette unite, ThemeManager ne se lie pas.
 UI_SOURCES=(app/desktop_ui/design_system/themes.cpp
@@ -190,6 +186,7 @@ HEADERS=(
     engine/core/clock.hpp
     engine/core/digest.hpp
     engine/core/format.hpp
+    engine/core/mac.hpp
     engine/core/random.hpp
     engine/core/result.hpp
     engine/core/secrets.hpp
@@ -205,7 +202,6 @@ HEADERS=(
     engine/net/guest_client.hpp
     engine/net/host_server.hpp
     engine/net/proxy.hpp
-    engine/net/secure_channel.hpp
     engine/net/transport.hpp
     engine/net/wire.hpp
     engine/platform/connection_pool.hpp
@@ -400,7 +396,7 @@ CONFIG
 }
 DIR=; BIN=; SDL_ROOT=; IMGUI_ROOT=; CXXFLAGS=(); MODEFLAGS=(); SAN=(); VERBOSE_FLAG=(); EXTRA_CXX=(); EXTRA_LINK=()
 COMMON_OBJECTS=(); MODEL_OBJECTS=(); GUI_OBJECTS=(); SDL_OBJECTS=()
-NET_OBJECTS=(); BROWSER_OBJECTS=(); MIGRATION_OBJECTS=(); TRANSPORT_OBJECTS=(); UI_OBJECTS=()
+NET_OBJECTS=(); BROWSER_OBJECTS=(); UI_OBJECTS=()
 configure_flags() {
     MODEFLAGS=(-O0 -g); SAN=()
     if [[ $MODE == release ]]; then MODEFLAGS=(-O2 -DNDEBUG); fi
@@ -453,7 +449,7 @@ build_project() {
     toolchain; dependencies; configure_flags
     say "Compilation started: $MODE, clean deterministic objects (no cache)"
     COMMON_OBJECTS=(); MODEL_OBJECTS=(); NET_OBJECTS=(); GUI_OBJECTS=()
-    BROWSER_OBJECTS=(); MIGRATION_OBJECTS=(); TRANSPORT_OBJECTS=(); UI_OBJECTS=()
+    BROWSER_OBJECTS=(); UI_OBJECTS=()
     for source in "${CORE_SOURCES[@]}"; do
         object="$DIR/objects/${source//\//_}.o"; compile_cpp "$source" "$object"; COMMON_OBJECTS+=("$object")
     done
@@ -471,18 +467,6 @@ build_project() {
         for source in "${BROWSER_SOURCES[@]}"; do
             object="$DIR/objects/${source//\//_}.o"; compile_cpp "$source" "$object"
             BROWSER_OBJECTS+=("$object")
-        done
-    fi
-    # Crypto maison : tests de migration uniquement, jamais un binaire livre.
-    if (( tests )); then
-        for source in "${MIGRATION_SOURCES[@]}"; do
-            object="$DIR/objects/${source//\//_}.o"; compile_cpp "$source" "$object"
-            MIGRATION_OBJECTS+=("$object")
-        done
-        # Transport versionné ADR-016 : même régime, tests uniquement (pré-basculement).
-        for source in "${TRANSPORT_SOURCES[@]}"; do
-            object="$DIR/objects/${source//\//_}.o"; compile_cpp "$source" "$object"
-            TRANSPORT_OBJECTS+=("$object")
         done
     fi
     compile_cpp app/host_shell/main.cpp "$DIR/objects/cli.o"
@@ -508,9 +492,9 @@ build_project() {
     fi
     if (( tests )); then
         compile_cpp tests/unit/test_main.cpp "$DIR/objects/unit.o"
-        link_cpp "$BIN/devlink-unit-tests" "${COMMON_OBJECTS[@]}" "${MODEL_OBJECTS[@]}" "${NET_OBJECTS[@]}" "${BROWSER_OBJECTS[@]}" "${MIGRATION_OBJECTS[@]}" "${TRANSPORT_OBJECTS[@]}" "$DIR/objects/unit.o"
+        link_cpp "$BIN/devlink-unit-tests" "${COMMON_OBJECTS[@]}" "${MODEL_OBJECTS[@]}" "${NET_OBJECTS[@]}" "${BROWSER_OBJECTS[@]}" "$DIR/objects/unit.o"
         compile_cpp tests/integration/platform_tests.cpp "$DIR/objects/platform.o"
-        link_cpp "$BIN/devlink-platform-tests" "${COMMON_OBJECTS[@]}" "${MODEL_OBJECTS[@]}" "${NET_OBJECTS[@]}" "${BROWSER_OBJECTS[@]}" "${MIGRATION_OBJECTS[@]}" "${TRANSPORT_OBJECTS[@]}" "$DIR/objects/platform.o"
+        link_cpp "$BIN/devlink-platform-tests" "${COMMON_OBJECTS[@]}" "${MODEL_OBJECTS[@]}" "${NET_OBJECTS[@]}" "${BROWSER_OBJECTS[@]}" "$DIR/objects/platform.o"
         for source in "${HEADERS[@]}"; do
             printf '#include "%s"\n' "$source" > "$DIR/header-probe.cpp"
             say "Independent header: $source"
@@ -658,6 +642,16 @@ selftest() {
     local tls_platform_bin="$OUT/tests/${MODE:-debug}/bin/devlink-platform-tests"
     [[ -x $tls_platform_bin ]] || fail "selftest TLS: $tls_platform_bin absent; execute './build.sh test ${MODE:-debug}' first"
     expect tls-unavailable-proof 0 'tls-unavailable-proof' env DEVLINK_TLS_LIBRARY_PATH=/does/not/exist/libssl.so "$tls_platform_bin"
+    # Le même enregistrement doit aussi prouver le REFUS de démarrer un partage
+    # reel sans runtime TLS : aucune degradation silencieuse en clair (ADR-016).
+    grep -Eq '\[PASS\] host_refuses_session_without_tls_runtime' "$DIR/tls-unavailable-proof.log" \
+        || fail 'selftest TLS: refus de session sans runtime non prouve'
+    grep -Eq 'host-refusal-proof: ' "$DIR/tls-unavailable-proof.log" \
+        || fail 'selftest TLS: raison du refus absente de la sortie'
+    grep -Eq 'host-cleared-proof: .*clair' "$DIR/tls-unavailable-proof.log" \
+        || fail 'selftest TLS: chemin clair assume non etiquette'
+    say 'PASS tls-host-refusal-proof'
+    notice 'PASS tls-host-refusal-proof'
     say 'SELFTEST PASS: missing compiler, compilation, linking and archive hash failures propagate; no stale successful output'
     notice 'SELFTEST PASS: compiler/compile/link/hash failure propagation'
 }

@@ -22,7 +22,9 @@ enum class MessageType : std::uint16_t {
     // Protocole 1.3 (étape 5) : dernière trame EN CLAIR d'une connexion admise —
     // porte l'identité PSK et le secret de session pour l'upgrade TLS 1.3 en
     // cours de connexion (ADR-016). Jamais envoyée après l'upgrade.
-    TlsUpgrade = 16
+    TlsUpgrade = 16,
+    AuthChallenge = 17,
+    AuthProof = 18
 };
 struct Envelope {
     std::uint16_t protocol_major = kProtocolMajor, protocol_minor = kProtocolMinor;

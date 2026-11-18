@@ -319,3 +319,86 @@ attendant une chaîne terminée par zéro (plage `[begin, end)` explicite, aucun
   + 7 UI indépendants ; selftest → `SELFTEST_EXIT=0` (brand-ico PASS, négatifs
   by-design, tls-unavailable-proof PASS) ; détails dans
   `docs/reports/evidence/2026-11-17-etape4-transport-tls13.txt`.
+
+## 13. Étape 5 — plan de contrôle basculé sur TLS 1.3, secret prouvé et jamais transmis (ADR-017), 18 novembre 2026
+
+- **Non-conformités traitées** : (1) `host_server`/`guest_client` parlaient TCP
+  clair en production alors qu'ADR-016 avait livré le transport TLS 1.3 — l'étape
+  4 était volontairement non branchée ; (2) le protocole 1.2 faisait transiter
+  **le code d'invitation en clair** dans `GuestHello` et **le secret de reprise en
+  clair** à la reconnexion : un observateur du LAN capturait le droit d'entrer ;
+  (3) `engine/net/secure_channel.cpp` (XOR + HMAC maison) restait lié aux tests.
+- **Piège évité** : l'ébauche de basculement (commit `74322c3`) faisait porter le
+  PSK par une notice **en clair**. Un PSK transmis en clair ne protège contre
+  rien : l'observateur qui lit la notice déchiffre tout le canal. Annoncer
+  « TLS 1.3 » dans cet état aurait été un état sécurisé fictif. D'où ADR-017.
+- **Protocole 1.3** : `AuthChallenge = 17` (nonce public 32 o, entropie OS),
+  `AuthProof = 18` (HMAC-SHA256 du code et/ou du secret de reprise), et
+  `TlsUpgrade = 16` réduite à des données publiques (identité PSK, nature du
+  secret, nonce du défi). `validate_header` n'autorise un participant nul que
+  pour `Hello`, `Auth`, `AuthChallenge`, `AuthProof`, `TlsUpgrade` ; la séquence
+  reste obligatoire — aucune de ces trames n'est rejouable.
+- **Aucune crypto maison** : `engine/core/mac.{hpp,cpp}` implémente HMAC
+  (RFC 2104) au-dessus du fournisseur d'empreintes de l'OS déjà en place
+  (`digest.hpp` : CNG / AF_ALG / libcrypto). Construction vérifiée contre les
+  vecteurs **RFC 4231** 1, 2, 3, 6, 7 + cas clé/message vides, avec contrôle
+  indépendant (`hmac` de Python). Le secret de transport est
+  `hex(HMAC(secret, "DevLink TLS13 PSK v2|" || nonce || session || identité))`,
+  dérivé **des deux côtés**, jamais transmis, passé comme PSK à la fabrique
+  ADR-016 (TLS 1.3, `TLS_AES_128_GCM_SHA256`, authentification mutuelle).
+- **Chemin clair historique BLOQUÉ** : un `Hello` portant encore `invite_code` ou
+  `resume_secret` est refusé `ProtocolViolation` (« secret transmis en clair
+  refusé »). Côté invité, une admission non précédée d'un upgrade est refusée
+  quand `tls_required` est vrai. Échec de poignée de main ⇒ déconnexion, jamais
+  de repli clair silencieux.
+- **Ordre réel** : Hello → AuthChallenge → AuthProof → vérification à temps
+  constant (compteurs et limites de tentatives inchangés) → TlsUpgrade →
+  poignée de main → Auth/SessionState/ServiceList/Chat **chiffrés**. L'upgrade
+  précède l'attente d'approbation : même l'attente est couverte.
+- **Refus de démarrer sans runtime** : `HostConfig.tls_required` (défaut true) ⇒
+  `start()` échoue `Unsupported` avec la raison exacte du runtime, aucun port
+  ouvert, erreur affichée par l'interface. Le clair n'existe que si les DEUX
+  côtés posent `tls_required=false`, et il est alors **étiqueté** :
+  `HostSnapshot.transport`, `ParticipantRecord.transport`, `GuestSnapshot.transport`,
+  `GuestPeer.transport`, `SessionInfo.transport` (bloc 1.3 optionnel du codec,
+  absent en 1.2), pastilles UI (`status_success` pour TLS réel, `status_warning`
+  pour clair assumé) — plus aucun « TCP CLAIR - TLS NON INTEGRE » codé en dur.
+- **Suppression propre** : `secure_channel.{hpp,cpp}` retirés du dépôt,
+  `MIGRATION_SOURCES` supprimé de `build.sh` et `build.bat` (compilation, objets,
+  liens, liste `HEADERS`), cas de test de migration retiré. Le transport
+  versionné passe de « tests seulement » à `NET_SOURCES` (production).
+- **Cinq défauts réels découverts en branchant** (pas des régressions de tests) :
+  trames avant admission inencodables (`validate_header`) ; identité PSK de 41 o
+  servant d'identifiant de session OpenSSL (borne 32 o ⇒ « ssl session id too
+  long », poignée de main morte des deux côtés — corrigé par SHA-256 de
+  l'identité) ; **SIGPIPE** tuant le processus sur émission TLS vers un pair fermé
+  (le BIO socket d'OpenSSL n'utilise pas `MSG_NOSIGNAL`) ; connexion morte retirée
+  sans republication ⇒ pair fantôme à l'écran (`prune_dead_connections`) ; lecture
+  unique par tour de poll côté invité ⇒ enregistrements TLS déjà déchiffrés
+  laissés en attente (`SessionState`/`ServiceList` non vus) ; délai de poignée de
+  main annoncé comme « erreur OpenSSL inconnue ».
+- **Preuves exécutées** (`docs/reports/evidence/2026-11-18-etape5-basculement-tls13.txt`) :
+  `unit: 38 cas, 21119 vérifications, 0 échec` (dont `hmac_sha256_matches_rfc4231`
+  et `challenge_response_codec_and_derivation`) ; `platform: 20 cas, 760
+  vérifications, 0 échec` ; `ipv6: 2 cas, 41 vérifications` ; `TEST SUMMARY
+  passed=15 skipped=0` ; `TEST_EXIT=0`. Nouveaux cas :
+  `control_plane_challenge_response_gates_admission` (protocole parlé à la main :
+  clair refusé, défi réel de 32 o, preuve forgée refusée et comptée, preuve exacte
+  ⇒ notice puis plus aucune trame claire lisible, et **le client brut qui ne fait
+  pas la poignée de main n'est jamais admis** — capturer la notice ne donne rien) ;
+  `lan_control_wire_never_carries_secrets` (relais octet-par-octet : 2558 octets
+  observés, ni code texte ni code binaire, ni secret de reprise, ni messages, ni
+  libellés de dérivation) ; `host_refuses_session_without_tls_runtime`.
+  Auto-test renforcé : `PASS tls-host-refusal-proof` exige dans la même capture
+  `[PASS] host_refuses_session_without_tls_runtime`, `host-refusal-proof:` et
+  `host-cleared-proof: …clair` ; `platform: 16 cas, 693 vérifications, 0 échec`
+  avec `DEVLINK_TLS_LIBRARY_PATH` introuvable, `SKIP tls13` (SKIP ≠ PASS),
+  `SELFTEST_EXIT=0`. Capture de fil réelle : Hello/Challenge/Proof/Notice en
+  `50 4c 50 54` (« PLPT ») puis enregistrements `16`/`14`/`17` avec suite `13 01`.
+- **Limites assumées** : pas de confidentialité persistante (PSK dérivé d'un
+  secret à durée de vie longue) ; code dictable à 80 bits protégé contre le
+  cassage hors ligne par HMAC+nonce et contre la devinette en ligne par les
+  limites de tentatives existantes — un PAKE (SPAKE2/OPAQUE) resterait plus
+  robuste, à instruire ; fenêtre claire initiale sans secret (un attaquant actif
+  peut couper, pas lire ni se substituer) ; Windows toujours
+  IMPLEMENTED_BUT_NOT_VERIFIED (fabrique TLS indisponible ⇒ refus honnête).

@@ -14,8 +14,9 @@
 //     kTransportInterfaceVersion (ADR-016) ; les fabriques la publient, les
 //     tests la contrôlent.
 //
-// Le canal historique `secure_channel` (XOR + HMAC maison) reste en MIGRATION,
-// lié aux tests seulement, jusqu'au basculement du plan de contrôle (étape 5).
+// Le canal historique `secure_channel` (XOR + HMAC maison) a été SUPPRIMÉ du
+// dépôt au basculement du plan de contrôle sur TLS 1.3 (étape 5, ADR-017) :
+// plus aucune crypto maison n'est liée, ni en production ni dans les tests.
 #include <cstdint>
 #include <memory>
 #include <span>
