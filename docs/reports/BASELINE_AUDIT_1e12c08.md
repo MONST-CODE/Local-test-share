@@ -402,3 +402,34 @@ attendant une chaîne terminée par zéro (plage `[begin, end)` explicite, aucun
   robuste, à instruire ; fenêtre claire initiale sans secret (un attaquant actif
   peut couper, pas lire ni se substituer) ; Windows toujours
   IMPLEMENTED_BUT_NOT_VERIFIED (fabrique TLS indisponible ⇒ refus honnête).
+
+## 14. Étape 8 — publications atomiques vers `releases/`, SHA-256 publié, jamais d'écrasement muet, 18 novembre 2026
+
+- **Non-conformité traitée** : aucun répertoire `releases/` à la racine ; les
+  archives restaient sous `out/packages/`, écrasées sans garde et non
+  vérifiables par un tiers (§8 du plan).
+- **Mécanique commune** (`publish_release` dans `build.sh`, `:publish_release`
+  dans `build.bat`) : écriture `<archive>.partial`, intégrité lue de bout en
+  bout AVANT publication (`tar -tzf` / `unzip -tq` / `tar.exe -tf`), SHA-256
+  calculée puis publiée dans `<archive>.sha256` au format `sha256sum -c`
+  (Windows : certutil + recontrôle final après renommage), renommage atomique,
+  cible refusée hors de `releases/`. Une archive déjà publiée dont l'empreinte
+  diffère provoque un échec EXPLICITE avec les deux empreintes — le pire défaut
+  possible (remplacer une archive publiée) est rendu impossible silencieusement.
+- **`package` vérifie ce qui sera reçu** : extraction de preuve, comparaisons
+  octet par octet et exécution smoke portent désormais sur l'archive PUBLIÉE
+  dans `releases/`, pas sur l'étape intermédiaire.
+- **`clean` ne touche jamais `releases/`** : la branche n'énumère que
+  `out/{debug,release,tests,packages,doctor}` ; démontré par une preuve NON
+  VIDE (quelque chose doit réellement disparaître sous `out/`, sinon la
+  préservation serait prouvée par rien) puis survie des artefacts publiés.
+- **Auto-test** : `PASS release-publish-proof` (publication réelle d'une fixture,
+  empreinte revérifiée, absence de `.partial`) + deux contrôles négatifs exigés
+  (contenu différent sous le même nom refusé avec original intact ; archive
+  illisible jamais acceptée, sans résidu) ; `PASS clean-preserves-releases-proof`.
+  Sorties réelles : `docs/reports/evidence/2026-11-18-etape8-packaging-releases.txt`.
+- **Dépôt propre** : `releases/.gitignore` ignore `*.tar.gz`, `*.zip`, `*.partial` ;
+  seules les empreintes `*.sha256` et le mode d'emploi sont versionnés.
+- **Limite assumée** : le côté Windows (`:publish_release`, tar.exe/certutil/
+  move) suit exactement la procédure prouvée côté bash mais reste
+  IMPLEMENTED_BUT_NOT_VERIFIED depuis Linux (même convention qu'ADR-016).

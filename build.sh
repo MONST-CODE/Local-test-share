@@ -576,6 +576,51 @@ fuzz() {
     run "$BIN/devlink-fuzz-envelope" -runs=20000 -seed=20261113 -max_len=4096 -timeout=2 "-artifact_prefix=$DIR/" "$DIR/corpus"
     notice 'PASS native libFuzzer + ASan/UBSan: 20000 executions'
 }
+# Publication d'une archive vers releases/ (mandat §8, etape 8) :
+# - ecriture vers <archive>.partial, JAMAIS directement au nom final ;
+# - integrite lue de bout en bout AVANT publication (listing de l'archive) ;
+# - SHA-256 calculee puis publiee dans <archive>.sha256 (verifiable par
+#   « cd releases && sha256sum -c <archive>.sha256 ») ;
+# - renommage atomique : un lecteur ne voit jamais une archive tronquee ;
+# - une archive deja publiee dont l'empreinte differe n'est JAMAIS ecrasee
+#   silencieusement : echec explicite avec les deux empreintes ;
+# - la cible doit se trouver SOUS releases/, refuse ailleurs.
+publish_release() {
+    local source="$1" target="$2"
+    [[ -f $source && ! -L $source ]] || fail "publish_release: archive source absente : $source"
+    [[ $target == "$ROOT"/releases/* ]] || fail "publish_release: cible hors de releases/ : $target"
+    mkdir -p -- "$(dirname -- "$target")"
+    local partial="$target.partial" sidecar="$target.sha256" sidecar_partial="$target.sha256.partial"
+    rm -f -- "$partial" "$sidecar_partial"
+    if ! run cp -- "$source" "$partial"; then rm -f -- "$partial"; fail "publish_release: copie impossible vers $partial"; fi
+    case "$target" in
+        *.tar.gz) if ! run tar -tzf "$partial" > /dev/null; then rm -f -- "$partial"; fail "publish_release: archive illisible (tar) : $(basename -- "$target")"; fi;;
+        *.zip)    if ! run unzip -tq "$partial" > /dev/null; then rm -f -- "$partial"; fail "publish_release: archive illisible (zip) : $(basename -- "$target")"; fi;;
+        *) rm -f -- "$partial"; fail "publish_release: format d'archive non reconnu : $target";;
+    esac
+    local hash; hash=$(sha256sum "$partial"); hash=${hash%% *}
+    printf '%s  %s\n' "$hash" "$(basename -- "$target")" > "$sidecar_partial"
+    if [[ -e $target ]]; then
+        local existing; existing=$(sha256sum "$target"); existing=${existing%% *}
+        if [[ $existing != "$hash" ]]; then
+            rm -f -- "$partial" "$sidecar_partial"
+            fail "publish_release: $(basename -- "$target") existe deja avec une empreinte differente — aucun ecrasement silencieux (existant=$existing nouveau=$hash)"
+        fi
+        rm -f -- "$partial"
+        run mv -- "$sidecar_partial" "$sidecar"
+        say "RELEASE INCHANGEE : $target (empreinte identique, deja publiee)"
+        return 0
+    fi
+    run mv -- "$partial" "$target"        # renommage atomique, meme systeme de fichiers
+    run mv -- "$sidecar_partial" "$sidecar"
+    if ! (cd -- "$(dirname -- "$target")" && run sha256sum -c -- "$(basename -- "$sidecar")"); then
+        fail "publish_release: verification de l'empreinte publiee en echec : $target"
+    fi
+    [[ ! -e $partial && ! -e $sidecar_partial ]] || fail "publish_release: fichiers partiels restants apres publication"
+    say "RELEASE PUBLIEE : $target"
+    notice "PACKAGE SHA256 $hash $(basename -- "$target")"
+}
+
 package() {
     (( ! HEADLESS && ! CORE_ONLY )) || fail 'package requires the full native desktop, not a headless/core-only profile'
     fresh "$OUT/packages"
@@ -591,9 +636,14 @@ package() {
     run cp third_party/DEPENDENCIES.md "$stage/DevLink/docs/"
     run cp third_party/licenses/SDL3.txt third_party/licenses/ImGui.txt third_party/licenses/Bundled-notices.txt "$stage/DevLink/licenses/"
     run tar -czf "$archive" -C "$stage" DevLink
-    run sha256sum "$archive"
-    local package_hash; package_hash=$(sha256sum "$archive"); notice "PACKAGE SHA256 $package_hash"
-    local check="$OUT/packages/check"; fresh "$check"; run tar -xzf "$archive" -C "$check"
+    # Etape 8 (mandat) : publication ATOMIQUE vers releases/ — ecriture .partial,
+    # integrite et SHA-256 verifiees AVANT le renommage, jamais d'ecrasement muet.
+    local published="$ROOT/releases/DevLink-$version-linux-x64.tar.gz"
+    publish_release "$archive" "$published"
+    local check="$OUT/packages/check"; fresh "$check"
+    # L'extraction de preuve porte sur l'archive PUBLIEE : c'est celle-la qu'un
+    # tiers telecharge, pas l'etape intermediaire sous out/.
+    run tar -xzf "$published" -C "$check"
     run cmp "$BIN/devlink-monitor" "$check/DevLink/bin/devlink-monitor"
     run cmp "$BIN/devlink-desktop" "$check/DevLink/bin/devlink-desktop"
     run cmp "$BIN/libSDL3.so.0" "$check/DevLink/bin/libSDL3.so.0"
@@ -607,7 +657,7 @@ package() {
     cat "$OUT/packages/runtime-dependencies.txt"
     local runtime_info; runtime_info=$(cat "$OUT/packages/runtime-dependencies.txt")
     notice "runtime dependencies: ${runtime_info//$'\n'/%0A}"
-    say "PACKAGE SUCCESS $archive (development archive, host glibc/libstdc++/X11 required)"; notice 'PASS native Release package extracted and executed'
+    say "PACKAGE SUCCESS $published (empreinte publiee : $published.sha256 ; development archive, host glibc/libstdc++/X11 required)"; notice 'PASS native Release package extracted and executed'
 }
 selftest() {
     # Exercise this very script as a child, after releasing our lock. No helper build engine.
@@ -652,8 +702,47 @@ selftest() {
         || fail 'selftest TLS: chemin clair assume non etiquette'
     say 'PASS tls-host-refusal-proof'
     notice 'PASS tls-host-refusal-proof'
-    say 'SELFTEST PASS: missing compiler, compilation, linking and archive hash failures propagate; no stale successful output'
-    notice 'SELFTEST PASS: compiler/compile/link/hash failure propagation'
+    # Publication releases/ (mandat §8, etape 8) : ecriture .partial puis
+    # renommage atomique, SHA-256 publiee et revérifiable, aucun ecrasement
+    # silencieux, aucune archive illisible acceptee. Preuve sur une archive
+    # synthetique : la mecanique est la MEME fonction que le package reel.
+    local rel="$ROOT/releases"
+    fresh "$DIR/release-proof"; printf 'archive de preuve DevLink\n' > "$DIR/release-proof/payload.txt"
+    run tar -czf "$DIR/release-proof/fixture.tar.gz" -C "$DIR/release-proof" payload.txt
+    publish_release "$DIR/release-proof/fixture.tar.gz" "$rel/DevLink-selftest-fixture.tar.gz"
+    [[ -f $rel/DevLink-selftest-fixture.tar.gz ]] || fail 'release proof: archive publiee absente'
+    [[ ! -e $rel/DevLink-selftest-fixture.tar.gz.partial ]] || fail 'release proof: fichier .partial reste apres publication'
+    [[ -f $rel/DevLink-selftest-fixture.tar.gz.sha256 ]] || fail 'release proof: empreinte SHA-256 non publiee'
+    (cd -- "$rel" && run sha256sum -c -- DevLink-selftest-fixture.tar.gz.sha256) || fail 'release proof: empreinte publiee invérifiable'
+    # Negatif : un contenu DIFFERENT sous le meme nom est refuse et l'original
+    # reste intact (controle : son empreinte publiee verifie toujours).
+    printf 'archive de preuve modifiee\n' > "$DIR/release-proof/payload.txt"
+    run tar -czf "$DIR/release-proof/changed.tar.gz" -C "$DIR/release-proof" payload.txt
+    rc=0; ( publish_release "$DIR/release-proof/changed.tar.gz" "$rel/DevLink-selftest-fixture.tar.gz" ) || rc=$?
+    (( rc != 0 )) || fail 'release proof: ecrasement silencieux accepte (pire defaut possible)'
+    (cd -- "$rel" && run sha256sum -c -- DevLink-selftest-fixture.tar.gz.sha256) || fail 'release proof: original altere par une tentative refusee'
+    # Negatif : une archive illisible n'entre JAMAIS dans releases/, sans residu.
+    printf 'ceci n est pas une archive\n' > "$DIR/release-proof/broken.tar.gz"
+    rc=0; ( publish_release "$DIR/release-proof/broken.tar.gz" "$rel/DevLink-selftest-broken.tar.gz" ) || rc=$?
+    (( rc != 0 )) || fail 'release proof: archive illisible publiee'
+    [[ ! -e $rel/DevLink-selftest-broken.tar.gz && ! -e $rel/DevLink-selftest-broken.tar.gz.sha256 ]] \
+        || fail 'release proof: residus de publication refusee dans releases/'
+    [[ -z $(find "$rel" -name '*.partial' -print -quit) ]] || fail 'release proof: fichier .partial abandonne dans releases/'
+    say 'PASS release-publish-proof'
+    notice 'PASS release-publish-proof'
+    # clean ne touche JAMAIS releases/ : preuve NON VIDE — quelque chose est bien
+    # nettoye sous out/ (sinon la preservation serait demontree par rien), puis
+    # les artefacts publies survivent au nettoyage.
+    [[ -e $OUT/tests/negative ]] || fail 'clean proof: fixture de nettoyage absante, preuve impossible'
+    DEVLINK_EXPECT_FAILURE=0 "$ROOT/build.sh" clean > "$OUT/logs/selftest-clean.log" 2>&1 || fail 'clean proof: ./build.sh clean a echoue'
+    [[ ! -e $OUT/tests/negative ]] || fail 'clean proof: clean na rien nettoye — preuve de preservation vide'
+    [[ -f $rel/DevLink-selftest-fixture.tar.gz && -f $rel/DevLink-selftest-fixture.tar.gz.sha256 ]] \
+        || fail 'clean proof: releases/ touche par clean (artefacts detruits)'
+    rm -f -- "$rel"/DevLink-selftest-fixture.tar.gz "$rel"/DevLink-selftest-fixture.tar.gz.sha256
+    say 'PASS clean-preserves-releases-proof'
+    notice 'PASS clean-preserves-releases-proof'
+    say 'SELFTEST PASS: missing compiler, compilation, linking, archive hash and release publishing failures propagate; clean never touches releases/; no stale successful output'
+    notice 'SELFTEST PASS: compiler/compile/link/hash/release-publish failure propagation'
 }
 case "$ACTION" in
     deps) plain_directory "$DEPS"; mkdir -p "$DEPS"; if (( FETCH )); then
@@ -667,6 +756,6 @@ case "$ACTION" in
     fuzz) fuzz;;
     package) package;;
     selftest) selftest;;
-    clean) for name in debug release tests packages doctor; do plain_directory "$OUT/$name"; if [[ -e $OUT/$name ]]; then run rm -rf -- "$OUT/$name"; fi; done; say 'CLEAN SUCCESS: compiled outputs removed; verified archives and logs retained';;
+    clean) for name in debug release tests packages doctor; do plain_directory "$OUT/$name"; if [[ -e $OUT/$name ]]; then run rm -rf -- "$OUT/$name"; fi; done; say 'CLEAN SUCCESS: compiled outputs removed; releases/ untouched; logs and dependencies retained';;
 esac
 say "SUCCESS operation=$ACTION log=$LOG"

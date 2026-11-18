@@ -1021,9 +1021,15 @@ call :run "%TAR%" -a -cf "%ARCHIVE%" -C "%STAGE%" DevLink
 if errorlevel 1 exit /b
 call :run "%SystemRoot%\System32\certutil.exe" -hashfile "%ARCHIVE%" SHA256
 if errorlevel 1 exit /b
+rem Etape 8 (mandat) : publication ATOMIQUE vers releases/ — ecriture .partial,
+rem integrite et SHA-256 verifiees AVANT le renommage, jamais d'ecrasement muet.
+rem Memes garanties que publish_release de build.sh (Linux).
+set "PUBLISHED=%ROOT%\releases\DevLink-%PRODUCT_VERSION%-windows-ucrt64-x64.zip"
+call :publish_release "%ARCHIVE%" "%PUBLISHED%" || exit /b
 call :notice_file "%CMDLOG%"
 call :fresh "%OUT%\packages\check" || exit /b
-call :run "%TAR%" -xf "%ARCHIVE%" -C "%OUT%\packages\check"
+rem L'extraction de preuve porte sur l'archive PUBLIEE : celle qu'un tiers recoit.
+call :run "%TAR%" -xf "%PUBLISHED%" -C "%OUT%\packages\check"
 if errorlevel 1 exit /b
 for %%F in ("%STAGE%\DevLink\bin\*.exe" "%STAGE%\DevLink\bin\*.dll") do (
   call :run fc.exe /b "%%~fF" "%OUT%\packages\check\DevLink\bin\%%~nxF"
@@ -1050,13 +1056,62 @@ if errorlevel 1 exit /b
 if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows::PASS UCRT64 Release ZIP extracted and executed using native Windows video with system-only PATH
 exit /b 0
 
+rem Publication d'une archive vers releases/ (mandat 8, identique a build.sh) :
+rem   ecriture <cible>.partial, integrite lue de bout en bout, SHA-256 publiee
+rem   dans <cible>.sha256, renommage atomique, aucun ecrasement silencieux,
+rem   cible refusee hors de %ROOT%\releases. IMPLEMENTED_BUT_NOT_VERIFIED depuis
+rem   Linux : la mecanique est prouvee cote bash (auto-test release-publish-proof) ;
+rem   cette copie batch suit exactement la meme procedure avec tar/certutil/move.
+:publish_release
+set "PR_SRC=%~1"
+set "PR_DST=%~2"
+if not exist "%ROOT%\releases" mkdir "%ROOT%\releases"
+if not exist "%PR_SRC%" (call :problem "publish_release: archive source absente : %PR_SRC%"& exit /b 2)
+echo "%PR_DST%" | findstr /I /B /C:"%ROOT%\releases\" >NUL
+if errorlevel 1 (call :problem "publish_release: cible hors de releases/ : %PR_DST%"& exit /b 2)
+for %%T in ("%PR_DST%") do set "PR_BASE=%%~nxT"
+set "PR_PARTIAL=%PR_DST%.partial"
+set "PR_SIDECAR=%PR_DST%.sha256"
+set "PR_SIDE_PARTIAL=%PR_DST%.sha256.partial"
+del /f /q "%PR_PARTIAL%" "%PR_SIDE_PARTIAL%" 2>NUL
+call :run copy /y "%PR_SRC%" "%PR_PARTIAL%" >NUL
+if errorlevel 1 exit /b
+call :run "%TAR%" -tf "%PR_PARTIAL%" >NUL
+if errorlevel 1 (del /f /q "%PR_PARTIAL%" 2>NUL & call :problem "publish_release: archive illisible : %PR_BASE%"& exit /b 2)
+set "PR_HASH="
+for /f "tokens=* delims=" %%H in ('certutil.exe -hashfile "%PR_PARTIAL%" SHA256 ^| findstr /V /C:"CertUtil"') do set "PR_HASH=%%H"
+if "%PR_HASH%"=="" (del /f /q "%PR_PARTIAL%" 2>NUL & call :problem "publish_release: SHA-256 introuvable via certutil"& exit /b 2)
+> "%PR_SIDE_PARTIAL%" echo %PR_HASH%  %PR_BASE%
+if exist "%PR_DST%" (
+  set "PR_EXIST="
+  for /f "tokens=* delims=" %%H in ('certutil.exe -hashfile "%PR_DST%" SHA256 ^| findstr /V /C:"CertUtil"') do set "PR_EXIST=%%H"
+)
+if defined PR_EXIST if /I not "%PR_EXIST%"=="%PR_HASH%" (
+  del /f /q "%PR_PARTIAL%" "%PR_SIDE_PARTIAL%" 2>NUL
+  call :problem "publish_release: %PR_BASE% existe deja avec une empreinte differente - aucun ecrasement silencieux"
+  exit /b 2
+)
+if defined PR_EXIST del /f /q "%PR_PARTIAL%" 2>NUL & goto :pr_sidecar_only
+move /y "%PR_PARTIAL%" "%PR_DST%" >NUL
+if errorlevel 1 (del /f /q "%PR_PARTIAL%" 2>NUL & call :problem "publish_release: renommage atomique impossible"& exit /b 2)
+:pr_sidecar_only
+move /y "%PR_SIDE_PARTIAL%" "%PR_SIDECAR%" >NUL
+if errorlevel 1 (call :problem "publish_release: publication de l'empreinte impossible"& exit /b 2)
+set "PR_FINAL="
+for /f "tokens=* delims=" %%H in ('certutil.exe -hashfile "%PR_DST%" SHA256 ^| findstr /V /C:"CertUtil"') do set "PR_FINAL=%%H"
+if /I not "%PR_FINAL%"=="%PR_HASH%" (call :problem "publish_release: empreinte finale != empreinte calculee"& exit /b 2)
+if exist "%PR_PARTIAL%" (call :problem "publish_release: fichier .partial restant"& exit /b 2)
+echo RELEASE PUBLIEE %PR_DST%
+if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows::PACKAGE SHA256 %PR_HASH% %PR_BASE%
+exit /b 0
+
 :clean_action
 for %%D in (debug release tests packages doctor) do (
   call :plain_directory "%OUT%\%%D" || exit /b
   if exist "%OUT%\%%D" rmdir /s /q "%OUT%\%%D"
   if exist "%OUT%\%%D" (call :problem "clean failed for %%D"& exit /b 1)
 )
-echo CLEAN SUCCESS: compiled outputs removed. Verified archives and logs retained.
+echo CLEAN SUCCESS: compiled outputs removed. releases/ untouched; logs and dependencies retained.
 exit /b 0
 
 :selftest

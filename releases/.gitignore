@@ -1,0 +1,7 @@
+# Étape 8 (mandat) : les archives binaires publiées restent hors du dépôt ;
+# leurs empreintes et ce mode d'emploi sont versionnés pour la traçabilité.
+*.tar.gz
+*.zip
+*.partial
+!.gitignore
+!README.md
