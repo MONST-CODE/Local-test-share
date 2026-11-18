@@ -306,9 +306,11 @@ void protocol_golden_and_bounds() {
         auto corrupt = encoded.value(); corrupt[offset] = 0xFF; CHECK(!decode_envelope(corrupt));
     }
     // Même majeur obligatoire, révision mineure inférieure ou égale acceptée.
-    // 1.2 porte le secret de reprise ; 1.3 n'existe pas et doit être refusé.
+    // 1.3 porte l'upgrade TLS en cours de connexion (TlsUpgrade, ADR-016) ;
+    // 1.4 n'existe pas et doit être refusé.
     CHECK(negotiate_version(1, 0)); CHECK(negotiate_version(1, 1)); CHECK(negotiate_version(1, 2));
-    CHECK(!negotiate_version(1, 3)); CHECK(!negotiate_version(2, 0)); CHECK(!negotiate_version(0, 1));
+    CHECK(negotiate_version(1, 3));
+    CHECK(!negotiate_version(1, 4)); CHECK(!negotiate_version(2, 0)); CHECK(!negotiate_version(0, 1));
     e.payload.resize(8193); CHECK(!encode_envelope(e));
     e = chat(); e.type = static_cast<MessageType>(999); CHECK(!encode_envelope(e));
     e = chat(); e.flags = 1; CHECK(!encode_envelope(e));

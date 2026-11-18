@@ -289,6 +289,31 @@ int psk_find_session_server(SslObject* ssl, const unsigned char* identity,
     return 1;
 }
 
+// Contexte serveur ou client complet (bornes proto, suite épinglée, callback
+// PSK du bon côté). Un seul endroit : accept, connect et les deux wrap ne
+// peuvent pas diverger sur la politique TLS.
+Result<SslContext*> make_tls_context(const OpenSslApi& api, const TlsPolicy& policy, bool server) {
+    SslContext* context = api.ssl_ctx_new(server ? api.tls_server_method() : api.tls_client_method());
+    if (context == nullptr) {
+        return Result<SslContext*>::failure(Error{ErrorCode::Internal,
+            std::string("SSL_CTX_new ") + (server ? "serveur" : "client") + " : " + openssl_last_error(api),
+            "tls contexte", 0});
+    }
+    const std::uint16_t min_version = server ? kTls13Version : policy.min_version;
+    const std::uint16_t max_version = server ? kTls13Version : policy.max_version;
+    if (!set_ctx_proto_range(api, context, min_version, max_version) ||
+        api.ssl_ctx_set_ciphersuites(context, kPinnedCipherSuite) != 1) {
+        const std::string diagnostic = openssl_last_error(api);
+        api.ssl_ctx_free(context);
+        return Result<SslContext*>::failure(Error{ErrorCode::Internal,
+            std::string("contexte TLS ") + (server ? "serveur" : "client") + " : " + diagnostic,
+            "tls contexte", 0});
+    }
+    if (server) api.ssl_ctx_set_psk_find_session_callback(context, psk_find_session_server);
+    else api.ssl_ctx_set_psk_use_session_callback(context, psk_use_session_client);
+    return Result<SslContext*>::success(context);
+}
+
 Result<std::string> validate_credentials(const TransportCredentials& credentials) {
     if (credentials.identity.empty()) {
         return Result<std::string>::failure(Error{ErrorCode::InvalidArgument, "identite PSK vide", "transport tls", 0});
@@ -321,6 +346,13 @@ public:
                 static_cast<int>(data.size() - total));
             if (written <= 0) {
                 const int err = api_->ssl_get_error(ssl_, written);
+                if (err == kSslErrorWantRead || err == kSslErrorWantWrite) {
+                    // Descripteur non bloquant (contrat v2) : l'écrit part, le
+                    // reste suivra au prochain tour de poll.
+                    if (total > 0) return Result<std::size_t>::success(total);
+                    return Result<std::size_t>::failure(Error{ErrorCode::WouldBlock,
+                        "canal tls non bloquant plein", "send tls", err});
+                }
                 return Result<std::size_t>::failure(Error{ErrorCode::IoError,
                     "SSL_write err=" + std::to_string(err) + " " + openssl_last_error(*api_), "send tls", err});
             }
@@ -336,6 +368,10 @@ public:
         const int got = api_->ssl_read(ssl_, out.data(), static_cast<int>(out.size()));
         if (got > 0) return Result<std::size_t>::success(static_cast<std::size_t>(got));
         const int err = api_->ssl_get_error(ssl_, got);
+        if (err == kSslErrorWantRead || err == kSslErrorWantWrite) {
+            return Result<std::size_t>::failure(Error{ErrorCode::WouldBlock,
+                "rien a lire sur le canal tls maintenant", "receive tls", err});
+        }
         if (got == 0 || err == kSslErrorZeroReturn) {
             return Result<std::size_t>::failure(Error{ErrorCode::Disconnected,
                 "pair tls deconnecte (fin propre)", "receive tls", err});
@@ -375,6 +411,11 @@ public:
         return info;
     }
 
+    TransportDescriptor descriptor() const override {
+        return fd_ == detail::kInvalidSocket ? TransportDescriptor{-1}
+            : static_cast<TransportDescriptor>(fd_);
+    }
+
     void mark_authenticated() { authenticated_ = true; }
 
 private:
@@ -396,20 +437,12 @@ public:
         auto accepted = detail::accept_one(listener_);
         if (!accepted) return Result<std::unique_ptr<ITransportChannel>>::failure(accepted.error());
         const detail::socket_t fd = accepted.value();
-        SslContext* context = api_->ssl_ctx_new(api_->tls_server_method());
-        if (context == nullptr) {
+        auto made = make_tls_context(*api_, TlsPolicy{}, true);
+        if (!made) {
             detail::close_socket(fd);
-            return Result<std::unique_ptr<ITransportChannel>>::failure(Error{ErrorCode::Internal,
-                "SSL_CTX_new serveur : " + openssl_last_error(*api_), "accept tls", 0});
+            return Result<std::unique_ptr<ITransportChannel>>::failure(made.error());
         }
-        if (!set_ctx_proto_range(*api_, context, kTls13Version, kTls13Version) ||
-            api_->ssl_ctx_set_ciphersuites(context, kPinnedCipherSuite) != 1) {
-            api_->ssl_ctx_free(context);
-            detail::close_socket(fd);
-            return Result<std::unique_ptr<ITransportChannel>>::failure(Error{ErrorCode::Internal,
-                "contexte TLS serveur : " + openssl_last_error(*api_), "accept tls", 0});
-        }
-        api_->ssl_ctx_set_psk_find_session_callback(context, psk_find_session_server);
+        SslContext* context = made.value();
         SslObject* ssl = api_->ssl_new(context);
         if (ssl == nullptr) {
             api_->ssl_ctx_free(context);
@@ -491,20 +524,12 @@ public:
         if (!checked) return Result<std::unique_ptr<ITransportChannel>>::failure(checked.error());
         auto fd = detail::make_tcp_connection(address, port);
         if (!fd) return Result<std::unique_ptr<ITransportChannel>>::failure(fd.error());
-        SslContext* context = api.ssl_ctx_new(api.tls_client_method());
-        if (context == nullptr) {
+        auto made = make_tls_context(api, policy_, false);
+        if (!made) {
             detail::close_socket(fd.value());
-            return Result<std::unique_ptr<ITransportChannel>>::failure(Error{ErrorCode::Internal,
-                "SSL_CTX_new client : " + openssl_last_error(api), "tls connect", 0});
+            return Result<std::unique_ptr<ITransportChannel>>::failure(made.error());
         }
-        if (!set_ctx_proto_range(api, context, policy_.min_version, policy_.max_version) ||
-            api.ssl_ctx_set_ciphersuites(context, kPinnedCipherSuite) != 1) {
-            api.ssl_ctx_free(context);
-            detail::close_socket(fd.value());
-            return Result<std::unique_ptr<ITransportChannel>>::failure(Error{ErrorCode::Internal,
-                "contexte TLS client : " + openssl_last_error(api), "tls connect", 0});
-        }
-        api.ssl_ctx_set_psk_use_session_callback(context, psk_use_session_client);
+        SslContext* context = made.value();
         SslObject* ssl = api.ssl_new(context);
         if (ssl == nullptr) {
             api.ssl_ctx_free(context);
@@ -533,7 +558,86 @@ public:
         return Result<std::unique_ptr<ITransportChannel>>::success(std::move(channel));
     }
 
+    Result<std::unique_ptr<ITransportChannel>> wrap_server(
+        TransportDescriptor connected, const TransportCredentials& credentials,
+        std::uint32_t handshake_timeout_ms) override {
+        return wrap_handshake(connected, credentials, handshake_timeout_ms, true);
+    }
+
+    Result<std::unique_ptr<ITransportChannel>> wrap_client(
+        TransportDescriptor connected, const TransportCredentials& credentials,
+        std::uint32_t handshake_timeout_ms) override {
+        return wrap_handshake(connected, credentials, handshake_timeout_ms, false);
+    }
+
 private:
+    // Upgrade d'une connexion TCP déjà établie (basculement étape 5) : poignée
+    // de main bornée par délais socket bloquants temporaires, puis canal NON
+    // bloquant. Le descripteur est toujours pris en charge (fermé) en cas
+    // d'échec : aucun double close chez l'appelant.
+    Result<std::unique_ptr<ITransportChannel>> wrap_handshake(
+        TransportDescriptor connected, const TransportCredentials& credentials,
+        std::uint32_t handshake_timeout_ms, bool server) const {
+        const OpenSslApi& api = openssl_api();
+        if (!api.loaded) {
+            return Result<std::unique_ptr<ITransportChannel>>::failure(
+                Error{ErrorCode::Unsupported, api.failure, "tls wrap", 0});
+        }
+        auto checked = validate_credentials(credentials);
+        if (!checked) return Result<std::unique_ptr<ITransportChannel>>::failure(checked.error());
+        if (connected < 0) {
+            return Result<std::unique_ptr<ITransportChannel>>::failure(
+                Error{ErrorCode::InvalidArgument, "descripteur invalide a adopter", "tls wrap", 0});
+        }
+        const detail::socket_t fd = static_cast<detail::socket_t>(connected);
+        const std::uint32_t timeout = handshake_timeout_ms == 0 ? 5000 : handshake_timeout_ms;
+        if (!detail::set_socket_timeouts_ms(fd, timeout)) {
+            detail::close_socket(fd);
+            return Result<std::unique_ptr<ITransportChannel>>::failure(Error{ErrorCode::PlatformError,
+                detail::socket_error_text(detail::socket_error()), "tls wrap delais", 0});
+        }
+        auto made = make_tls_context(api, policy_, server);
+        if (!made) {
+            detail::close_socket(fd);
+            return Result<std::unique_ptr<ITransportChannel>>::failure(made.error());
+        }
+        SslContext* context = made.value();
+        SslObject* ssl = api.ssl_new(context);
+        if (ssl == nullptr) {
+            const std::string diagnostic = openssl_last_error(api);
+            api.ssl_ctx_free(context);
+            detail::close_socket(fd);
+            return Result<std::unique_ptr<ITransportChannel>>::failure(Error{ErrorCode::Internal,
+                "SSL_new upgrade : " + diagnostic, "tls wrap", 0});
+        }
+        api.ssl_set_fd(ssl, static_cast<int>(fd));
+        g_handshake_credentials = &credentials;
+        const int rc = server ? api.ssl_accept(ssl) : api.ssl_connect(ssl);
+        const int err = api.ssl_get_error(ssl, rc);
+        g_handshake_credentials = nullptr;
+        if (rc != 1) {
+            const std::string diagnostic = openssl_last_error(api);
+            api.ssl_free(ssl);
+            api.ssl_ctx_free(context);
+            detail::close_socket(fd);
+            return Result<std::unique_ptr<ITransportChannel>>::failure(Error{ErrorCode::Unauthorized,
+                "poignee de main TLS 1.3 d'upgrade refusee : " + diagnostic +
+                    " (ssl_error=" + std::to_string(err) + ")",
+                server ? "tls wrap serveur" : "tls wrap client", err});
+        }
+        detail::set_socket_timeouts_ms(fd, 0);
+        if (!detail::set_socket_nonblocking(fd, true)) {
+            api.ssl_free(ssl);
+            api.ssl_ctx_free(context);
+            detail::close_socket(fd);
+            return Result<std::unique_ptr<ITransportChannel>>::failure(Error{ErrorCode::PlatformError,
+                detail::socket_error_text(detail::socket_error()), "tls wrap non bloquant", 0});
+        }
+        auto channel = std::make_unique<TlsChannel>(api, context, ssl, fd);
+        channel->mark_authenticated();
+        return Result<std::unique_ptr<ITransportChannel>>::success(std::move(channel));
+    }
+
     TlsPolicy policy_;
 };
 

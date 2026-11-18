@@ -28,7 +28,14 @@ namespace plpt::net {
 
 // Version de l'interface de transport. Incrémenter à chaque changement de
 // contrat (méthodes, sémantique d'authentification, politique de versions TLS).
-inline constexpr std::uint32_t kTransportInterfaceVersion = 1;
+// v2 (basculement étape 5) : adoption d'un descripteur déjà connecté
+// (wrap_server/wrap_client) pour l'upgrade TLS en cours de connexion, descripteur
+// exposé pour les boucles de poll, et contrat non bloquant explicite
+// (WouldBlock) après poignée de main.
+inline constexpr std::uint32_t kTransportInterfaceVersion = 2;
+
+// Descripteur natif (fd POSIX, SOCKET Windows) transporté de façon portable.
+using TransportDescriptor = std::intptr_t;
 
 // Constantes de protocole TLS (valeurs IANA, pas de magie maison).
 inline constexpr std::uint16_t kTls12Version = 0x0303;
@@ -57,8 +64,14 @@ struct TransportInfo {
     bool peer_authenticated = false; // vrai seulement si le pair a prouvé le secret
 };
 
-// Canal bidirectionnel octet-flux. send/receive sont bloquants ; la fermeture
-// est idempotente. Aucune copie cachée : les spans callers sont respectés.
+// Canal bidirectionnel octet-flux. La fermeture est idempotente ; aucune copie
+// cachée : les spans callers sont respectés.
+// Contrat bloquant/non bloquant : send/receive suivent le mode du descripteur
+// et renvoient ErrorCode::WouldBlock (code explicite, jamais une attente) quand
+// rien n'est disponible sur un descripteur non bloquant. listen/accept/connect
+// conservent un descripteur BLOQUANT (tests, clients simples) ; wrap_server/
+// wrap_client passent le canal NON BLOQUANT après poignée de main : c'est le
+// contrat des boucles de poll du plan de contrôle (basculement étape 5).
 class ITransportChannel {
 public:
     virtual ~ITransportChannel() = default;
@@ -66,6 +79,8 @@ public:
     virtual Result<std::size_t> receive(std::span<std::uint8_t> out) = 0;
     virtual void close() = 0;
     virtual TransportInfo info() const = 0;
+    // Descripteur sous-jacent, pour poll/epoll/WSAPoll : -1 si fermé.
+    virtual TransportDescriptor descriptor() const = 0;
 };
 
 // Point d'écoute : une fabrique produit l'endpoint, l'endpoint produit des
@@ -110,6 +125,17 @@ public:
     virtual Result<std::unique_ptr<ITransportChannel>> connect(
         const std::string& address, std::uint16_t port,
         const TransportCredentials& credentials) = 0;
+    // Adoption d'une connexion TCP DÉJÀ établie (upgrade en cours de session,
+    // étape 5) : la poignée de main se fait sur le descripteur fourni, bornée
+    // par handshake_timeout_ms (délais socket bloquants temporaires), puis le
+    // canal passe non bloquant. La fabrique prend la propriété du descripteur
+    // en cas de succès COMME en cas d'échec (fermé) : jamais de double close.
+    virtual Result<std::unique_ptr<ITransportChannel>> wrap_server(
+        TransportDescriptor connected, const TransportCredentials& credentials,
+        std::uint32_t handshake_timeout_ms) = 0;
+    virtual Result<std::unique_ptr<ITransportChannel>> wrap_client(
+        TransportDescriptor connected, const TransportCredentials& credentials,
+        std::uint32_t handshake_timeout_ms) = 0;
 };
 
 // Fabrique TCP clair : diagnostics et tests uniquement. Le plan de contrôle

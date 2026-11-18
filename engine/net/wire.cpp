@@ -415,6 +415,37 @@ Result<ChatText> decode_chat(std::span<const std::uint8_t> data) {
     return Result<ChatText>::success(std::move(message));
 }
 
+namespace {
+constexpr std::size_t kMaxTlsIdentityBytes = 128;
+constexpr std::size_t kMaxTlsSecretBytes = 256;
+} // namespace
+
+std::vector<std::uint8_t> encode(const TlsUpgradeNotice& message) {
+    PayloadWriter writer;
+    writer.text(message.identity);
+    writer.text(message.shared_secret);
+    return writer.take();
+}
+
+Result<TlsUpgradeNotice> decode_tls_upgrade(std::span<const std::uint8_t> data) {
+    PayloadReader reader(data);
+    TlsUpgradeNotice message;
+    auto identity = reader.text(kMaxTlsIdentityBytes);
+    if (!identity) return Result<TlsUpgradeNotice>::failure(identity.error());
+    auto secret = reader.text(kMaxTlsSecretBytes);
+    if (!secret) return Result<TlsUpgradeNotice>::failure(secret.error());
+    if (auto end = reader.require_end(); !end) return Result<TlsUpgradeNotice>::failure(end.error());
+    message.identity = std::move(identity).value();
+    message.shared_secret = std::move(secret).value();
+    if (message.identity.empty() || message.shared_secret.size() < 16)
+        return Result<TlsUpgradeNotice>::failure({ErrorCode::ProtocolViolation,
+            "upgrade tls : identite vide ou secret trop court", "wire"});
+    if (!control_free(message.identity))
+        return Result<TlsUpgradeNotice>::failure({ErrorCode::InvalidArgument,
+            "upgrade tls : identite invalide", "wire"});
+    return Result<TlsUpgradeNotice>::success(std::move(message));
+}
+
 Result<ByeNotice> decode_bye(std::span<const std::uint8_t> data) {
     PayloadReader reader(data);
     ByeNotice message;

@@ -28,6 +28,11 @@ public:
                 static_cast<int>(data.size() - total), 0);
             if (sent <= 0) {
                 const int code = detail::socket_error();
+                if (detail::would_block_error(code)) {
+                    // Non bloquant : l'existant part, le reste au prochain tour.
+                    if (total > 0) return Result<std::size_t>::success(total);
+                    return Result<std::size_t>::failure(Error{ErrorCode::WouldBlock, "socket clair non bloquante pleine", "send clair", code});
+                }
                 return Result<std::size_t>::failure(Error{ErrorCode::IoError, detail::socket_error_text(code), "send clair", code});
             }
             total += static_cast<std::size_t>(sent);
@@ -45,6 +50,9 @@ public:
         }
         if (got < 0) {
             const int code = detail::socket_error();
+            if (detail::would_block_error(code)) {
+                return Result<std::size_t>::failure(Error{ErrorCode::WouldBlock, "rien a lire sur le canal clair", "receive clair", code});
+            }
             return Result<std::size_t>::failure(Error{ErrorCode::IoError, detail::socket_error_text(code), "receive clair", code});
         }
         return Result<std::size_t>::success(static_cast<std::size_t>(got));
@@ -65,6 +73,11 @@ public:
         info.cipher.clear();
         info.peer_authenticated = false; // jamais d'authentification pretendue
         return info;
+    }
+
+    TransportDescriptor descriptor() const override {
+        return fd_ == detail::kInvalidSocket ? TransportDescriptor{-1}
+            : static_cast<TransportDescriptor>(fd_);
     }
 
 private:
@@ -119,6 +132,33 @@ public:
         if (!fd) return Result<std::unique_ptr<ITransportChannel>>::failure(fd.error());
         return Result<std::unique_ptr<ITransportChannel>>::success(
             std::make_unique<ClearTcpChannel>(fd.value()));
+    }
+
+    // Adoption v2 : pas de poignée de main à faire, le canal clair passe
+    // non bloquant immédiatement (contrat des boucles de poll).
+    Result<std::unique_ptr<ITransportChannel>> wrap_server(
+        TransportDescriptor connected, const TransportCredentials&, std::uint32_t) override {
+        return wrap_adopted(connected);
+    }
+    Result<std::unique_ptr<ITransportChannel>> wrap_client(
+        TransportDescriptor connected, const TransportCredentials&, std::uint32_t) override {
+        return wrap_adopted(connected);
+    }
+
+private:
+    static Result<std::unique_ptr<ITransportChannel>> wrap_adopted(TransportDescriptor connected) {
+        const detail::socket_t fd = static_cast<detail::socket_t>(connected);
+        if (connected < 0) {
+            return Result<std::unique_ptr<ITransportChannel>>::failure(
+                Error{ErrorCode::InvalidArgument, "descripteur invalide a adopter", "wrap clair", 0});
+        }
+        if (!detail::set_socket_nonblocking(fd, true)) {
+            detail::close_socket(fd);
+            return Result<std::unique_ptr<ITransportChannel>>::failure(
+                Error{ErrorCode::PlatformError, detail::socket_error_text(detail::socket_error()), "wrap clair non bloquant", 0});
+        }
+        return Result<std::unique_ptr<ITransportChannel>>::success(
+            std::make_unique<ClearTcpChannel>(fd));
     }
 };
 

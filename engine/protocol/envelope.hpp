@@ -9,7 +9,7 @@ namespace plpt::model {
 // 1.2 : Hello porte le secret de reprise, Auth le délivre. Un pair annonçant une
 // révision mineure inférieure est refusé explicitement par l'hôte (pas de repli
 // muet sur une identité devinée). Aucune révision n'a jamais retiré de champ.
-inline constexpr std::uint16_t kProtocolMajor = 1, kProtocolMinor = 2;
+inline constexpr std::uint16_t kProtocolMajor = 1, kProtocolMinor = 3;
 inline constexpr std::size_t kEnvelopeHeaderBytes = 56;
 // Flux logiques multiplexés dans stream_id. Un seul est réellement utilisé par le
 // partage LAN (Control) ; les autres restent réservés et jamais acceptés en vrac.
@@ -18,7 +18,11 @@ enum class MessageType : std::uint16_t {
     Hello = 1, Auth, SessionControl, InputKeyboard, InputPointer, VideoFrame,
     VideoControl, Chat, Presence, Feedback, Heartbeat, Error,
     // Partage LAN réel (protocole 1.1) : état de session, services autorisés, départ.
-    SessionState = 13, ServiceList = 14, Bye = 15
+    SessionState = 13, ServiceList = 14, Bye = 15,
+    // Protocole 1.3 (étape 5) : dernière trame EN CLAIR d'une connexion admise —
+    // porte l'identité PSK et le secret de session pour l'upgrade TLS 1.3 en
+    // cours de connexion (ADR-016). Jamais envoyée après l'upgrade.
+    TlsUpgrade = 16
 };
 struct Envelope {
     std::uint16_t protocol_major = kProtocolMajor, protocol_minor = kProtocolMinor;

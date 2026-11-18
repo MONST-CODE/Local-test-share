@@ -408,6 +408,12 @@ Socket& Socket::operator=(Socket&& other) noexcept {
     return *this;
 }
 
+NativeSocket Socket::release() {
+    const NativeSocket handle = handle_;
+    handle_ = kInvalidSocket;
+    return handle;
+}
+
 void Socket::close() {
     if (handle_ == kInvalidSocket) return;
     destroy(raw(handle_));

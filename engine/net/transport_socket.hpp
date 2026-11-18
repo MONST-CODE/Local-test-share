@@ -14,8 +14,10 @@
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 #endif
 
@@ -42,6 +44,44 @@ inline std::string socket_error_text(int code) {
     return "winsock error " + std::to_string(code);
 #else
     return std::string("errno ") + std::to_string(code) + " (" + std::strerror(code) + ")";
+#endif
+}
+
+// Mode non bloquant : contrat v2 des canaux adoptés (wrap_*), utilisé par les
+// boucles de poll du plan de contrôle. Echec = faux, errno/WSA conservés.
+inline bool set_socket_nonblocking(socket_t fd, bool enabled) {
+#ifdef _WIN32
+    u_long mode = enabled ? 1ul : 0ul;
+    return ::ioctlsocket(fd, FIONBIO, &mode) == 0;
+#else
+    const int flags = ::fcntl(fd, F_GETFL, 0);
+    if (flags < 0) return false;
+    const int wanted = enabled ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
+    return ::fcntl(fd, F_SETFL, wanted) == 0;
+#endif
+}
+
+// Délais bloquants temporaires (poignée de main sur descripteur adopté) ;
+// ms == 0 rend le descripteur à nouveau sans délai.
+inline bool set_socket_timeouts_ms(socket_t fd, std::uint32_t ms) {
+#ifdef _WIN32
+    const DWORD value = ms;
+    return ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&value), sizeof(value)) == 0 &&
+        ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&value), sizeof(value)) == 0;
+#else
+    timeval tv{};
+    tv.tv_sec = static_cast<time_t>(ms / 1000u);
+    tv.tv_usec = static_cast<suseconds_t>((ms % 1000u) * 1000u);
+    return ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == 0 &&
+        ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) == 0;
+#endif
+}
+
+inline bool would_block_error(int code) {
+#ifdef _WIN32
+    return code == WSAEWOULDBLOCK;
+#else
+    return code == EAGAIN || code == EWOULDBLOCK;
 #endif
 }
 

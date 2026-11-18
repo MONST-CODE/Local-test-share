@@ -12,6 +12,7 @@ std::uint32_t max_payload_size(MessageType type) {
     case MessageType::SessionState: return 16384; // 64 participants nommés bornent ce plafond.
     case MessageType::ServiceList: return 8192;   // 64 services partagés au plus.
     case MessageType::Bye: return 1024;
+    case MessageType::TlsUpgrade: return 512; // identité + secret bornés, dernier clair.
     }
     return 0;
 }

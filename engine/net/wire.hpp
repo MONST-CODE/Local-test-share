@@ -156,6 +156,16 @@ Result<SessionInfo> decode_session_info(std::span<const std::uint8_t>);
 Result<ServiceList> decode_service_list(std::span<const std::uint8_t>);
 Result<ChatText> decode_chat(std::span<const std::uint8_t>);
 Result<ByeNotice> decode_bye(std::span<const std::uint8_t>);
+
+// Upgrade TLS 1.3 en cours de connexion (protocole 1.3, ADR-016) : dernière
+// trame claire avant la poignée de main. identity = libellé PSK affichable,
+// shared_secret = secret de session tiré au sort par l'hôte (>= 16 octets).
+struct TlsUpgradeNotice {
+    std::string identity;
+    std::string shared_secret;
+};
+Result<std::vector<std::uint8_t>> encode_tls_upgrade(const TlsUpgradeNotice&);
+Result<TlsUpgradeNotice> decode_tls_upgrade(std::span<const std::uint8_t>);
 Result<ErrorNotice> decode_error(std::span<const std::uint8_t>);
 Result<Heartbeat> decode_heartbeat(std::span<const std::uint8_t>);
 
