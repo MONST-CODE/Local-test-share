@@ -635,7 +635,7 @@ for /f "usebackq delims=" %%L in ("%ROOT%\packaging\windows\application.rc.in") 
   set "RLINE=%%L"
   set "RLINE=!RLINE:@DEVLINK_MANIFEST@=%DIR:\=/%/app.manifest!"
   set "RLINE=!RLINE:@DEVLINK_ICO@=%ROOT:\=/%/assets/branding/devlink.ico!"
-  set "RLINE=!RLINE:@DEVLINK_VERSION_COMMA@=!VC!"
+  set "RLINE=!RLINE:@DEVLINK_VERSION_COMMA@=%VC%!"
   set "RLINE=!RLINE:@DEVLINK_PRODUCT_VERSION@=%PRODUCT_VERSION%!"
   set "RLINE=!RLINE:@DEVLINK_FILE_DESCRIPTION@=DevLink desktop control post!"
   set "RLINE=!RLINE:@DEVLINK_INTERNAL_NAME@=devlink-desktop!"
@@ -717,7 +717,6 @@ call :cpp app/desktop_ui/main.cpp || exit /b
 set "LINK_OBJECTS=%CORE_OBJECTS% %MODEL_OBJECTS% %NET_OBJECTS% %BROWSER_OBJECTS% %GUI_OBJECTS% %UI_OBJECTS% "%OBJECT%""
 set "UI_INCLUDES="
 call :render_resources || exit /b
-if "%GITHUB_ACTIONS%"=="true" call :notice_file "%DIR%\desktop_application.rc"
 call :run "%WINDRES%" --target=pe-x86-64 --input-format=rc --output-format=coff --preprocessor="%CXX%" --preprocessor-arg=--no-default-config --preprocessor-arg=-E --preprocessor-arg=-xc --preprocessor-arg=-DRC_INVOKED -i "%DIR%\desktop_application.rc" -o "%DIR%\desktop_application.o"
 if errorlevel 1 exit /b
 if not exist "%DIR%\desktop_application.o" (call :problem "resource compiler did not create desktop resources"& exit /b 1)
