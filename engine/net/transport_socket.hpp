@@ -99,7 +99,7 @@ inline void close_socket(socket_t fd) {
 // TIME_WAIT doit échouer visiblement plutôt que se cacher.
 inline Result<socket_t> make_tcp_listener(const std::string& bind_address, std::uint16_t* out_port) {
 #ifdef _WIN32
-    if (ensure_winsock() != 0) {
+    if (::plpt::windows::ensure_winsock() != 0) {
         return Result<socket_t>::failure(Error{ErrorCode::PlatformError, "WSAStartup a echoue", "transport", 0});
     }
 #endif
@@ -144,7 +144,7 @@ inline Result<socket_t> make_tcp_listener(const std::string& bind_address, std::
 
 inline Result<socket_t> make_tcp_connection(const std::string& address, std::uint16_t port) {
 #ifdef _WIN32
-    if (ensure_winsock() != 0) {
+    if (::plpt::windows::ensure_winsock() != 0) {
         return Result<socket_t>::failure(Error{ErrorCode::PlatformError, "WSAStartup a echoue", "transport", 0});
     }
 #endif
