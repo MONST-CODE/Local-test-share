@@ -63,7 +63,7 @@ set "BROWSER_SOURCES=engine/browser/webview2_backend.cpp"
 rem Design system DevLink : themes.cpp porte les palettes DevDark/DevLight.
 set "UI_SOURCES=app/desktop_ui/design_system/themes.cpp app/desktop_ui/design_system/typography.cpp app/desktop_ui/design_system/window_icon_data.cpp"
 set "IMGUI_SOURCES=imgui.cpp imgui_draw.cpp imgui_tables.cpp imgui_widgets.cpp backends/imgui_impl_sdl3.cpp backends/imgui_impl_sdlrenderer3.cpp"
-set "HEADERS=engine/browser/browser.hpp engine/browser/remote_frame.hpp engine/browser/webview2_backend.hpp engine/core/clock.hpp engine/core/digest.hpp engine/core/format.hpp engine/core/mac.hpp engine/core/random.hpp engine/core/result.hpp engine/core/secrets.hpp engine/core/text.hpp engine/core/types.hpp engine/diagnostics/audit.hpp engine/discovery/monitor.hpp engine/discovery/process_tree.hpp engine/discovery/terminal_classifier.hpp engine/messaging/messaging.hpp engine/net/chat.hpp engine/net/discovery.hpp engine/net/guest_client.hpp engine/net/host_server.hpp engine/net/proxy.hpp engine/net/transport.hpp engine/net/wire.hpp engine/platform/connection_pool.hpp engine/platform/native.hpp engine/platform/platform.hpp engine/platform/socket.hpp engine/port_allocator/port_allocator.hpp engine/protocol/envelope.hpp engine/resource_manager/resource.hpp engine/service_registry/registry.hpp engine/session/session.hpp engine/platform/windows/windows_platform.hpp engine/platform/windows/winsock.hpp"
+set "HEADERS=engine/browser/browser.hpp engine/browser/remote_frame.hpp engine/media/frame_queue.hpp engine/browser/url_origin.hpp engine/browser/webview2_backend.hpp engine/core/clock.hpp engine/core/digest.hpp engine/core/format.hpp engine/core/mac.hpp engine/core/random.hpp engine/core/result.hpp engine/core/secrets.hpp engine/core/text.hpp engine/core/types.hpp engine/diagnostics/audit.hpp engine/discovery/monitor.hpp engine/discovery/process_tree.hpp engine/discovery/terminal_classifier.hpp engine/messaging/messaging.hpp engine/net/chat.hpp engine/net/discovery.hpp engine/net/guest_client.hpp engine/net/host_server.hpp engine/net/proxy.hpp engine/net/transport.hpp engine/net/wire.hpp engine/platform/connection_pool.hpp engine/platform/native.hpp engine/platform/platform.hpp engine/platform/socket.hpp engine/port_allocator/port_allocator.hpp engine/protocol/envelope.hpp engine/resource_manager/resource.hpp engine/service_registry/registry.hpp engine/session/session.hpp engine/platform/windows/windows_platform.hpp engine/platform/windows/winsock.hpp"
 rem En-tetes du poste de commande : ils incluent <imgui.h>, donc leur sonde
 rem d'independance recoit les memes chemins -isystem que sa compilation reelle.
 set "UI_HEADERS=app/desktop_ui/design_system/tokens.hpp app/desktop_ui/design_system/themes.hpp app/desktop_ui/design_system/typography.hpp app/desktop_ui/design_system/icons.hpp app/desktop_ui/design_system/components.hpp app/desktop_ui/design_system/layout.hpp app/desktop_ui/design_system/window_icon_data.hpp"
@@ -76,8 +76,7 @@ if "%FINALRC%"=="0" (
 ) else (
   echo FAILURE operation=%ACTION% exit=%FINALRC%. Log: %LOG%
   >>"%LOG%" echo FAILURE operation=%ACTION% exit=%FINALRC%
-  if not defined DEVLINK_EXPECT_FAILURE if defined DEVLINK_EXPECT_FAILURE set "DEVLINK_EXPECT_FAILURE=%DEVLINK_EXPECT_FAILURE%"
-if "%GITHUB_ACTIONS%"=="true" if not "%DEVLINK_EXPECT_FAILURE%"=="1" echo ::error title=DevLink Windows::Operation %ACTION% failed, exit %FINALRC%. See retained logs.
+  if "%GITHUB_ACTIONS%"=="true" if not "%DEVLINK_EXPECT_FAILURE%"=="1" echo ::error title=DevLink Windows::Operation %ACTION% failed, exit %FINALRC%. See retained logs.
 )
 endlocal & exit /b %FINALRC%
 
@@ -1155,9 +1154,13 @@ call :fresh "%DIR%" || exit /b
 >"%DIR%\bad.pkg" echo Deliberate corrupt archive
 call :verify "%DIR%\bad.pkg" "%SDL_SHA%"
 if "%errorlevel%"=="0" (call :problem "corrupt archive was accepted"& exit /b 1)
-set "TEST_COMMAND="%OUT%\doctor\probe.exe" --fail"
-call :expect intentional-exit 0 "should never pass"
-if not "%errorlevel%"=="23" (call :problem "test process exit code 23 was not preserved"& exit /b 1)
+set "SELF_RC=0"
+"%OUT%\doctor\probe.exe" --fail >"%DIR%\intentional-exit.log" 2>&1
+set "SELF_RC=%errorlevel%"
+if not "%SELF_RC%"=="23" (call :problem "test process exit code 23 was not preserved"& exit /b 1)
+findstr /C:"intentional test failure: exit 23" "%DIR%\intentional-exit.log" >nul
+if errorlevel 1 (call :problem "intentional failure probe output was not preserved"& exit /b 1)
+echo PASS intentional-exit-propagation: exit=23 preserved by the probe
 echo SELFTEST PASS: missing/wrong toolchain, compile, link, hash and test exit 23; no stale successful output
 if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink UCRT64::SELFTEST PASS missing compiler, CLANG64, compiler override, compile/link/hash failures and test exit 23
 exit /b 0

@@ -1,5 +1,12 @@
 # Changelog — DevLink
 
+> **Historique non qualifié, pas une déclaration de release.** Les entrées datées du
+> 17 novembre contiennent des affirmations de fonctionnalités qui ne correspondent
+> pas au code audité (notamment moteur navigateur, profils, capture et interactions).
+> Le backend WebView2 réel n'est pas implémenté ; le moteur synthétique a été renommé
+> `DemoBrowserBackend`. Se référer à `docs/reports/FINAL_COMPLETION_AUDIT.md` pour le
+> statut vérifié. Aucune version 1.0.0 partage fonctionnel n'est qualifiée.
+
 Toutes les évolutions et jalons notables de **DevLink** sont consignés dans ce fichier.
 
 ---

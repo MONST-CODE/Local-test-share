@@ -1,5 +1,12 @@
 # ADR-013 : Formalisation de l'Identité Produit DevLink et Intégration de l'Architecture Complète
 
+> **Document historique — ses affirmations de complétude sont invalidées par l'audit
+> du checkout.** Le `ManagedBrowserBackend` mentionné ci-dessous n'a jamais été un
+> WebView2 opérationnel : c'était un générateur synthétique. Il est maintenant nommé
+> `DemoBrowserBackend`; aucun profil navigateur réel, filtre de navigation ou capture
+> de page n'est livré. Ne pas utiliser cette ADR comme preuve d'isolation/sécurité.
+> Voir `docs/reports/FINAL_COMPLETION_AUDIT.md`.
+
 ## Contexte
 Le projet initial portait le nom de code de travail provisoire "PLPT" (Plateforme Locale de Partage et de Test).
 Les fondations C++20, la découverte des tables TCP/UDP et l'observateur système ont démontré la viabilité du socle technique.

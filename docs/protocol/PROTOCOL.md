@@ -1,75 +1,90 @@
-# Enveloppe PLPT expérimentale — version 1.0
+# Protocole DevLink — état réel du contrôle et limite média
 
-**Statut : modèle/codec local testé. Aucun protocole réseau interopérable ni
-handshake livré.** Les types ne sont pas une autorisation. Le contrat devra être
-revue/versionné avant la première connexion QUIC.
+**État du codec courant :** enveloppe de contrôle 1.3 (`engine/protocol/envelope.*`).
+Ce document remplace les anciennes affirmations « version 1.0 sans handshake » de
+la version historique de ce fichier. Le codec teste la syntaxe ; il ne suffit pas à
+autoriser une opération réseau.
 
-## Layout canonique
+## Enveloppe de contrôle
 
-Entiers non signés, ordre réseau **big-endian**, aucun padding C++ transmis.
-Header fixe de **56 octets** ; un appel decode traite exactement une enveloppe.
+Les entiers sont sérialisés en ordre réseau big-endian ; aucune structure C++ native
+n'est copiée telle quelle. L'en-tête fixe fait 56 octets :
 
-| Offset | Octets | Champ |
+| Offset | Taille | Champ |
 |---:|---:|---|
 | 0 | 4 | magic `PLPT` (`50 4c 50 54`) |
-| 4 | 2 | major = 1 |
-| 6 | 2 | minor = 0 |
-| 8 | 2 | type |
-| 10 | 2 | reserved = 0 |
-| 12 | 8 | session_id |
-| 20 | 8 | participant_id |
-| 28 | 4 | stream_id (0..5 dans ce modèle) |
-| 32 | 8 | sequence |
-| 40 | 8 | timestamp_monotonic_ms |
-| 48 | 4 | payload_length |
-| 52 | 4 | flags = 0 |
-| 56 | N | payload opaque |
+| 4 | 2 | version majeure (1) |
+| 6 | 2 | version mineure (courante 3) |
+| 8 | 2 | type de message |
+| 10 | 2 | réservé, doit être zéro |
+| 12 | 8 | session ID |
+| 20 | 8 | participant ID |
+| 28 | 4 | stream ID |
+| 32 | 8 | séquence |
+| 40 | 8 | horodatage monotone |
+| 48 | 4 | longueur payload |
+| 52 | 4 | flags (actuellement zéro) |
+| 56 | variable | payload typé et borné selon le message |
 
-Le décodeur vérifie taille minimale, magic, champs réservés, version exacte,
-valeur du type, taille maximum et longueur totale **avant** de copier le payload.
-Les octets surnuméraires et les troncatures sont refusés. Aucune structure C++
-n'est castée directement sur les octets reçus.
+Le décodeur vérifie la longueur exacte, les champs, la version et la limite du type
+avant de copier le payload. Les plafonds incluent notamment 256 KiB pour le type
+`VideoFrame`, mais ce plafond de codec n'est pas une implémentation de flux vidéo.
 
-## Types et limites actuelles
+## Admission et protection du plan de contrôle
 
-| Type | Valeur | Max payload |
-|---|---:|---:|
-| Hello | 1 | 4096 |
-| Auth | 2 | 4096 |
-| SessionControl | 3 | 8192 |
-| InputKeyboard / InputPointer | 4 / 5 | 1024 |
-| VideoFrame | 6 | 262144 |
-| VideoControl | 7 | 4096 |
-| Chat | 8 | 8192 |
-| Presence | 9 | 2048 |
-| Feedback | 10 | 16384 |
-| Heartbeat | 11 | 256 |
-| Error | 12 | 4096 |
+Le code du plan de contrôle a ajouté les types 16–18 : `TlsUpgrade`,
+`AuthChallenge` et `AuthProof`. Le parcours visé/implémenté dans le moteur est :
 
-Hello utilise session/participant nuls. Les autres types exigent une session non
-nulle ; hors Hello/Auth, participant et séquence doivent être non nuls. Les versions
-inconnues, y compris une mineure non négociée, sont rejetées. Le schéma des payloads
-et la négociation d'extensions restent à définir. Le corps chat métier est limité
-à 4096 octets, indépendamment du plafond de son enveloppe.
+1. Hello public sans code d'invitation ni secret de reprise transmis en clair ;
+2. nonce aléatoire de l'hôte ;
+3. preuve HMAC de possession du code ou du secret de reprise, liée au nonce et à
+   la session ;
+4. notice d'upgrade sans secret ;
+5. poignée TLS 1.3 PSK avant l'admission et les échanges applicatifs.
 
-## Ce que ce codec ne fait PAS
+Les preuves loopback sont Linux/OpenSSL et ne représentent ni un test physique LAN
+ni un audit de cryptographie indépendant. Le transport TLS Windows n'est pas
+opérationnel/qualifié. Voir `engine/net/transport*`, `engine/net/wire.*`,
+`docs/ADR/ADR-016-transport-tls13-psk.md`, `docs/ADR/ADR-017-defi-reponse-et-basculement-tls13.md`
+et la preuve datée de basculement.
 
-- Pas de TLS, d'intégrité cryptographique, d'identité hôte ni d'invitation.
-- Pas de preuve d'identité via participant_id.
-- Pas de compteur anti-rejeu par connexion/flux.
-- Pas de validation des événements clavier, IME, pointeur ou des fragments vidéo.
-- Pas de parsing incrémental d'un flux QUIC ni de fragmentation DATAGRAM.
-- Pas de négociation codec, routage réel ou reconnexion.
+## Messages et limites
 
-Le transport futur doit borner sa réception **avant** d'appeler ce codec : vérifier
-le header dans un buffer limité, puis attendre au plus le payload autorisé. Recevoir
-un gigaoctet dans un vector avant `decode_envelope` annulerait cette protection.
+Les types de base couvrent Hello/Auth, état/contrôle, entrée, frame réservée,
+chat, présence, feedback, heartbeat et erreurs. Les types 13–18 ajoutent l'état de
+session, liste de services, départ, upgrade TLS, défi et preuve. Les tailles sont
+centralisées dans `max_payload_size()` ; l'encodeur/décodeur versionné et les
+payloads typés se trouvent dans `engine/net/wire.*`.
 
-Les flux logiques (contrôle, clavier, pointeur, vidéo, chat, présence) du maître sont
-conservés comme concept. Le mapping type/canal, les quotas par connexion et l'ordre
-applicatif doivent être spécifiés et testés avec la pile choisie. Aucun input ne
-sera accepté en 0-RTT, même si le paquet est syntaxiquement valide.
+Ces vérifications ne prouvent pas à elles seules l'identité de l'appelant, son rôle,
+sa capacité ou son droit à une entrée. Ces décisions doivent être vérifiées par le
+moteur de session et attachées au canal réellement authentifié.
 
-Tests actuels : golden bytes, limites, type/flags/version inconnus, toutes les
-troncatures d'un message, mutations déterministes et cible libFuzzer roundtrip.
-Voir [preuves](../reports/VALIDATION.md). Cela n'est pas un audit du futur protocole.
+## Codec média v1 présent, pipeline de partage absent
+
+`engine/browser/remote_frame.hpp` définit maintenant un codec de payload versionné
+à entiers big-endian, avec magic/header explicites, identité de session/participant,
+stream/contexte, séquence, timestamp monotone, dimensions, stride et taille déclarée.
+La version 1 accepte uniquement des frames complètes RGBA8 sans compression, jusqu'à
+4096×2160 et avec une taille exacte `stride × height`. Les inputs ont un codec
+versionné distinct, coordonnées normalisées Q0.16, champs réservés contrôlés et
+texte UTF-8 borné à 32 octets. Des tests négatifs et une entrée fuzz exercent ces
+parseurs ; ils n'établissent pas une connexion de production.
+
+Ce codec ne traverse **pas encore** l'enveloppe réseau/TLS et n'est relié ni à une
+capture WebView2, ni à un encodeur/décodeur compressé, ni à une texture invitée, ni à
+l'autorisation d'input côté serveur. Le plafond du protocole de contrôle est distinct
+du plafond du codec média : ne pas envoyer une frame par un canal qui ne supporte pas
+explicitement sa taille. Il n'y a donc toujours pas de pipeline média livré.
+
+Le vrai Browser Worker WebView2, la politique de navigation effective, le pipeline
+de pixels, le retour d'interactions et les tests A/B/C sur réseau restent à
+implémenter. Ne présentez aucun rendu synthétique comme une capture du navigateur
+réel.
+
+## Tests existants
+
+Les tests unitaires et platform couvrent des encodages, limites, erreurs, défi-
+réponse, TLS loopback, mauvais secret et refus de runtime absent. Les références et
+leurs limites sont consignées dans `docs/reports/FINAL_COMPLETION_AUDIT.md` et les
+rapports d'évidence. GCC exploratoire ne remplace pas les builds officiels Clang++.

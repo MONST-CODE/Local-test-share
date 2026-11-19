@@ -182,6 +182,8 @@ IMGUI_SOURCES=(imgui.cpp imgui_draw.cpp imgui_tables.cpp imgui_widgets.cpp
 HEADERS=(
     engine/browser/browser.hpp
     engine/browser/remote_frame.hpp
+    engine/media/frame_queue.hpp
+    engine/browser/url_origin.hpp
     engine/browser/webview2_backend.hpp
     engine/core/clock.hpp
     engine/core/digest.hpp
@@ -678,15 +680,24 @@ selftest() {
     (verify "$DIR/corrupt.tar.gz" "$IMGUI_SHA") > "$OUT/logs/selftest-hash-failure.log" 2>&1 || rc=$?
     (( rc != 0 )) && grep -q 'SHA-256 mismatch' "$OUT/logs/selftest-hash-failure.log" || fail 'bad archive was not rejected'
     rc=0
-    expect intentional-exit 0 'should never pass' "$OUT/doctor/probe" --fail || rc=$?
-    (( rc == 23 )) || fail "test exit code was not preserved (expected 23, got $rc)"
+    "$OUT/doctor/probe" --fail > "$DIR/intentional-exit.log" 2>&1 || rc=$?
+    (( rc == 23 )) || fail "probe exit code was not preserved (expected 23, got $rc)"
+    grep -q 'intentional test failure: exit 23' "$DIR/intentional-exit.log" || fail 'intentional failure probe output was not preserved'
+    say 'PASS intentional-exit-propagation: exit=23 preserved by the probe'
     # L'icône de marque est un vrai ICO multi-tailles : contrôle positif…
     expect brand-ico 0 'all required Windows sizes present' "$OUT/doctor/probe" --ico "$ROOT/assets/branding/devlink.ico" --expect-entries 7
     # …et négatif : un fichier renommé .ico doit être rejeté, jamais accepté.
     printf 'ceci n est pas une icone\n' > "$DIR/fake.ico"
-    rc=0
-    expect renamed-ico 0 'should never pass' "$OUT/doctor/probe" --ico "$DIR/fake.ico" || rc=$?
-    (( rc != 0 )) || fail 'a renamed file was accepted as a real ICO'
+    expect renamed-ico 1 'ICO validation failed' "$OUT/doctor/probe" --ico "$DIR/fake.ico" --expect-entries 7
+    # Les lecteurs PE sont testes sur des fixtures synthetiques cote Linux : le
+    # parseur x86-64 et ses controles negatifs sont exercables sans linker Windows.
+    command -v python3 >/dev/null || fail 'selftest PE: python3 est requis pour fabriquer les fixtures deterministes'
+    run python3 "$ROOT/tests/build/synthetic_pe.py" --out-dir "$DIR/synthetic-pe"
+    expect pe-icons-synthetic 0 'PASS RT_GROUP_ICON' "$OUT/doctor/probe" --pe-icons "$DIR/synthetic-pe/icons-good.exe" --expect-icons 7
+    expect pe-manifest-synthetic 0 'PASS resource #1 version=0.2.0.0' "$OUT/doctor/probe" --manifest "$DIR/synthetic-pe/icons-good.exe" --expect-version 0.2.0.0
+    expect pe-icons-bad-group 1 'PE icon validation failed' "$OUT/doctor/probe" --pe-icons "$DIR/synthetic-pe/icons-bad-group.exe" --expect-icons 7
+    expect pe-manifest-missing 1 'PE manifest validation failed' "$OUT/doctor/probe" --manifest "$DIR/synthetic-pe/no-manifest.exe" --expect-version 0.2.0.0
+    expect pe-manifest-wrong-version 1 'PE manifest validation failed' "$OUT/doctor/probe" --manifest "$DIR/synthetic-pe/wrong-version.exe" --expect-version 0.2.0.0
     # Transport TLS : bibliothèque volontairement introuvable => la fabrique doit
     # le dire (Unsupported) et les cas TLS se déclarer SKIP, jamais PASS cachés.
     local tls_platform_bin="$OUT/tests/${MODE:-debug}/bin/devlink-platform-tests"
@@ -741,7 +752,7 @@ selftest() {
     rm -f -- "$rel"/DevLink-selftest-fixture.tar.gz "$rel"/DevLink-selftest-fixture.tar.gz.sha256
     say 'PASS clean-preserves-releases-proof'
     notice 'PASS clean-preserves-releases-proof'
-    say 'SELFTEST PASS: missing compiler, compilation, linking, archive hash and release publishing failures propagate; clean never touches releases/; no stale successful output'
+    say 'SELFTEST PASS: toolchain, compile/link, ICO/PE resources, archive hash and release publishing checks; clean never touches releases/; no stale successful output'
     notice 'SELFTEST PASS: compiler/compile/link/hash/release-publish failure propagation'
 }
 case "$ACTION" in

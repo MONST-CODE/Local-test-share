@@ -829,7 +829,19 @@ std::vector<ChatLine> HostServer::build_chat() const {
             lines.push_back(std::move(line));
         }
     }
-    std::stable_sort(lines.begin(), lines.end(), [](const ChatLine& left, const ChatLine& right) { return left.id < right.id; });
+    // `std::stable_sort` instantiates libstdc++'s deprecated temporary-buffer API,
+    // which fails this project's strict Clang `-Werror` build. The history is
+    // bounded to 200 records below; stable insertion sort keeps equal IDs in
+    // their original channel order without allocating a temporary buffer.
+    for (std::size_t i = 1; i < lines.size(); ++i) {
+        ChatLine current = std::move(lines[i]);
+        std::size_t position = i;
+        while (position > 0 && current.id < lines[position - 1].id) {
+            lines[position] = std::move(lines[position - 1]);
+            --position;
+        }
+        lines[position] = std::move(current);
+    }
     if (lines.size() > 200) lines.erase(lines.begin(), lines.begin() + static_cast<std::ptrdiff_t>(lines.size() - 200));
     return lines;
 }

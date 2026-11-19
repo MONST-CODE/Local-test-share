@@ -1,0 +1,35 @@
+raw_environment_start_utc=2026-11-19T19:30:17Z
+raw_environment_end_utc=2026-11-19T19:30:19Z
+authoritative_session_date=2026-11-13; raw execution clock retained
+commit=1a70c6600c5253433badd9ce446087242c62de5d
+branch=arena/125b0385-local-test-share
+os=Linux 6.1.158+ x86_64
+compiler=LLVM clang 23.1.5 from llvm-runtime-clang-linux-x64@23.1.6-1; temporary wrapper adds GCC 12 system builtin headers because npm package omits clang resource headers
+command=DEVLINK_CXX=.cache/toolchain-provision/bin/clang++ DEVLINK_CC=.cache/toolchain-provision/bin/clang ./build.sh doctor --core-only
+exit_code=0
+DevLink direct Linux operation=doctor mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261119T193017Z-doctor-debug-34667.log
+CXX=/home/user/Local-test-share/.cache/toolchain-provision/bin/clang++
+CC=/home/user/Local-test-share/.cache/toolchain-provision/bin/clang
+clang version 23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/Local-test-share/.cache/toolchain-provision/llvm/bin
+Configuration file: /home/user/Local-test-share/.cache/toolchain-provision/llvm/etc/clang/clang++.cfg
+native linker: /usr/bin/ld
+clang version 23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/Local-test-share/.cache/toolchain-provision/llvm/bin
+Configuration file: /home/user/Local-test-share/.cache/toolchain-provision/llvm/etc/clang/clang++.cfg
+toolchain-probe: native Linux x64, clang=23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117), C++=202002, pointer=8
+libstdc++ headers: 20220819
+Linux 6.1.158+ #1 SMP PREEMPT_DYNAMIC Mon May 11 18:48:24 UTC 2026 x86_64 GNU/Linux
+glibc 2.36
+GNU ld (GNU Binutils for Debian) 2.40
+Copyright (C) 2023 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or (at your option) a later version.
+This program has absolutely no warranty.
+toolchain-probe: native Linux x64, clang=23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117), C++=202002, pointer=8
+libstdc++ headers: 20220819
+SUCCESS operation=doctor log=/home/user/Local-test-share/out/linux/logs/20261119T193017Z-doctor-debug-34667.log

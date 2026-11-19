@@ -1,69 +1,38 @@
-# Guide d'Installation de DevLink
+# Installation — préversion de développement DevLink
 
-Ce document décrit les procédures d'installation, de prérequis et de déploiement de **DevLink** sur les machines Windows de développement et de test.
+## Avertissement de portée
 
----
+La branche actuelle n'est pas une release de partage LAN. Le Browser Worker WebView2
+réel, la capture de page, le pipeline de pixels et les interactions invité ne sont
+pas disponibles. Aucune archive Release candidate validée n'est attestée par l'audit
+courant ; ne déployez pas les builds de diagnostic auprès d'utilisateurs comme
+plateforme de partage.
 
-## 1. Prérequis Système
+## Build de développeur
 
-### Ordinateur Hôte (Développeur)
-- **Système d'exploitation** : Windows 10 ou Windows 11 (64 bits).
-- **Processeur** : Processeur x64 compatible AVX (Intel Core i3/i5/i7/i9 ou AMD Ryzen).
-- **Mémoire RAM** : 4 Go minimum (8 Go recommandés pour 5 invités indépendants).
-- **Réseau** : Carte réseau Ethernet ou Wi-Fi connectée à un réseau local supportant le trafic multicast / UDP local.
-- **Droits utilisateur** : Compte utilisateur standard (aucune élévation administrateur n'est requise pour l'exécution).
+Les prérequis et les commandes officielles sont dans `docs/BUILD.md` :
 
-### Ordinateur Invité (Testeur)
-- **Système d'exploitation** : Windows 10 ou Windows 11 (64 bits).
-- **Dépendances tierces** : **Aucune.** L'invité n'a pas besoin d'installer Node.js, Python, Docker, Git ou un compilateur C++. DevLink s'exécute de façon autonome.
+- Windows x64 : MSYS2 UCRT64 Clang++ natif, exécuté sur Windows ;
+- Linux x64 : Clang++ >=18 et dépendances native/SDL indiquées par `build.sh`.
 
----
+Les résultats GCC sont uniquement exploratoires. Une compilation Linux ne qualifie
+ni les exécutables Windows, ni WebView2, ni TLS Windows, ni le DPI physique.
 
-## 2. Déploiement de l'Archive Autonome
+## Packages
 
-1. Récupérer l'archive de distribution générée par le système de build :
-   `DevLink-0.2.0-preview-windows-ucrt64-x64.zip` (ou package de release DevLink).
-2. Extraire l'archive dans un répertoire utilisateur dédié, par exemple :
-   `C:\DevLink\`
-3. Vérifier la présence des fichiers essentiels dans `bin/` :
-   - `devlink-desktop.exe` (Application desktop complète DevLink)
-   - `devlink-monitor.exe` (Moniteur CLI d'inspection locale)
-   - `SDL3.dll` (Runtime graphique SDL3 3.4.20)
-   - Bibliothèques d'exécution UCRT64 (`libstdc++-6.dll`, `libwinpthread-1.dll`, `libgcc_s_seh-1.dll`, `libiconv-2.dll`).
+Le script `package` est prévu pour tester la build, créer une archive, l'extraire
+dans un dossier propre, réexécuter les binaires puis publier l'archive vérifiée sous
+`releases/` avec une empreinte SHA-256. Ce processus n'a pas été exécuté ici avec la
+chaîne officielle Clang/Windows. Vérifiez le rapport d'audit avant d'utiliser les
+archives d'un autre build.
 
----
+Aucun prérequis matériel pour cinq invités, aucun support Windows/Linux complet,
+aucun runtime redistribué et aucune compatibilité réseau ne sont garantis par ce
+guide tant que la qualification correspondante n'a pas été publiée.
 
-## 3. Lancement de l'Application
+## Supprimer une build locale
 
-### Lancement de l'Interface Graphique (Recommandé)
-Double-cliquer sur `bin\devlink-desktop.exe` ou lancer via le terminal :
-```cmd
-cd C:\DevLink\bin
-devlink-desktop.exe
-```
-
-### Lancement en Mode Moniteur Console
-Pour inspecter rapidement les ports locaux et les processus sans interface graphique :
-```cmd
-cd C:\DevLink\bin
-devlink-monitor.exe
-```
-
----
-
-## 4. Configuration Réseau et Pare-Feu Windows
-
-Lors du premier lancement d'une session de partage :
-- Windows Defender Firewall peut afficher une invite d'autorisation réseau pour `devlink-desktop.exe`.
-- Accepter l'accès sur les **Réseaux privés (domestiques ou de travail)**.
-- Ne pas désactiver le pare-feu global. DevLink réserve uniquement ses propres sockets dynamiques sur l'interface locale.
-
----
-
-## 5. Procédure de Désinstallation
-
-DevLink ne crée aucune clé dans le Registre Windows, n'installe aucun pilote et n'enregistre aucun service d'arrière-plan.
-Pour désinstaller l'application :
-1. Fermer toutes les instances en cours d'exécution de `devlink-desktop.exe`.
-2. Supprimer simplement le dossier d'extraction (`C:\DevLink\`).
-3. Les profils temporaires de session résidant dans `%TEMP%\devlink_browser` sont automatiquement purgés à la fermeture de l'application.
+Fermer les processus DevLink lancés localement, puis supprimer uniquement le
+répertoire d'extraction créé par l'utilisateur. Ne supprimez pas `releases/` ni les
+données d'un autre build sans décision explicite. Aucun profil navigateur de partage
+n'est actuellement géré par un Browser Worker réel.

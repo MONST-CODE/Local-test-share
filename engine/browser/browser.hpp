@@ -6,16 +6,19 @@
 // - Capture de frames et injection d'événements.
 // - Nettoyage complet des profils temporaires à la destruction (§37).
 #include <algorithm>
+#include <charconv>
 #include <cstdint>
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "../core/types.hpp"
 #include "../core/result.hpp"
+#include "url_origin.hpp"
 
 namespace plpt {
 
@@ -28,19 +31,11 @@ struct BrowserPolicy {
     bool allow_external_protocols = false;
 
     bool is_origin_allowed(std::string_view target) const {
-        if (target.empty()) return false;
-        // Interdiction absolue des protocoles locaux et dangereux (§28)
-        if (target.starts_with("file:") || target.starts_with("javascript:") ||
-            target.starts_with("data:") || target.starts_with("shell:") ||
-            target.starts_with("cmd:") || target.starts_with("powershell:")) {
-            return false;
-        }
-        if (allowed_origins.empty()) return false;
-        for (const auto& allowed : allowed_origins) {
-            if (allowed == "*") return true;
-            if (target.starts_with(allowed)) return true;
-        }
-        return false;
+        // Compare canonical HTTP(S) origins, not string prefixes. In particular,
+        // `http://allowed.example.attacker/` must not match `http://allowed.example`.
+        // Wildcards, userinfo, non-HTTP schemes, malformed authorities and
+        // non-canonical IP literals fail closed.
+        return browser::url_origin::is_allowed(target, allowed_origins);
     }
 };
 
@@ -82,20 +77,20 @@ public:
     }
 };
 
-// Backend géré : isole chaque contexte d'invité dans un répertoire de profil dédié,
-// applique la politique d'allowlist stricte, génère des frames de composition
-// et garantit la purge complète des données de session à la fermeture (§27, §28, §37).
-class ManagedBrowserBackend final : public IRemoteBrowserBackend {
+// Backend de démonstration uniquement : les pixels sont synthétiques et aucune
+// entrée n'est transmise à un navigateur. Il ne doit jamais servir de preuve de
+// partage ni être sélectionné implicitement comme backend de production.
+class DemoBrowserBackend final : public IRemoteBrowserBackend {
 public:
-    explicit ManagedBrowserBackend(std::string base_temp_dir = "")
+    explicit DemoBrowserBackend(std::string base_temp_dir = "")
         : base_temp_dir_(base_temp_dir.empty() ? default_temp_dir() : std::move(base_temp_dir)) {}
 
-    ~ManagedBrowserBackend() override {
+    ~DemoBrowserBackend() override {
         cleanup_all();
     }
 
-    ManagedBrowserBackend(const ManagedBrowserBackend&) = delete;
-    ManagedBrowserBackend& operator=(const ManagedBrowserBackend&) = delete;
+    DemoBrowserBackend(const DemoBrowserBackend&) = delete;
+    DemoBrowserBackend& operator=(const DemoBrowserBackend&) = delete;
 
     Result<BrowserContextInfo> create_context(ParticipantId owner, const BrowserPolicy& policy) override {
         if (owner.value == 0) {

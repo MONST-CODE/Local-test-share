@@ -1,7 +1,9 @@
-﻿#include <algorithm>
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <limits>
+#include <memory>
 #include <random>
 #include <type_traits>
 #include "tests/test_harness.hpp"
@@ -21,6 +23,7 @@
 #include "engine/net/proxy.hpp"
 #include "engine/net/wire.hpp"
 #include "engine/browser/remote_frame.hpp"
+#include "engine/media/frame_queue.hpp"
 #include "engine/browser/webview2_backend.hpp"
 
 using namespace plpt;
@@ -542,8 +545,8 @@ void audit_is_opt_in_typed_and_bounded() {
     CHECK_EQ(on.entries().size(), 256U); CHECK_EQ(on.entries().back().timestamp_ms, 500U);
     on.clear(); CHECK(on.entries().empty());
 }
-void managed_browser_isolation_and_allowlist() {
-    ManagedBrowserBackend backend;
+void demo_browser_isolation_and_allowlist() {
+    DemoBrowserBackend backend;
     BrowserPolicy policy;
     policy.allowed_origins.push_back("http://127.0.0.1:8080");
     policy.allowed_origins.push_back("http://localhost:3000");
@@ -564,8 +567,24 @@ void managed_browser_isolation_and_allowlist() {
     CHECK(!policy.is_origin_allowed("javascript:alert(1)"));
     CHECK(!policy.is_origin_allowed("data:text/html,bad"));
     CHECK(!policy.is_origin_allowed("http://malicious-site.com"));
+    CHECK(!policy.is_origin_allowed("http://127.0.0.1:8080.attacker.example/dashboard"));
+    CHECK(!policy.is_origin_allowed("http://127.0.0.1:8080@attacker.example/dashboard"));
+    CHECK(!policy.is_origin_allowed("http://127.0.0.1:8080\\@attacker.example/dashboard"));
+    CHECK(!policy.is_origin_allowed("http://127.0.0.1:8080.evil/dashboard"));
+    CHECK(!policy.is_origin_allowed("http://0x7f000001:8080/dashboard"));
+    CHECK(!policy.is_origin_allowed("http://127.1:8080/dashboard"));
+    CHECK(!policy.is_origin_allowed("http://0177.0.0.1:8080/dashboard"));
+    CHECK(policy.is_origin_allowed("HTTP://127.0.0.1:08080/dashboard"));
     CHECK(policy.is_origin_allowed("http://127.0.0.1:8080/dashboard"));
     CHECK(policy.is_origin_allowed("http://localhost:3000/api"));
+    CHECK(policy.is_origin_allowed("http://LOCALHOST:3000/api"));
+    CHECK(!policy.is_origin_allowed("http://localhost:3001/api"));
+    BrowserPolicy wildcard;
+    wildcard.allowed_origins.push_back("*");
+    CHECK(!wildcard.is_origin_allowed("http://127.0.0.1:8080/"));
+    BrowserPolicy ipv6;
+    ipv6.allowed_origins.push_back("http://[::1]:8080");
+    CHECK(ipv6.is_origin_allowed("http://[0:0:0:0:0:0:0:1]:8080/page"));
 
     // Navigation security
     CHECK(!backend.navigate(c1.value().context, "file:///etc/passwd"));
@@ -1186,24 +1205,58 @@ void resume_secret_is_the_only_proof_of_a_place() {
 void remote_frame_and_input_serialization() {
     using namespace plpt::media;
     VideoFrame frame;
-    frame.header.width = 1280;
-    frame.header.height = 720;
-    frame.header.frame_index = 42;
-    frame.header.timestamp_ms = 1337;
-    frame.header.format = FrameFormat::RawRGBA32;
-    frame.header.flags = 1;
+    frame.header.session = SessionId{0x0102030405060708ULL};
+    frame.header.participant = ParticipantId{9};
+    frame.header.stream_id = 3;
+    frame.header.context = ContextId{11};
+    frame.header.sequence = 42;
+    frame.header.timestamp_ns = 1337;
+    frame.header.width = 2;
+    frame.header.height = 1;
+    frame.header.stride_bytes = 8;
     frame.pixels = {10, 20, 30, 40, 50, 60, 70, 80};
 
     auto enc_frame = serialize_video_frame(frame);
-    auto dec_frame = deserialize_video_frame(enc_frame);
+    REQUIRE(enc_frame);
+    CHECK_EQ(enc_frame.value().size(), kFrameHeaderBytes + frame.pixels.size());
+    CHECK_EQ(enc_frame.value()[0], static_cast<std::uint8_t>('D'));
+    CHECK_EQ(enc_frame.value()[1], static_cast<std::uint8_t>('L'));
+    CHECK_EQ(enc_frame.value()[2], static_cast<std::uint8_t>('V'));
+    CHECK_EQ(enc_frame.value()[3], static_cast<std::uint8_t>('F'));
+    auto dec_frame = deserialize_video_frame(enc_frame.value());
     REQUIRE(dec_frame);
-    CHECK_EQ(dec_frame.value().header.width, 1280);
-    CHECK_EQ(dec_frame.value().header.height, 720);
-    CHECK_EQ(dec_frame.value().header.frame_index, 42U);
-    CHECK_EQ(dec_frame.value().header.timestamp_ms, 1337ULL);
+    CHECK_EQ(dec_frame.value().header.session.value, frame.header.session.value);
+    CHECK_EQ(dec_frame.value().header.participant.value, 9ULL);
+    CHECK_EQ(dec_frame.value().header.stream_id, 3U);
+    CHECK_EQ(dec_frame.value().header.context.value, 11ULL);
+    CHECK_EQ(dec_frame.value().header.width, 2U);
+    CHECK_EQ(dec_frame.value().header.height, 1U);
+    CHECK_EQ(dec_frame.value().header.stride_bytes, 8U);
+    CHECK_EQ(dec_frame.value().header.sequence, 42ULL);
+    CHECK_EQ(dec_frame.value().header.timestamp_ns, 1337ULL);
     CHECK_EQ(dec_frame.value().pixels.size(), 8U);
     CHECK_EQ(dec_frame.value().pixels[0], 10);
     CHECK_EQ(dec_frame.value().pixels[7], 80);
+
+    auto truncated_frame = deserialize_video_frame(std::span<const std::uint8_t>(enc_frame.value()).first(kFrameHeaderBytes - 1));
+    CHECK(!truncated_frame);
+    auto extra_frame_bytes = enc_frame.value();
+    extra_frame_bytes.push_back(0);
+    CHECK(!deserialize_video_frame(extra_frame_bytes));
+    auto wrong_magic = enc_frame.value();
+    wrong_magic[0] = 0;
+    CHECK(!deserialize_video_frame(wrong_magic));
+    auto wrong_stride = enc_frame.value();
+    wrong_stride[67] = 7; // stride field is big-endian at offsets 64..67
+    CHECK(!deserialize_video_frame(wrong_stride));
+    auto unsupported_codec = enc_frame.value();
+    unsupported_codec[8] = 99;
+    CHECK(!deserialize_video_frame(unsupported_codec));
+    auto unsupported_version = enc_frame.value();
+    unsupported_version[5] = 2;
+    auto bad_version = deserialize_video_frame(unsupported_version);
+    CHECK(!bad_version);
+    if (!bad_version) CHECK_EQ(bad_version.error().code, ErrorCode::UnsupportedVersion);
 
     InputEvent ev;
     ev.type = InputEventType::MouseDown;
@@ -1211,30 +1264,125 @@ void remote_frame_and_input_serialization() {
     ev.y_norm = 0.25f;
     ev.button = 1;
     ev.modifiers = 2;
-    ev.wheel_delta = 120;
-    ev.key_code = 65;
-    ev.text[0] = 'A';
-    ev.text[1] = '\0';
 
     auto enc_ev = serialize_input_event(ev);
-    auto dec_ev = deserialize_input_event(enc_ev);
+    REQUIRE(enc_ev);
+    auto dec_ev = deserialize_input_event(enc_ev.value());
     REQUIRE(dec_ev);
     CHECK_EQ(static_cast<int>(dec_ev.value().type), static_cast<int>(InputEventType::MouseDown));
-    CHECK_EQ(dec_ev.value().x_norm, 0.5f);
-    CHECK_EQ(dec_ev.value().y_norm, 0.25f);
+    CHECK(std::abs(dec_ev.value().x_norm - 0.5f) < 0.00002f);
+    CHECK(std::abs(dec_ev.value().y_norm - 0.25f) < 0.00002f);
     CHECK_EQ(dec_ev.value().button, 1);
     CHECK_EQ(dec_ev.value().modifiers, 2);
-    CHECK_EQ(dec_ev.value().wheel_delta, 120);
-    CHECK_EQ(dec_ev.value().key_code, 65U);
-    CHECK_EQ(dec_ev.value().text[0], 'A');
+    CHECK_EQ(dec_ev.value().wheel_delta, 0);
+    CHECK_EQ(dec_ev.value().key_code, 0U);
+    CHECK(dec_ev.value().text.empty());
+
+    InputEvent text;
+    text.type = InputEventType::TextInput;
+    text.text = "Café";
+    auto encoded_text = serialize_input_event(text);
+    REQUIRE(encoded_text);
+    auto decoded_text = deserialize_input_event(encoded_text.value());
+    REQUIRE(decoded_text);
+    CHECK_EQ(decoded_text.value().text, text.text);
+
+    InputEvent invalid = ev;
+    invalid.x_norm = std::numeric_limits<float>::quiet_NaN();
+    CHECK(!serialize_input_event(invalid));
+    invalid = text;
+    invalid.text = std::string("\xC0\xAF", 2); // non-canonical UTF-8
+    CHECK(!serialize_input_event(invalid));
+    auto trailing_input = encoded_text.value();
+    trailing_input.push_back(0);
+    CHECK(!deserialize_input_event(trailing_input));
+    auto reserved_input = enc_ev.value();
+    reserved_input[7] = 1;
+    CHECK(!deserialize_input_event(reserved_input));
+    auto invalid_type = enc_ev.value();
+    invalid_type[5] = 0xff;
+    CHECK(!deserialize_input_event(invalid_type));
+
+    InputEvent focus_lost;
+    focus_lost.type = InputEventType::FocusLost;
+    auto encoded_focus = serialize_input_event(focus_lost);
+    REQUIRE(encoded_focus);
+    CHECK(deserialize_input_event(encoded_focus.value()));
+}
+
+void bounded_frame_queue_enforces_limits_and_lifecycle() {
+    using namespace plpt::media;
+    auto make_frame = [](std::uint64_t sequence, ContextId context = ContextId{7}) {
+        VideoFrame frame;
+        frame.header.context = context;
+        frame.header.stream_id = 2;
+        frame.header.sequence = sequence;
+        frame.header.width = 1;
+        frame.header.height = 1;
+        frame.header.stride_bytes = 4;
+        frame.pixels = {static_cast<std::uint8_t>(sequence), 2, 3, 255};
+        return frame;
+    };
+
+    BoundedFrameQueue queue(3, 8);
+    auto first = queue.push(make_frame(1)); REQUIRE(first);
+    CHECK_EQ(first.value(), FramePushOutcome::Queued);
+    REQUIRE(queue.push(make_frame(2)));
+    auto third = queue.push(make_frame(3)); REQUIRE(third);
+    CHECK_EQ(third.value(), FramePushOutcome::QueuedAfterDroppingOldest);
+    auto snapshot = queue.snapshot();
+    CHECK_EQ(snapshot.queued_frames, 2U);
+    CHECK_EQ(snapshot.queued_bytes, 8U);
+    CHECK_EQ(snapshot.dropped_frames, 1ULL);
+    auto second_frame = queue.try_pop(); REQUIRE(second_frame);
+    CHECK_EQ(second_frame->header.sequence, 2ULL);
+    auto third_frame = queue.try_pop(); REQUIRE(third_frame);
+    CHECK_EQ(third_frame->header.sequence, 3ULL);
+    CHECK(!queue.try_pop());
+    auto replay = queue.push(make_frame(3));
+    CHECK(!replay);
+    if (!replay) CHECK_EQ(replay.error().code, ErrorCode::Replayed);
+    auto wrong_context = queue.push(make_frame(4, ContextId{8}));
+    CHECK(!wrong_context);
+    if (!wrong_context) CHECK_EQ(wrong_context.error().code, ErrorCode::InvalidArgument);
+
+    BoundedFrameQueue too_small(2, 3);
+    auto too_large = too_small.push(make_frame(1));
+    CHECK(!too_large);
+    if (!too_large) CHECK_EQ(too_large.error().code, ErrorCode::TooLarge);
+
+    BoundedFrameQueue closed(2, 8);
+    REQUIRE(closed.push(make_frame(1)));
+    closed.close();
+    closed.close();
+    CHECK(closed.snapshot().closed);
+    auto rejected = closed.push(make_frame(2));
+    CHECK(!rejected);
+    if (!rejected) CHECK_EQ(rejected.error().code, ErrorCode::InvalidState);
+    auto drain = closed.try_pop(); REQUIRE(drain);
+    CHECK_EQ(drain->header.sequence, 1ULL);
 }
 
 void browser_backend_selection_and_lifecycle() {
-    auto backend = plpt::browser::create_browser_backend();
-    REQUIRE(backend);
-
+    CHECK(!plpt::browser::WebView2Backend::is_available());
+    plpt::browser::WebView2Backend unavailable;
     BrowserPolicy policy;
     policy.allowed_origins.push_back("http://127.0.0.1:3000");
+    auto rejected_context = unavailable.create_context(ParticipantId{7}, policy);
+    CHECK(!rejected_context);
+    CHECK_EQ(rejected_context.error().code, ErrorCode::PlatformError);
+    auto rejected_frame = unavailable.capture_frame(ContextId{1});
+    CHECK(!rejected_frame);
+    CHECK_EQ(rejected_frame.error().code, ErrorCode::PlatformError);
+    auto rejected_input = unavailable.inject_input(ContextId{1}, std::vector<std::uint8_t>{1, 2, 3});
+    CHECK(!rejected_input);
+    CHECK_EQ(rejected_input.error().code, ErrorCode::PlatformError);
+    CHECK_EQ(unavailable.active_contexts(), 0U);
+
+    // Le backend géré est utilisé ici comme fixture synthétique de test; il ne
+    // constitue jamais une preuve de capture navigateur réelle.
+    auto backend = std::make_unique<plpt::DemoBrowserBackend>();
+    REQUIRE(backend);
 
     auto ctx_res = backend->create_context(ParticipantId{7}, policy);
     REQUIRE(ctx_res);
@@ -1271,7 +1419,7 @@ int main() {
     CASE(five_model_guests_and_capacity); CASE(messages_dm_privacy_and_read_receipts); CASE(messages_quotas_and_feedback_redaction);
     CASE(text_validation); CASE(protocol_golden_and_bounds);
     CASE(hmac_sha256_matches_rfc4231); CASE(challenge_response_codec_and_derivation); CASE(protocol_deterministic_mutations); CASE(estimates_are_bounded);
-    CASE(audit_is_opt_in_typed_and_bounded); CASE(managed_browser_isolation_and_allowlist); CASE(unavailable_backends_fail_closed);
+    CASE(audit_is_opt_in_typed_and_bounded); CASE(demo_browser_isolation_and_allowlist); CASE(unavailable_backends_fail_closed);
     CASE(observation_brackets_process_identity); CASE(observation_keeps_first_snapshot_warning);
     CASE(partial_registry_history_is_bounded); CASE(partial_process_inventory_invalidates_selection);
     CASE(registry_capacity_failure_invalidates_selection); CASE(worker_publishes_immutable_snapshots);
@@ -1280,7 +1428,7 @@ int main() {
     CASE(proxy_handshake_is_bounded_and_exact); CASE(discovery_announcement_codec_is_bounded);
     CASE(capability_is_never_forwarded_upstream); CASE(bind_resolution_never_defaults_to_any);
     CASE(resume_secret_is_the_only_proof_of_a_place);
-    CASE(remote_frame_and_input_serialization);
+    CASE(remote_frame_and_input_serialization); CASE(bounded_frame_queue_enforces_limits_and_lifecycle);
     CASE(browser_backend_selection_and_lifecycle);
     return plpt_test::finish("unit");
 }

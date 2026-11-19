@@ -1,0 +1,60 @@
+DevLink direct Linux operation=selftest mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261119T180033Z-selftest-debug-13279.log
+PASS intentional-exit-propagation: exit=23 preserved by the probe
+Test started: brand-ico (expected exit=0)
+ico: PASS 7 entries, all required Windows sizes present
+PASS brand-ico: exit=0
+Test started: renamed-ico (expected exit=1)
+ICO validation failed: /home/user/Local-test-share/out/linux/tests/negative/fake.ico
+PASS renamed-ico: exit=1
+Wrote four synthetic PE32+ x64 parser fixtures; ICO entries=7; output=/home/user/Local-test-share/out/linux/tests/negative/synthetic-pe
+Test started: pe-icons-synthetic (expected exit=0)
+pe-icons: PASS RT_GROUP_ICON + 7 matching RT_ICON resources
+PASS pe-icons-synthetic: exit=0
+Test started: pe-manifest-synthetic (expected exit=0)
+manifest: PASS resource #1 version=0.2.0.0 asInvoker + PerMonitorV2 /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe/icons-good.exe
+PASS pe-manifest-synthetic: exit=0
+Test started: pe-icons-bad-group (expected exit=1)
+PE icon validation failed: /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe/icons-bad-group.exe
+PASS pe-icons-bad-group: exit=1
+Test started: pe-manifest-missing (expected exit=1)
+PE manifest validation failed: /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe/no-manifest.exe
+PASS pe-manifest-missing: exit=1
+Test started: pe-manifest-wrong-version (expected exit=1)
+PE manifest validation failed: /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe/wrong-version.exe
+PASS pe-manifest-wrong-version: exit=1
+Test started: tls-unavailable-proof (expected exit=0)
+[PASS] entropy_os
+[PASS] ipv4_allocation
+[PASS] ipv4_native_tables_and_process
+[PASS] interface_addresses
+[PASS] proc_parsers_and_fixtures
+[PASS] repeated_allocation_releases_fds
+[PASS] lan_control_plane_host_and_guest
+[PASS] lan_data_plane_proxy_token_gate
+[PASS] lan_resume_secret_binds_identity
+[PASS] lan_discovery_announce_and_listen
+[PASS] lan_proxy_informational_and_upgrade_responses
+[PASS] pool_saturation_with_held_open_connections
+[PASS] transport_clear_declares_itself
+tls-unavailable-proof: reason=libssl introuvable (dlopen) : /does/not/exist/libssl.so: cannot open shared object file: No such file or directory
+[PASS] tls13_availability_is_honest
+SKIP tls13: runtime indisponible (libssl introuvable (dlopen) : /does/not/exist/libssl.so: cannot open shared object file: No such file or directory)
+host-refusal-proof: partage refusé : transport TLS 1.3 indisponible (libssl introuvable (dlopen) : /does/not/exist/libssl.so: cannot open shared object file: No such file or directory) ; installer le runtime OpenSSL ou assumer tls_required=false
+host-cleared-proof: TCP clair assumé (tls_required=false) : libssl introuvable (dlopen) : /does/not/exist/libssl.so: cannot open shared object file: No such file or directory
+[PASS] host_refuses_session_without_tls_runtime
+control-plane: tls_runtime=0
+[PASS] control_plane_challenge_response_gates_admission
+platform: 16 cases, 693 checks, 0 failures (0 failed cases)
+PASS tls-unavailable-proof: exit=0
+PASS tls-host-refusal-proof
+DevLink-selftest-fixture.tar.gz: OK
+RELEASE PUBLIEE : /home/user/Local-test-share/releases/DevLink-selftest-fixture.tar.gz
+DevLink-selftest-fixture.tar.gz: OK
+FAILURE: publish_release: DevLink-selftest-fixture.tar.gz existe deja avec une empreinte differente — aucun ecrasement silencieux (existant=87864bbc5fe20dc4e45c7a6b8173deeba55d6ba8d828420a25719174d73228c8 nouveau=0b6d13b7b586fc1cf79ddf38593eb1376eb21e5ad496f426a6d98e607c4df9f6)
+DevLink-selftest-fixture.tar.gz: OK
+FAILURE: publish_release: archive illisible (tar) : DevLink-selftest-broken.tar.gz
+PASS release-publish-proof
+PASS clean-preserves-releases-proof
+SELFTEST PASS: toolchain, compile/link, ICO/PE resources, archive hash and release publishing checks; clean never touches releases/; no stale successful output
+SUCCESS operation=selftest log=/home/user/Local-test-share/out/linux/logs/20261119T180033Z-selftest-debug-13279.log
+FINAL_LOCAL_TEST_AND_SELFTEST_EXIT=0

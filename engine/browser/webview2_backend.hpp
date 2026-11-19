@@ -3,18 +3,15 @@
 // Implémentation native Windows de IRemoteBrowserBackend basée sur Microsoft Edge WebView2.
 // Mandat Trajectoire 2 (§14 Browser Worker, §14.1 Profils indépendants, §14.2 Allowlist stricte).
 #include "browser.hpp"
-#include <filesystem>
-#include <map>
 #include <memory>
-#include <mutex>
 #include <string>
 
 namespace plpt::browser {
 
-// Le SDK WebView2 était-il présent à la compilation ? Permet à l'interface de
-// distinguer « ce build ne contient pas de moteur réel » de « le runtime WebView2
-// n'est pas installé sur cette machine ». Les deux bloquent le partage réel,
-// mais ils n'ont pas la même cause ni le même remède.
+// Le SDK WebView2 était-il présent à la compilation ? Cela ne signifie PAS que
+// le backend est opérationnel : l'environnement/contrôleur, la capture et l'entrée
+// restent à implémenter et à qualifier end-to-end. En attendant, la disponibilité
+// de partage réel reste explicitement fausse sur toutes les plateformes.
 #if defined(__has_include)
 #if defined(_WIN32) && __has_include(<WebView2.h>)
 inline constexpr bool kWebView2SdkCompiled = true;
@@ -29,6 +26,8 @@ inline constexpr bool kWebView2SdkCompiled = false;
 #endif
 #endif
 
+inline constexpr bool kWebView2BackendOperational = false; // à basculer uniquement après qualification E2E réelle.
+
 class WebView2Backend final : public IRemoteBrowserBackend {
 public:
     explicit WebView2Backend(std::string base_temp_dir = "");
@@ -37,7 +36,10 @@ public:
     WebView2Backend(const WebView2Backend&) = delete;
     WebView2Backend& operator=(const WebView2Backend&) = delete;
 
+    // is_available décrit le partage réellement utilisable ; runtime_available
+    // ne mesure que la présence du chargeur WebView2 installé.
     static bool is_available();
+    static bool runtime_available();
 
     Result<BrowserContextInfo> create_context(ParticipantId owner, const BrowserPolicy& policy) override;
     Result<void> navigate(ContextId ctx, const std::string& origin) override;
@@ -48,29 +50,10 @@ public:
     std::size_t active_contexts() const;
     void cleanup_all();
 
-private:
-    struct ContextSlot {
-        BrowserContextInfo info;
-        BrowserPolicy policy;
-        std::filesystem::path profile_path;
-        void* hwnd_offscreen = nullptr;
-        void* webview_env = nullptr;
-        void* webview_controller = nullptr;
-        void* webview_core = nullptr;
-        bool has_navigated = false;
-        std::uint32_t frame_counter = 0;
-        std::uint64_t injected_inputs = 0;
-        std::vector<std::uint8_t> last_frame;
-    };
-
-    mutable std::mutex mutex_;
-    std::filesystem::path base_temp_dir_;
-    std::uint64_t next_context_id_ = 1;
-    std::map<ContextId, ContextSlot> contexts_;
-    void* loader_module_ = nullptr;
 };
 
-// Fabrique sélectionnant WebView2 sous Windows si disponible, avec repli automatique sur ManagedBrowserBackend
-std::unique_ptr<IRemoteBrowserBackend> create_browser_backend(const std::string& custom_temp_dir = "");
+// Backend synthétique réservé aux démonstrations/tests explicitement signalés.
+// Ne jamais utiliser cette fabrique pour prétendre qu'un navigateur réel existe.
+std::unique_ptr<IRemoteBrowserBackend> create_demo_browser_backend(const std::string& custom_temp_dir = "");
 
 } // namespace plpt::browser

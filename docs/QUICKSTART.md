@@ -1,57 +1,65 @@
-# DevLink 0.2.0-preview — installation portable et utilisation
+# DevLink 0.2.0-preview — portée et démarrage local
 
-## Ce que contient cette version
+## Fonctionnalités disponibles et limites
 
-Un **moniteur local**, CLI et interface native. Il observe les ports/processus du
-compte courant, ne connecte aucun invité et ne démarre aucun partage. WebView2,
-invitations, transport chiffré, cinq testeurs et nettoyage des profils sont absents.
+Cette préversion contient un moniteur local et un poste desktop natif en cours de
+qualification. **Elle ne permet pas encore de partager réellement une application
+web avec un invité.** Le backend WebView2 n'initialise pas de navigateur opérationnel,
+ne capture pas de vrais pixels et ne reçoit pas d'interactions. Le backend géré
+synthétique est réservé aux tests et à une démonstration explicitement signalée.
 
-## Construire et installer — Windows x64
+Le plan de contrôle TLS 1.3 PSK et le défi-réponse sont intégrés dans le code. Les
+preuves existantes sont des tests d'intégration locaux ; elles ne prouvent ni une
+session LAN multi-machine, ni l'authentification TLS sur Windows. La fabrique TLS
+Windows est actuellement indisponible, et le moteur hôte doit refuser une session
+quand TLS est requis sans runtime opérationnel. Le proxy HTTP n'est pas un flux
+média et son trafic applicatif LAN n'est pas qualifié comme chiffré.
 
-Les prérequis de compilation ne concernent que le développeur : MSYS2 UCRT64 et
-son `clang++.exe` exclusif, voir [BUILD.md](BUILD.md). Aucun SDK/Visual Studio requis. Après `build.bat deps --fetch`, exécuter `build.bat package`.
-Le script recompile Release, teste puis crée :
+N'utilisez pas cette préversion comme service de partage de production et ne
+l'exposez pas à un réseau non fiable.
 
-```text
-out\windows\packages\DevLink-0.2.0-preview-windows-ucrt64-x64.zip
+## Préparer une build
+
+Les commandes officielles et prérequis sont dans [`BUILD.md`](BUILD.md).
+
+Linux x64 (toolchain officielle clang++ >=18) :
+
+```sh
+./build.sh help
+./build.sh deps --fetch
+./build.sh doctor --verbose
+./build.sh debug
+./build.sh test debug --headless
 ```
 
-1. Extraire l'archive dans un dossier appartenant à votre compte, par exemple
-   `%LOCALAPPDATA%\Programs\PLPT-Preview`. Aucun droit administrateur requis.
-2. Conserver **tout** le dossier `PLPT`, notamment les DLL à côté des EXE et les
-   licences. Ne pas déplacer seulement `devlink-desktop.exe`.
-3. Ouvrir `PLPT\bin\devlink-desktop.exe`, ou lancer `devlink-monitor.exe --help` depuis
-   un terminal. Ne pas désactiver SmartScreen/antivirus si le binaire est bloqué.
-4. Pour retirer la preview : fermer ses processus puis supprimer **ce dossier
-   d'extraction uniquement**. Aucun service, règle de pare-feu ou désinstalleur ajouté.
+Le profil headless vérifie le rendu dummy seulement. Il ne prouve pas l'ouverture
+d'une fenêtre X11/Wayland. Dans l'environnement de continuation, Clang++ et les
+headers X11 n'étaient pas présents ; les anciennes mesures GCC sont des résultats
+exploratoires, pas une validation officielle actuelle.
 
-Ce ZIP de développement (profil UCRT64, DLL GNU/Mingw vérifiées et livrées) n'est pas signé. Aucun installateur NSIS/MSI n'est livré
-par la migration. L'exécution CI n'est pas une qualification SmartScreen, poste
-propre, installation/désinstallation complète, DPI/IME ou approbation de redistribution du runtime GNU/SDL.
+Windows x64 : utiliser un terminal Windows natif avec la toolchain MSYS2 UCRT64
+Clang++ prescrite dans `BUILD.md`, puis `build.bat help` et les commandes indiquées
+par ce script. La build Windows, WebView2, TLS Windows et le package natif doivent
+être testés sur Windows ; ils ne sont pas validés par les commandes Linux.
 
-## Linux
+## Inspecter les services
 
-`./build.sh package --native-ui` produit
-`out/linux/packages/DevLink-0.2.0-preview-linux-x64.tar.gz`. Extraire, conserver la
-bibliothèque SDL dans `DevLink/bin`, puis lancer `DevLink/bin/devlink-desktop` sous X11.
-Le runtime glibc/libstdc++/X11 du système reste nécessaire ; ce n'est pas un binaire
-universel pour toute distribution. Le profil dummy sandbox n'est pas distribuable.
+L'outil `devlink-monitor` sert au diagnostic local et à la découverte informative.
+Un processus/port détecté n'est jamais automatiquement autorisé, publié ou partagé.
+Utilisez `devlink-monitor --help` pour les options réellement disponibles dans la
+build locale. Ne lancez pas l'application en administrateur pour contourner une
+limite de visibilité sans en comprendre la cause.
 
-## Utiliser le moniteur
+## État des preuves
 
-- « Détection locale » affiche les sockets et leur attribution probable.
-- Filtrer par adresse, port ou nom ; cliquer une ligne pour l'inspecter.
-- « Sélection locale » et « Marquer protégé » sont des états locaux en mémoire.
-- « Actualiser » relit les tables ; une erreur reste visible et invalide la sélection.
-- Un PID inconnu n'est pas une raison de lancer systématiquement en administrateur.
+- Les suites et le selftest GCC exploratoires sont rapportés dans
+  `docs/reports/evidence/2026-11-18-continuation-audit.txt` ; ils ne remplacent pas
+  Clang++ officiel.
+- Les captures DPI logicielles sont dans `docs/reports/evidence/dpi-captures/` ;
+  elles ne prouvent pas le DPI physique multi-moniteurs.
+- Aucun test LAN physique à deux machines, test navigateur réel ou test physique
+  Windows n'est actuellement revendiqué.
 
-Pas de Docker, Node, Python ou navigateur supplémentaire pour **utiliser le moniteur**.
-Aucune promesse d'absence d'écriture système/cache/dump, ni d'effacement physique.
-
-## Documentation
-
-L'archive contient BUILD, SECURITY, QUICKSTART, l'inventaire de dépendances et les
-notices. Les rapports et preuves complets restent dans le dépôt :
-https://github.com/MONST-CODE/Local-test-share . La licence PLPT reste à décider par
-son propriétaire avant diffusion ; les conditions de redistribution des runtimes
-s'appliquent indépendamment des licences de notre code.
+Voir [`SECURITY.md`](SECURITY.md), [`NETWORK.md`](NETWORK.md) et le rapport
+[`reports/FINAL_COMPLETION_AUDIT.md`](reports/FINAL_COMPLETION_AUDIT.md) avant toute
+évaluation de portée.

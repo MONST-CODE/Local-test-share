@@ -1,0 +1,99 @@
+DevLink — addendum d'audit et qualification de continuation
+
+Date : 18 novembre 2026 (UTC)
+Branche : arena/125b0385-local-test-share
+Commit de base : 1e12c08b2137808b65a50564b35f29a8dfac4971
+
+1. Limite documentaire
+----------------------
+À la date de rédaction de cet addendum, le fichier MASTER_PROMPT_DEVLINK_RECONSTRUCTION_TOTALE.md n'était pas dans le checkout. Le mandat final complet a depuis été fourni directement dans la conversation et devient la référence de cet audit ; il n'est pas nécessaire d'inférer les exigences des étapes 6/7. Le fichier de référence artistique n'a pas été retrouvé dans le checkout ; le branding existant reste dérivé du master SVG documenté et l'image n'est pas embarquée comme ressource. Ce document garde sa fonction d'addendum daté, et le rapport courant détaillé est `docs/reports/FINAL_COMPLETION_AUDIT.md`.
+
+2. Anomalie `renamed-ico` reproduite, cause racine et correction
+-----------------------------------------------------------------
+L'investigation a reproduit un vrai défaut du selftest. L'appel historique était :
+
+  probe --ico <fake.ico>
+
+Le probe n'accepte le mode ICO qu'avec cinq arguments (`--ico`, chemin,
+`--expect-entries`, nombre). Avec l'appel incomplet il tombait dans le chemin de
+sonde générique Linux, retournait 0, et le journal affichait à la fois
+« FAIL test=renamed-ico expected=0 actual=0 » et une suite globale éventuellement
+verte. Ce n'était donc pas un faux positif du parseur ICO : le cas négatif ne
+l'atteignait tout simplement pas.
+
+Corrections conservées dans `build.sh` et `tests/build/toolchain_probe.cpp` :
+- l'appel négatif indique maintenant `--expect-entries 7` ;
+- le code de retour attendu est explicitement 1 et la sortie exige
+  `ICO validation failed` ;
+- mêmes contrats explicites (exit 1 + diagnostic) pour les fixtures PE malformée,
+  manifeste absent et version incorrecte ;
+- le test de propagation de l'exit 23 n'utilise plus `expect` avec un résultat
+  volontairement inattendu : il vérifie directement le code et le texte, pour que
+  le journal ne présente plus un échec attendu comme un test échoué.
+
+Résultat : le log final contient `PASS renamed-ico: exit=1`, les trois contrôles
+négatifs PE sont PASS (exit 1 attendu), et aucun `FAIL test=`. Le selftest a fini
+avec `SELFTEST_EXIT=0`. Les lignes `FAILURE: publish_release` du journal sont
+intentionnelles : elles vérifient le refus d'écraser une archive d'empreinte
+différente et le rejet d'une archive illisible ; les assertions correspondantes
+`PASS release-publish-proof` et `PASS clean-preserves-releases-proof` passent.
+
+3. Qualifications exécutées (GCC local, adaptateur exploratoire)
+------------------------------------------------------------------
+Commande : `./.cache/build_local_tmp.sh test debug --headless`
+Log : `.cache/local_final_tests.log`
+- compilateur réellement utilisé : `/usr/bin/g++` et `/usr/bin/gcc` (GCC 12.2) ;
+- unit : 38 cas, 21 127 checks, 0 échec ;
+- platform : 20 cas, 760 checks, 0 échec ;
+- IPv6 : 2 cas, 41 checks, 0 échec ;
+- résumé : 15 réussis, 0 ignoré, exit 0.
+
+Commande : `./.cache/build_local_tmp.sh selftest`
+Log : `.cache/local_selftest_final.log`
+- ICO de marque accepté (7 tailles) ; faux ICO rejeté avec code 1 ;
+- PE synthétique valide accepté ; icône/marqueur malformé, manifeste absent et
+  version incorrecte rejetés avec code 1 ;
+- vérification TLS indisponible et refus de démarrage hôte vérifiés ;
+- publication, non-écrasement, rejet archive illisible et clean préservant
+  `releases/` validés ; exit 0.
+
+Ces commandes sont des adaptations GCC temporaires dans `.cache/`, pas le build
+officiel : la chaîne prescrite Clang >=18 n'est pas installée (`clang++` absent).
+Les adaptateurs ne sont pas inclus dans Git.
+
+4. Partage navigateur et système Windows
+----------------------------------------
+Le backend WebView2 réel reste indisponible/non implémenté. Son code échoue fermé ;
+la présence du runtime n'est pas assimilée à une capacité de partage. L'interface
+refuse l'ouverture d'une session hôte avant création de secrets ou sockets si
+aucun moteur réel opérationnel n'existe. `ManagedBrowserBackend` est uniquement
+une fixture synthétique. Aucune qualification de partage navigateur réel n'a été
+exécutée.
+
+Aucune exécution Windows, build UCRT64, capture WebView2 ni bascule PerMonitorV2
+sur écrans physiques n'a eu lieu. Dans cet environnement `DISPLAY` est absent,
+Xvfb et les en-têtes X11 aussi. Ces points demeurent BLOCKED / non vérifiés et ne
+sont pas transformés en PASS par les preuves Linux headless.
+
+5. DPI — portée de la preuve
+----------------------------
+La sonde utilise la vraie typographie DevLink, ImGui 1.93, SDL3 et le renderer
+logiciel, mesure les pixels réellement dessinés et écrit des captures 960x480.
+Les facteurs 100/125/150/200 % sont injectés comme paramètres typographiques ;
+SDL dummy rapporte `SDL_window_scale=1.00` aux quatre runs. Cela prouve le rendu
+logiciel aux tailles demandées, pas une transition de DPI physique du système.
+Les captures PNG sont `docs/reports/evidence/dpi-captures/dpi-{100,125,150,200}.png` ;
+la procédure, les métriques et cette limite sont détaillées dans
+`docs/reports/evidence/dpi-multi-scale.txt`.
+
+6. État des autres changements et prochaine action
+--------------------------------------------------
+Le checkout contient des changements préexistants nombreux et non commités ; ils
+ont été préservés. `git diff --check`, `bash -n build.sh`, compilation syntaxique
+Python des outils et `python3 tools/branding/export_icons.py --verify` passent.
+Le rapport historique `BASELINE_AUDIT_1e12c08.md` documente les étapes 1–5 et 8,
+mais ne contient pas de sections d'étape 6 ou 7, bien qu'il les liste dans son
+plan. Les sections inachevées et les preuves Windows doivent être rapprochées du
+texte maître dès que celui-ci est disponible. Ne pas annoncer la reconstruction
+comme intégralement terminée : partage navigateur réel et qualification Windows
+restent bloqués.

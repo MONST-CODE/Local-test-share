@@ -174,12 +174,22 @@ refus des symlinks/reparse points. Les archives vérifiées et les logs surviven
 `clean`. Ne pas placer des sources/dépendances personnelles sous `out/` et ne pas
 modifier un script pendant son exécution.
 
-`package` reconstruit Release, teste, archive, extrait, compare et exécute. Windows
-inspecte récursivement les imports PE, copie uniquement les DLL UCRT64 nécessaires
-avec provenance/hash/notices, puis exécute avec **PATH système uniquement**.
-Les DLL OS/UCRT Windows ne sont pas copiées. Le package Windows est nommé
-`DevLink-0.2.0-preview-windows-ucrt64-x64.zip`. Linux reste lié à son ABI glibc/libstdc++/X11.
+`package` est conçu pour reconstruire Release, exécuter les tests et smoke tests
+natifs, créer l'archive, l'extraire dans un dossier vierge, comparer les fichiers
+et exécuter les binaires extraits. Le script Linux publie le résultat validé dans
+`releases/` avec sidecar SHA-256 ; le script Windows contient un chemin analogue,
+mais il n'a pas été exécuté dans l'environnement de continuation courant.
 
-Archives de développement, pas installateurs signés. Voir `docs/QUICKSTART.md`,
-les trois rapports `docs/reports/UCRT64_*.md` et les preuves Linux associées.
-Les anciennes preuves MSVC/SDK sont historiques, pas une qualification UCRT64.
+**Statut de qualification courant :** Clang++ >=18 est absent ici, le serveur
+headless ne dispose pas de DISPLAY/Xvfb et aucun runtime WebView2 Windows n'est
+accessible. Par conséquent les commandes officielles `doctor`, `test`, `package`
+et les smoke tests natifs n'ont pas été validés dans ce checkout courant. Les
+résultats GCC rapportés séparément sont exploratoires et ne valent ni validation
+Clang, ni fenêtre native, ni release. Le test de ressources PE via fixtures
+synthétiques valide le parseur uniquement ; il ne remplace pas l'inspection d'un
+exécutable Windows produit par la toolchain UCRT64.
+
+Toute archive générée avant une qualification complète est une build de diagnostic,
+pas une release de partage fonctionnelle. Linux reste lié à son ABI glibc/libstdc++/
+X11. Les preuves `docs/reports/UCRT64_*.md` sont historiques et ne remplacent pas
+une exécution sur la branche courante.

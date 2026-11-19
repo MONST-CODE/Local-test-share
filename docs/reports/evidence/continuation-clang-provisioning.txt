@@ -1,0 +1,30 @@
+raw_environment_timestamp_utc=2026-11-19T19:49:28Z
+authoritative_session_date=2026-11-13; raw clock retained without correction
+repository=MONST-CODE/Local-test-share
+branch=arena/125b0385-local-test-share
+base_commit=1a70c6600c5253433badd9ce446087242c62de5d
+os=Linux 6.1.158+ x86_64
+
+Provisioning source: registry.npmjs.org (both archives verified by npm SRI during npm pack).
+Package 1: llvm-runtime-clang-linux-x64@23.1.6-1
+  shasum=4958a02d3133eaeedb7ba47a1eb2310d57a50923
+  integrity=sha512-4kAOP+OymAVBf1mM11y8dN+b002cbXOalms0RETHGGimfq8xDK6Qtq/grHgwbO7GIVZWTiCC7ckwyIC61trvDA==
+  archive_sha256=e7e024bbfa40e63617f1000ccd8e25c453bbeb87d2a24d5fc26784f5dca9ce4d
+  license=Apache-2.0
+Package 2: @cpp-linter/clang-tidy-linux-x64@23.1.5
+  shasum=fd2c120ff8693860f3b6323cd9e81551be5f79bc
+  integrity=sha512-xAEe9zncrrtqBvqJ5LnAZNdh2MyQJsdscetxLC3T+kpw0h+ADxBUFn394JiLPd++HAjt39VrtffjKiT2RmJOQA==
+  archive_sha256=ba2949f72b04600423def2b49ab70a28b05e1474650cbf57fb3ff71fc851ca7e
+  license=Apache-2.0 WITH LLVM-exception
+
+Compiler identity:
+  clang version 23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)
+  Target: x86_64-unknown-linux-gnu
+  Thread model: posix
+  InstalledDir: /home/user/Local-test-share/.cache/toolchain-provision/llvm/bin
+Resource headers: 247 upstream Clang 23.1.5 files extracted to ignored .cache only.
+Compiler wrappers: .cache/toolchain-provision/bin/clang{,++}; direct exec, no injected GCC includes/flags.
+System C++ library: GCC 12 libstdc++ headers 20220819, glibc 2.36, GNU ld 2.40.
+Official script doctor result: exit 0; see continuation-official-clang-doctor-retried.log.
+Unavailable here: compiler-rt/libFuzzer archive (not present), DISPLAY/Xvfb and X11 development headers; native UI and Clang fuzz are NOT RUN.
+No package/compiler files added to the release or source tree; all toolchain downloads remain under ignored .cache/.

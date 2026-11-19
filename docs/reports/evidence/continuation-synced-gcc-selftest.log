@@ -1,0 +1,92 @@
+DevLink direct Linux operation=selftest mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261119T184909Z-selftest-debug-31145.log
++ rm -rf -- /home/user/Local-test-share/out/linux/tests/negative 
++ mkdir -p -- /home/user/Local-test-share/out/linux/tests/negative 
+FAILURE: SHA-256 mismatch: /home/user/Local-test-share/out/linux/tests/negative/corrupt.tar.gz expected=b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 actual=d716e02ec1b5a0a4a0c241f0f82f640516191591c831eb86866642f140afba2d (not extracted)
+PASS intentional-exit-propagation: exit=23 preserved by the probe
+Test started: brand-ico (expected exit=0)
++ /home/user/Local-test-share/out/linux/doctor/probe --ico /home/user/Local-test-share/assets/branding/devlink.ico --expect-entries 7 
+ico: PASS 7 entries, all required Windows sizes present
+PASS brand-ico: exit=0
+Test started: renamed-ico (expected exit=1)
++ /home/user/Local-test-share/out/linux/doctor/probe --ico /home/user/Local-test-share/out/linux/tests/negative/fake.ico --expect-entries 7 
+ICO validation failed: /home/user/Local-test-share/out/linux/tests/negative/fake.ico
+PASS renamed-ico: exit=1
++ python3 /home/user/Local-test-share/tests/build/synthetic_pe.py --out-dir /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe 
+Wrote four synthetic PE32+ x64 parser fixtures; ICO entries=7; output=/home/user/Local-test-share/out/linux/tests/negative/synthetic-pe
+Test started: pe-icons-synthetic (expected exit=0)
++ /home/user/Local-test-share/out/linux/doctor/probe --pe-icons /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe/icons-good.exe --expect-icons 7 
+pe-icons: PASS RT_GROUP_ICON + 7 matching RT_ICON resources
+PASS pe-icons-synthetic: exit=0
+Test started: pe-manifest-synthetic (expected exit=0)
++ /home/user/Local-test-share/out/linux/doctor/probe --manifest /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe/icons-good.exe --expect-version 0.2.0.0 
+manifest: PASS resource #1 version=0.2.0.0 asInvoker + PerMonitorV2 /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe/icons-good.exe
+PASS pe-manifest-synthetic: exit=0
+Test started: pe-icons-bad-group (expected exit=1)
++ /home/user/Local-test-share/out/linux/doctor/probe --pe-icons /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe/icons-bad-group.exe --expect-icons 7 
+PE icon validation failed: /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe/icons-bad-group.exe
+PASS pe-icons-bad-group: exit=1
+Test started: pe-manifest-missing (expected exit=1)
++ /home/user/Local-test-share/out/linux/doctor/probe --manifest /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe/no-manifest.exe --expect-version 0.2.0.0 
+PE manifest validation failed: /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe/no-manifest.exe
+PASS pe-manifest-missing: exit=1
+Test started: pe-manifest-wrong-version (expected exit=1)
++ /home/user/Local-test-share/out/linux/doctor/probe --manifest /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe/wrong-version.exe --expect-version 0.2.0.0 
+PE manifest validation failed: /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe/wrong-version.exe
+PASS pe-manifest-wrong-version: exit=1
+Test started: tls-unavailable-proof (expected exit=0)
++ env DEVLINK_TLS_LIBRARY_PATH=/does/not/exist/libssl.so /home/user/Local-test-share/out/linux/tests/debug/bin/devlink-platform-tests 
+[PASS] entropy_os
+[PASS] ipv4_allocation
+[PASS] ipv4_native_tables_and_process
+[PASS] interface_addresses
+[PASS] proc_parsers_and_fixtures
+[PASS] repeated_allocation_releases_fds
+[PASS] lan_control_plane_host_and_guest
+[PASS] lan_data_plane_proxy_token_gate
+[PASS] lan_resume_secret_binds_identity
+[PASS] lan_discovery_announce_and_listen
+[PASS] lan_proxy_informational_and_upgrade_responses
+[PASS] pool_saturation_with_held_open_connections
+[PASS] transport_clear_declares_itself
+tls-unavailable-proof: reason=libssl introuvable (dlopen) : /does/not/exist/libssl.so: cannot open shared object file: No such file or directory
+[PASS] tls13_availability_is_honest
+SKIP tls13: runtime indisponible (libssl introuvable (dlopen) : /does/not/exist/libssl.so: cannot open shared object file: No such file or directory)
+host-refusal-proof: partage refusé : transport TLS 1.3 indisponible (libssl introuvable (dlopen) : /does/not/exist/libssl.so: cannot open shared object file: No such file or directory) ; installer le runtime OpenSSL ou assumer tls_required=false
+host-cleared-proof: TCP clair assumé (tls_required=false) : libssl introuvable (dlopen) : /does/not/exist/libssl.so: cannot open shared object file: No such file or directory
+[PASS] host_refuses_session_without_tls_runtime
+control-plane: tls_runtime=0
+[PASS] control_plane_challenge_response_gates_admission
+platform: 16 cases, 693 checks, 0 failures (0 failed cases)
+PASS tls-unavailable-proof: exit=0
+PASS tls-host-refusal-proof
++ mkdir -p -- /home/user/Local-test-share/out/linux/tests/negative/release-proof 
++ tar -czf /home/user/Local-test-share/out/linux/tests/negative/release-proof/fixture.tar.gz -C /home/user/Local-test-share/out/linux/tests/negative/release-proof payload.txt 
++ cp -- /home/user/Local-test-share/out/linux/tests/negative/release-proof/fixture.tar.gz /home/user/Local-test-share/releases/DevLink-selftest-fixture.tar.gz.partial 
++ tar -tzf /home/user/Local-test-share/releases/DevLink-selftest-fixture.tar.gz.partial 
+payload.txt
++ mv -- /home/user/Local-test-share/releases/DevLink-selftest-fixture.tar.gz.partial /home/user/Local-test-share/releases/DevLink-selftest-fixture.tar.gz 
++ mv -- /home/user/Local-test-share/releases/DevLink-selftest-fixture.tar.gz.sha256.partial /home/user/Local-test-share/releases/DevLink-selftest-fixture.tar.gz.sha256 
++ sha256sum -c -- DevLink-selftest-fixture.tar.gz.sha256 
+DevLink-selftest-fixture.tar.gz: OK
+RELEASE PUBLIEE : /home/user/Local-test-share/releases/DevLink-selftest-fixture.tar.gz
++ sha256sum -c -- DevLink-selftest-fixture.tar.gz.sha256 
+DevLink-selftest-fixture.tar.gz: OK
++ tar -czf /home/user/Local-test-share/out/linux/tests/negative/release-proof/changed.tar.gz -C /home/user/Local-test-share/out/linux/tests/negative/release-proof payload.txt 
++ cp -- /home/user/Local-test-share/out/linux/tests/negative/release-proof/changed.tar.gz /home/user/Local-test-share/releases/DevLink-selftest-fixture.tar.gz.partial 
++ tar -tzf /home/user/Local-test-share/releases/DevLink-selftest-fixture.tar.gz.partial 
+payload.txt
+FAILURE: publish_release: DevLink-selftest-fixture.tar.gz existe deja avec une empreinte differente — aucun ecrasement silencieux (existant=5ad9841dc8a4ef3c11899e2b7c2da62be473ab4ea66b4c5d627b7c5f5dcd49c8 nouveau=d64a0f4d36a8efbc7cd9b9064ba3b8678a2e9746adf1c04e5cce709b2286bdbc)
++ sha256sum -c -- DevLink-selftest-fixture.tar.gz.sha256 
+DevLink-selftest-fixture.tar.gz: OK
++ cp -- /home/user/Local-test-share/out/linux/tests/negative/release-proof/broken.tar.gz /home/user/Local-test-share/releases/DevLink-selftest-broken.tar.gz.partial 
++ tar -tzf /home/user/Local-test-share/releases/DevLink-selftest-broken.tar.gz.partial 
+
+gzip: stdin: not in gzip format
+tar: Child returned status 1
+tar: Error is not recoverable: exiting now
+Command exit 2: tar -tzf /home/user/Local-test-share/releases/DevLink-selftest-broken.tar.gz.partial 
+FAILURE: publish_release: archive illisible (tar) : DevLink-selftest-broken.tar.gz
+PASS release-publish-proof
+PASS clean-preserves-releases-proof
+SELFTEST PASS: toolchain, compile/link, ICO/PE resources, archive hash and release publishing checks; clean never touches releases/; no stale successful output
+SUCCESS operation=selftest log=/home/user/Local-test-share/out/linux/logs/20261119T184909Z-selftest-debug-31145.log

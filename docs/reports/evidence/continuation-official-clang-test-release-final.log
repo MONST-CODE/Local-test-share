@@ -1,0 +1,414 @@
+raw_environment_start_utc=2026-11-19T19:43:43Z
+raw_environment_end_utc=2026-11-19T19:46:59Z
+duration_seconds=196
+authoritative_session_date=2026-11-13; raw execution clock retained
+commit=1a70c6600c5253433badd9ce446087242c62de5d
+branch=arena/125b0385-local-test-share
+os=Linux 6.1.158+ x86_64
+compiler=LLVM clang/clang++ 23.1.5; upstream Clang 23 resource headers; system libstdc++/glibc
+command=DEVLINK_CXX=.cache/toolchain-provision/bin/clang++ DEVLINK_CC=.cache/toolchain-provision/bin/clang ./build.sh test release --headless
+exit_code=0
+DevLink direct Linux operation=test mode=release; log=/home/user/Local-test-share/out/linux/logs/20261119T194343Z-test-release-41613.log
+CXX=/home/user/Local-test-share/.cache/toolchain-provision/bin/clang++
+CC=/home/user/Local-test-share/.cache/toolchain-provision/bin/clang
+clang version 23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/Local-test-share/.cache/toolchain-provision/llvm/bin
+Configuration file: /home/user/Local-test-share/.cache/toolchain-provision/llvm/etc/clang/clang++.cfg
+native linker: /usr/bin/ld
+clang version 23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/Local-test-share/.cache/toolchain-provision/llvm/bin
+Configuration file: /home/user/Local-test-share/.cache/toolchain-provision/llvm/etc/clang/clang++.cfg
+toolchain-probe: native Linux x64, clang=23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117), C++=202002, pointer=8
+libstdc++ headers: 20220819
+SHA256 OK e6a9c4e75de8fe719f922dddc208627f77754a502909f457a1355981f20c21e0 /home/user/Local-test-share/out/linux/dependencies/SDL-f00dc919ca35b9756316e86c4777392de442f9b2.tar.gz
+SHA256 OK b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 /home/user/Local-test-share/out/linux/dependencies/imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859.tar.gz
+Compilation started: release, clean deterministic objects (no cache)
+Compilation: engine/core/random.cpp
+Compilation: engine/core/digest.cpp
+Compilation: engine/core/mac.cpp
+Compilation: engine/core/secrets.cpp
+Compilation: engine/core/format.cpp
+Compilation: engine/diagnostics/audit.cpp
+Compilation: engine/discovery/process_tree.cpp
+Compilation: engine/discovery/terminal_classifier.cpp
+Compilation: engine/discovery/monitor.cpp
+Compilation: engine/service_registry/registry.cpp
+Compilation: engine/port_allocator/port_allocator.cpp
+Compilation: engine/platform/socket.cpp
+Compilation: engine/platform/linux/linux_platform.cpp
+Compilation: engine/session/session.cpp
+Compilation: engine/messaging/messaging.cpp
+Compilation: engine/protocol/envelope.cpp
+Compilation: engine/resource_manager/resource.cpp
+Compilation: engine/net/wire.cpp
+Compilation: engine/net/discovery.cpp
+Compilation: engine/net/host_server.cpp
+Compilation: engine/net/guest_client.cpp
+Compilation: engine/net/proxy.cpp
+Compilation: engine/net/transport.cpp
+Compilation: engine/net/transport_tls.cpp
+Compilation: engine/browser/webview2_backend.cpp
+Compilation: app/host_shell/main.cpp
+Linking: /home/user/Local-test-share/out/linux/tests/release/bin/devlink-monitor
+Compilation: app/demo_service/main.cpp
+Linking: /home/user/Local-test-share/out/linux/tests/release/bin/devlink-demo-service
+Compilation SDL C: src/SDL.c
+Compilation SDL C: src/SDL_assert.c
+Compilation SDL C: src/SDL_error.c
+Compilation SDL C: src/SDL_guid.c
+Compilation SDL C: src/SDL_hints.c
+Compilation SDL C: src/SDL_hashtable.c
+Compilation SDL C: src/SDL_list.c
+Compilation SDL C: src/SDL_log.c
+Compilation SDL C: src/SDL_properties.c
+Compilation SDL C: src/SDL_utils.c
+Compilation SDL C: src/atomic/SDL_atomic.c
+Compilation SDL C: src/atomic/SDL_spinlock.c
+Compilation SDL C: src/audio/SDL_audio.c
+Compilation SDL C: src/audio/SDL_audiocvt.c
+Compilation SDL C: src/audio/SDL_audiodev.c
+Compilation SDL C: src/audio/SDL_audioqueue.c
+Compilation SDL C: src/audio/SDL_audioresample.c
+Compilation SDL C: src/audio/SDL_audiotypecvt.c
+Compilation SDL C: src/audio/SDL_mixer.c
+Compilation SDL C: src/audio/SDL_wave.c
+Compilation SDL C: src/audio/dummy/SDL_dummyaudio.c
+Compilation SDL C: src/camera/SDL_camera.c
+Compilation SDL C: src/camera/dummy/SDL_camera_dummy.c
+Compilation SDL C: src/core/SDL_core_unsupported.c
+Compilation SDL C: src/core/unix/SDL_appid.c
+Compilation SDL C: src/core/unix/SDL_poll.c
+Compilation SDL C: src/core/unix/SDL_gtk.c
+Compilation SDL C: src/core/unix/SDL_fribidi.c
+Compilation SDL C: src/core/unix/SDL_libthai.c
+Compilation SDL C: src/core/linux/SDL_threadprio.c
+Compilation SDL C: src/cpuinfo/SDL_cpuinfo.c
+Compilation SDL C: src/dynapi/SDL_dynapi.c
+Compilation SDL C: src/events/SDL_categories.c
+Compilation SDL C: src/events/SDL_clipboardevents.c
+Compilation SDL C: src/events/SDL_displayevents.c
+Compilation SDL C: src/events/SDL_dropevents.c
+Compilation SDL C: src/events/SDL_events.c
+Compilation SDL C: src/events/SDL_eventwatch.c
+Compilation SDL C: src/events/SDL_keyboard.c
+Compilation SDL C: src/events/SDL_keymap.c
+Compilation SDL C: src/events/SDL_keysym_to_keycode.c
+Compilation SDL C: src/events/SDL_keysym_to_scancode.c
+Compilation SDL C: src/events/SDL_mouse.c
+Compilation SDL C: src/events/SDL_pen.c
+Compilation SDL C: src/events/SDL_quit.c
+Compilation SDL C: src/events/SDL_scancode_tables.c
+Compilation SDL C: src/events/SDL_touch.c
+Compilation SDL C: src/events/SDL_windowevents.c
+Compilation SDL C: src/events/imKStoUCS.c
+Compilation SDL C: src/filesystem/SDL_filesystem.c
+Compilation SDL C: src/filesystem/unix/SDL_sysfilesystem.c
+Compilation SDL C: src/filesystem/posix/SDL_sysfsops.c
+Compilation SDL C: src/gpu/SDL_gpu.c
+Compilation SDL C: src/haptic/SDL_haptic.c
+Compilation SDL C: src/haptic/dummy/SDL_syshaptic.c
+Compilation SDL C: src/hidapi/SDL_hidapi.c
+Compilation SDL C: src/io/SDL_asyncio.c
+Compilation SDL C: src/io/SDL_iostream.c
+Compilation SDL C: src/io/generic/SDL_asyncio_generic.c
+Compilation SDL C: src/joystick/SDL_joystick.c
+Compilation SDL C: src/joystick/SDL_gamepad.c
+Compilation SDL C: src/joystick/controller_type.c
+Compilation SDL C: src/joystick/SDL_steam_virtual_gamepad.c
+Compilation SDL C: src/joystick/dummy/SDL_sysjoystick.c
+Compilation SDL C: src/loadso/dlopen/SDL_sysloadso.c
+Compilation SDL C: src/locale/SDL_locale.c
+Compilation SDL C: src/locale/unix/SDL_syslocale.c
+Compilation SDL C: src/main/SDL_main_callbacks.c
+Compilation SDL C: src/main/SDL_runapp.c
+Compilation SDL C: src/main/generic/SDL_sysmain_callbacks.c
+Compilation SDL C: src/misc/SDL_url.c
+Compilation SDL C: src/misc/dummy/SDL_sysurl.c
+Compilation SDL C: src/power/SDL_power.c
+Compilation SDL C: src/process/SDL_process.c
+Compilation SDL C: src/process/dummy/SDL_dummyprocess.c
+Compilation SDL C: src/render/SDL_render.c
+Compilation SDL C: src/render/SDL_render_unsupported.c
+Compilation SDL C: src/render/SDL_yuv_sw.c
+Compilation SDL C: src/render/software/SDL_blendfillrect.c
+Compilation SDL C: src/render/software/SDL_blendline.c
+Compilation SDL C: src/render/software/SDL_blendpoint.c
+Compilation SDL C: src/render/software/SDL_drawline.c
+Compilation SDL C: src/render/software/SDL_drawpoint.c
+Compilation SDL C: src/render/software/SDL_render_sw.c
+Compilation SDL C: src/render/software/SDL_triangle.c
+Compilation SDL C: src/sensor/SDL_sensor.c
+Compilation SDL C: src/sensor/dummy/SDL_dummysensor.c
+Compilation SDL C: src/stdlib/SDL_crc16.c
+Compilation SDL C: src/stdlib/SDL_crc32.c
+Compilation SDL C: src/stdlib/SDL_getenv.c
+Compilation SDL C: src/stdlib/SDL_iconv.c
+Compilation SDL C: src/stdlib/SDL_malloc.c
+Compilation SDL C: src/stdlib/SDL_memcpy.c
+Compilation SDL C: src/stdlib/SDL_memmove.c
+Compilation SDL C: src/stdlib/SDL_memset.c
+Compilation SDL C: src/stdlib/SDL_mslibc.c
+Compilation SDL C: src/stdlib/SDL_murmur3.c
+Compilation SDL C: src/stdlib/SDL_qsort.c
+Compilation SDL C: src/stdlib/SDL_random.c
+Compilation SDL C: src/stdlib/SDL_stdlib.c
+Compilation SDL C: src/stdlib/SDL_string.c
+Compilation SDL C: src/stdlib/SDL_strtokr.c
+Compilation SDL C: src/storage/SDL_storage.c
+Compilation SDL C: src/storage/generic/SDL_genericstorage.c
+Compilation SDL C: src/storage/steam/SDL_steamstorage.c
+Compilation SDL C: src/thread/SDL_thread.c
+Compilation SDL C: src/thread/pthread/SDL_syscond.c
+Compilation SDL C: src/thread/pthread/SDL_sysmutex.c
+Compilation SDL C: src/thread/pthread/SDL_sysrwlock.c
+Compilation SDL C: src/thread/pthread/SDL_syssem.c
+Compilation SDL C: src/thread/pthread/SDL_systhread.c
+Compilation SDL C: src/thread/pthread/SDL_systls.c
+Compilation SDL C: src/time/SDL_time.c
+Compilation SDL C: src/time/unix/SDL_systime.c
+Compilation SDL C: src/timer/SDL_timer.c
+Compilation SDL C: src/timer/unix/SDL_systimer.c
+Compilation SDL C: src/tray/SDL_tray_utils.c
+Compilation SDL C: src/tray/dummy/SDL_tray.c
+Compilation SDL C: src/dialog/SDL_dialog.c
+Compilation SDL C: src/dialog/SDL_dialog_utils.c
+Compilation SDL C: src/dialog/dummy/SDL_dummydialog.c
+Compilation SDL C: src/video/SDL_RLEaccel.c
+Compilation SDL C: src/video/SDL_blit.c
+Compilation SDL C: src/video/SDL_blit_0.c
+Compilation SDL C: src/video/SDL_blit_1.c
+Compilation SDL C: src/video/SDL_blit_A.c
+Compilation SDL C: src/video/SDL_blit_N.c
+Compilation SDL C: src/video/SDL_blit_auto.c
+Compilation SDL C: src/video/SDL_blit_copy.c
+Compilation SDL C: src/video/SDL_blit_slow.c
+Compilation SDL C: src/video/SDL_bmp.c
+Compilation SDL C: src/video/SDL_clipboard.c
+Compilation SDL C: src/video/SDL_egl.c
+Compilation SDL C: src/video/SDL_fillrect.c
+Compilation SDL C: src/video/SDL_pixels.c
+Compilation SDL C: src/video/SDL_rect.c
+Compilation SDL C: src/video/SDL_rotate.c
+Compilation SDL C: src/video/SDL_stb.c
+Compilation SDL C: src/video/SDL_stretch.c
+Compilation SDL C: src/video/SDL_surface.c
+Compilation SDL C: src/video/SDL_video.c
+Compilation SDL C: src/video/SDL_video_unsupported.c
+Compilation SDL C: src/video/SDL_vulkan_utils.c
+Compilation SDL C: src/video/SDL_yuv.c
+Compilation SDL C: src/video/yuv2rgb/yuv_rgb_lsx.c
+Compilation SDL C: src/video/yuv2rgb/yuv_rgb_sse.c
+Compilation SDL C: src/video/yuv2rgb/yuv_rgb_std.c
+Compilation SDL C: src/video/dummy/SDL_nullevents.c
+Compilation SDL C: src/video/dummy/SDL_nullframebuffer.c
+Compilation SDL C: src/video/dummy/SDL_nullvideo.c
+Compilation SDL C: src/libm/e_atan2.c
+Compilation SDL C: src/libm/e_exp.c
+Compilation SDL C: src/libm/e_fmod.c
+Compilation SDL C: src/libm/e_log.c
+Compilation SDL C: src/libm/e_log10.c
+Compilation SDL C: src/libm/e_pow.c
+Compilation SDL C: src/libm/e_rem_pio2.c
+Compilation SDL C: src/libm/e_sqrt.c
+Compilation SDL C: src/libm/k_cos.c
+Compilation SDL C: src/libm/k_rem_pio2.c
+Compilation SDL C: src/libm/k_sin.c
+Compilation SDL C: src/libm/k_tan.c
+Compilation SDL C: src/libm/s_atan.c
+Compilation SDL C: src/libm/s_copysign.c
+Compilation SDL C: src/libm/s_cos.c
+Compilation SDL C: src/libm/s_fabs.c
+Compilation SDL C: src/libm/s_floor.c
+Compilation SDL C: src/libm/s_isinf.c
+Compilation SDL C: src/libm/s_isinff.c
+Compilation SDL C: src/libm/s_isnan.c
+Compilation SDL C: src/libm/s_isnanf.c
+Compilation SDL C: src/libm/s_modf.c
+Compilation SDL C: src/libm/s_scalbn.c
+Compilation SDL C: src/libm/s_sin.c
+Compilation SDL C: src/libm/s_tan.c
+Linking native SDL shared library (software renderer)
+Compilation ImGui: imgui.cpp
+Compilation ImGui: imgui_draw.cpp
+Compilation ImGui: imgui_tables.cpp
+Compilation ImGui: imgui_widgets.cpp
+Compilation ImGui: backends/imgui_impl_sdl3.cpp
+Compilation ImGui: backends/imgui_impl_sdlrenderer3.cpp
+Compilation: app/desktop_ui/design_system/themes.cpp
+Compilation: app/desktop_ui/design_system/typography.cpp
+Compilation: app/desktop_ui/design_system/window_icon_data.cpp
+Compilation: app/desktop_ui/main.cpp
+Linking: /home/user/Local-test-share/out/linux/tests/release/bin/devlink-desktop
+Compilation: tests/unit/test_main.cpp
+Linking: /home/user/Local-test-share/out/linux/tests/release/bin/devlink-unit-tests
+Compilation: tests/integration/platform_tests.cpp
+Linking: /home/user/Local-test-share/out/linux/tests/release/bin/devlink-platform-tests
+Independent header: engine/browser/browser.hpp
+Independent header: engine/browser/remote_frame.hpp
+Independent header: engine/media/frame_queue.hpp
+Independent header: engine/browser/url_origin.hpp
+Independent header: engine/browser/webview2_backend.hpp
+Independent header: engine/core/clock.hpp
+Independent header: engine/core/digest.hpp
+Independent header: engine/core/format.hpp
+Independent header: engine/core/mac.hpp
+Independent header: engine/core/random.hpp
+Independent header: engine/core/result.hpp
+Independent header: engine/core/secrets.hpp
+Independent header: engine/core/text.hpp
+Independent header: engine/core/types.hpp
+Independent header: engine/diagnostics/audit.hpp
+Independent header: engine/discovery/monitor.hpp
+Independent header: engine/discovery/process_tree.hpp
+Independent header: engine/discovery/terminal_classifier.hpp
+Independent header: engine/messaging/messaging.hpp
+Independent header: engine/net/chat.hpp
+Independent header: engine/net/discovery.hpp
+Independent header: engine/net/guest_client.hpp
+Independent header: engine/net/host_server.hpp
+Independent header: engine/net/proxy.hpp
+Independent header: engine/net/transport.hpp
+Independent header: engine/net/wire.hpp
+Independent header: engine/platform/connection_pool.hpp
+Independent header: engine/platform/native.hpp
+Independent header: engine/platform/platform.hpp
+Independent header: engine/platform/socket.hpp
+Independent header: engine/port_allocator/port_allocator.hpp
+Independent header: engine/protocol/envelope.hpp
+Independent header: engine/resource_manager/resource.hpp
+Independent header: engine/service_registry/registry.hpp
+Independent header: engine/session/session.hpp
+Independent header: engine/platform/linux/linux_platform.hpp
+PASS 36 independent native headers
+Independent UI header: app/desktop_ui/design_system/tokens.hpp
+Independent UI header: app/desktop_ui/design_system/themes.hpp
+Independent UI header: app/desktop_ui/design_system/typography.hpp
+Independent UI header: app/desktop_ui/design_system/icons.hpp
+Independent UI header: app/desktop_ui/design_system/components.hpp
+Independent UI header: app/desktop_ui/design_system/layout.hpp
+Independent UI header: app/desktop_ui/design_system/window_icon_data.hpp
+PASS 7 independent UI headers
+BUILD SUCCESS mode=release elapsed_seconds=190 (compilation including validation/extraction; tests not included)
+Test started: unit (expected exit=0)
+[PASS] result_invariants
+[PASS] exact_classifier_and_ancestry
+[PASS] cycles_missing_and_reused_pid
+[PASS] registry_grouping_and_no_auto_share
+[PASS] registry_churn_and_incomplete
+[PASS] unknown_owner_cannot_retain_selection
+[PASS] state_expiry_and_cleanup
+[PASS] closing_revokes_without_waiting_for_expiry
+[PASS] roles_contexts_control_and_revocation
+[PASS] five_model_guests_and_capacity
+[PASS] messages_dm_privacy_and_read_receipts
+[PASS] messages_quotas_and_feedback_redaction
+[PASS] text_validation
+[PASS] protocol_golden_and_bounds
+[PASS] hmac_sha256_matches_rfc4231
+[PASS] challenge_response_codec_and_derivation
+[PASS] protocol_deterministic_mutations
+[PASS] estimates_are_bounded
+[PASS] audit_is_opt_in_typed_and_bounded
+[PASS] demo_browser_isolation_and_allowlist
+[PASS] unavailable_backends_fail_closed
+[PASS] observation_brackets_process_identity
+[PASS] observation_keeps_first_snapshot_warning
+[PASS] partial_registry_history_is_bounded
+[PASS] partial_process_inventory_invalidates_selection
+[PASS] registry_capacity_failure_invalidates_selection
+[PASS] worker_publishes_immutable_snapshots
+[PASS] worker_invalidates_selection_on_partial_or_error
+[PASS] worker_command_queue_is_bounded
+[PASS] wire_messages_roundtrip_and_guard
+[PASS] secrets_digests_and_formats_are_exact
+[PASS] proxy_handshake_is_bounded_and_exact
+[PASS] discovery_announcement_codec_is_bounded
+[PASS] capability_is_never_forwarded_upstream
+[PASS] bind_resolution_never_defaults_to_any
+[PASS] resume_secret_is_the_only_proof_of_a_place
+[PASS] remote_frame_and_input_serialization
+[PASS] bounded_frame_queue_enforces_limits_and_lifecycle
+[PASS] browser_backend_selection_and_lifecycle
+unit: 39 cases, 21193 checks, 0 failures (0 failed cases)
+PASS unit: exit=0
+Test started: platform (expected exit=0)
+[PASS] entropy_os
+[PASS] ipv4_allocation
+[PASS] ipv4_native_tables_and_process
+[PASS] interface_addresses
+[PASS] proc_parsers_and_fixtures
+[PASS] repeated_allocation_releases_fds
+[PASS] lan_control_plane_host_and_guest
+[PASS] lan_data_plane_proxy_token_gate
+[PASS] lan_resume_secret_binds_identity
+[PASS] lan_discovery_announce_and_listen
+[PASS] lan_proxy_informational_and_upgrade_responses
+[PASS] pool_saturation_with_held_open_connections
+[PASS] transport_clear_declares_itself
+tls13 runtime: available=1 reason=
+[PASS] tls13_availability_is_honest
+[PASS] tls13_psk_loopback_authenticated
+[PASS] tls13_psk_wrong_secret_refused
+[PASS] tls13_downgrade_refused
+control-plane: tls_runtime=1
+[PASS] control_plane_challenge_response_gates_admission
+[PASS] tls13_wire_oracle_no_plaintext
+control-wire-oracle: 2558 octets observés, aucun secret ni message en clair
+[PASS] lan_control_wire_never_carries_secrets
+platform: 20 cases, 760 checks, 0 failures (0 failed cases)
+PASS platform: exit=0
+Test started: ipv6 (expected exit=0)
+[PASS] ipv6_allocation
+[PASS] ipv6_native_tables_and_process
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS ipv6: exit=0
+Test started: cli-help (expected exit=0)
+Usage: devlink-monitor [--help | --version]
+Local TCP listeners / UDP endpoints; no probes, no server, no sharing.
+PASS cli-help: exit=0
+Test started: cli-version (expected exit=0)
+DevLink 0.2.0-preview / local monitor / no sharing
+PASS cli-version: exit=0
+Test started: cli-unknown (expected exit=2)
+Usage: devlink-monitor [--help | --version]
+Local TCP listeners / UDP endpoints; no probes, no server, no sharing.
+PASS cli-unknown: exit=2
+Test started: cli-extra (expected exit=2)
+Usage: devlink-monitor [--help | --version]
+Local TCP listeners / UDP endpoints; no probes, no server, no sharing.
+PASS cli-extra: exit=2
+Test started: cli-ambiguous (expected exit=2)
+Usage: devlink-monitor [--help | --version]
+Local TCP listeners / UDP endpoints; no probes, no server, no sharing.
+PASS cli-ambiguous: exit=2
+Test started: ui-smoke (expected exit=0)
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+desktop-smoke: 8 frames, snapshot=2, services=9, sharing=disabled
+PASS ui-smoke: exit=0
+Test started: ui-unknown (expected exit=2)
+Usage: devlink-desktop [--smoke-test [--screenshot file.bmp]] [--demo-synthetic-browser]
+PASS ui-unknown: exit=2
+Test started: ui-missing-argument (expected exit=2)
+Usage: devlink-desktop [--smoke-test [--screenshot file.bmp]] [--demo-synthetic-browser]
+PASS ui-missing-argument: exit=2
+Test started: ui-capture-requires-smoke (expected exit=2)
+--screenshot exige --smoke-test. Aucune capture interactive implicite.
+PASS ui-capture-requires-smoke: exit=2
+Test started: ui-driver-error (expected exit=1)
+SDL_Init: devlink-invalid-video-driver not available
+PASS ui-driver-error: exit=1
+Test started: ui-file-error (expected exit=1)
+SDL_IOFromFile: Couldn't open /home/user/Local-test-share/out/linux/tests/release/bin/devlink-desktop/not-a-directory.bmp: Not a directory
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-file-error: exit=1
+Test started: ui-disk-full (expected exit=1)
+SDL_SaveBMP_IO: Error seeking in datastream: No space left on device
+desktop-runtime: SDL=3004020 video=dummy renderer=software
+PASS ui-disk-full: exit=1
+NOT RUN: native X11 window launch (use --native-ui with DISPLAY; dummy is not native display validation)
+TEST SUMMARY passed=15 skipped=0 mode=release
+SUCCESS operation=test log=/home/user/Local-test-share/out/linux/logs/20261119T194343Z-test-release-41613.log

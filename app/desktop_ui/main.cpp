@@ -8,8 +8,9 @@
 // « connecté », « sécurisé », « streaming » ou « session active » que le moteur
 // n'a pas confirmé : un démarrage est transactionnel et tout échec est affiché.
 //
-// Le transport chiffré standard (mandat §24) n'est pas encore intégré : cette
-// interface l'annonce explicitement au lieu de prétendre à un canal sécurisé.
+// Le plan de contrôle a un transport TLS 1.3 PSK sous Linux ; Windows et le
+// futur plan média ne sont pas encore qualifiés. L'interface ne doit pas annoncer
+// une session partagée réelle tant que le backend navigateur échoue fermé.
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -172,7 +173,7 @@ BrowserEngine create_browser_engine(bool allow_synthetic_demo) {
     if (allow_synthetic_demo) {
         // Chemin de demonstration explicite : jamais le repli automatique de la
         // fabrique, et toujours signale a l'ecran par un bandeau permanent.
-        engine.backend = plpt::browser::create_browser_backend();
+        engine.backend = plpt::browser::create_demo_browser_backend();
         engine.demo_synthetic = engine.backend != nullptr;
         engine.status = engine.backend
             ? "moteur synthetique (demonstration) - AUCUN partage reel"
@@ -182,11 +183,14 @@ BrowserEngine create_browser_engine(bool allow_synthetic_demo) {
     // Cause exacte, jamais un message generique : le remede n'est pas le meme
     // selon que le SDK manque a la compilation ou que le runtime n'est pas installe.
 #if defined(_WIN32)
-    engine.status = plpt::browser::kWebView2SdkCompiled
-        ? "moteur navigateur indisponible : runtime WebView2 non installe sur cette machine"
-        : "moteur navigateur indisponible : SDK WebView2 absent de cette compilation";
+    if (!plpt::browser::kWebView2SdkCompiled) {
+        engine.status = "partage navigateur indisponible : SDK WebView2 absent de cette compilation";
+    } else {
+        engine.status = std::string("partage navigateur indisponible : contrôleur, capture et injection WebView2 non implémentés; runtime détecté=") +
+            (plpt::browser::WebView2Backend::runtime_available() ? "oui" : "non");
+    }
 #else
-    engine.status = "moteur navigateur indisponible : WebView2 est propre a Windows";
+    engine.status = "partage navigateur indisponible : backend WebView2 opérationnel non implémenté (WebView2 est propre à Windows)";
 #endif
     return engine;
 }
@@ -359,6 +363,12 @@ bool open_browser_context(AppState& state, plpt::ParticipantId owner, const std:
 
 bool start_host_session(AppState& state) {
     state.host_errors.clear();
+    // Refuser AVANT de générer des secrets, d'ouvrir un socket ou d'annoncer une
+    // session : le plan de contrôle seul n'est pas un partage applicatif réel.
+    if (!state.browser.usable_for_real_session()) {
+        state.host_errors.push_back("partage refuse : moteur navigateur reel indisponible — " + state.browser.status);
+        return false;
+    }
     if (state.host_running) {
         state.host_errors.push_back("une session hote est deja en cours");
         return false;
@@ -455,16 +465,11 @@ bool start_host_session(AppState& state) {
 
     // 5. Moteur navigateur : contexte reel par origine autorisee. Sans moteur
     //    reel, la session de partage applicatif distant n'est pas demarree.
-    if (state.browser.usable_for_real_session()) {
-        if (!open_browser_context(state, plpt::ParticipantId{1}, origins)) {
-            if (state.proxy) { state.proxy->stop(); state.proxy.reset(); }
-            state.host->stop();
-            state.host.reset();
-            return false;
-        }
-    } else if (origins.empty()) {
-        state.host_errors.push_back(
-            "aucune origine autorisee : le navigateur distant refusera toute navigation");
+    if (!open_browser_context(state, plpt::ParticipantId{1}, origins)) {
+        if (state.proxy) { state.proxy->stop(); state.proxy.reset(); }
+        state.host->stop();
+        state.host.reset();
+        return false;
     }
 
     // 6. Annonce LAN sur les interfaces reellement presentes (+ boucle locale
@@ -966,17 +971,21 @@ void render_share_setup(AppState& state) {
             if (!engine_ready) {
                 status_pill("MOTEUR NAVIGATEUR INDISPONIBLE", colors.status_error);
                 ImGui::Spacing();
-                ImGui::TextWrapped("Partage applicatif distant bloque : %s. "
-                    "Le plan de controle (invitation, approbation, chat) reste disponible.",
+                ImGui::TextWrapped("Partage applicatif bloqué : %s. Aucune session hôte ne sera "
+                    "démarrée tant que le navigateur réel, la capture et l'injection ne sont pas opérationnels.",
                     state.browser.status.c_str());
                 ImGui::Spacing();
             }
-            if (button_primary("Demarrer le partage", ImVec2(280, 40))) {
+            ImGui::BeginDisabled(!engine_ready);
+            const bool start_clicked = button_primary(engine_ready ? "Démarrer le partage" : "Partage indisponible",
+                ImVec2(280, 40));
+            ImGui::EndDisabled();
+            if (start_clicked) {
                 if (start_host_session(state)) {
                     state.tab = MainNavigationTab::ActiveSession;
-                    state.notify("Session hote demarree : port lie et annonce reelle");
+                    state.notify("Session hôte démarrée : moteur navigateur opérationnel, port lié et annonce réelle");
                 } else {
-                    state.notify("Demarrage refuse : voir les echecs ci-dessous");
+                    state.notify("Démarrage refusé : voir les échecs ci-dessous");
                 }
             }
         }
@@ -1679,7 +1688,9 @@ void render_diagnostics(AppState& state, const plpt::MonitorView& view, const Ru
         ImGui::Text("SDK WebView2 a la compilation : %s",
             plpt::browser::kWebView2SdkCompiled ? "oui" : "non");
         ImGui::Text("Runtime WebView2 detecte : %s",
-            plpt::browser::WebView2Backend::is_available() ? "oui" : "non");
+            plpt::browser::WebView2Backend::runtime_available() ? "oui" : "non");
+        ImGui::Text("Backend navigateur reel operationnel : %s",
+            plpt::browser::WebView2Backend::is_available() ? "oui" : "non (pipeline non implemente)");
         ImGui::Text("Backend utilise : %s", state.browser.status.c_str());
         ImGui::Text("Contexte navigateur : %llu",
             static_cast<unsigned long long>(state.browser_ctx.value));
