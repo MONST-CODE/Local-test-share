@@ -663,6 +663,7 @@ call :sanitizer_runtime || exit /b
 if "%CORE_ONLY%"=="0" call :prepare_imgui "%DIR%" || exit /b
 call :product_identity || exit /b
 call :render_manifest || exit /b
+if "%GITHUB_ACTIONS%"=="true" call :notice_file "%DIR%\app.manifest"
 rem L'icone versionnee est controlee AVANT compilation des ressources : un .ico
 rem renomme ou incomplet fait echouer le build, il ne peut pas passer en silence.
 call :run "%OUT%\doctor\probe.exe" --ico "%ROOT%\assets\branding\devlink.ico" --expect-entries 7
