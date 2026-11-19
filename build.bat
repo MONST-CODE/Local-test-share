@@ -339,7 +339,13 @@ set "FUZZ_LINK_SAN=-fsanitize=fuzzer"
 if "%ASAN_AVAILABLE%"=="true" set "FUZZ_LINK_SAN=-fsanitize=address,fuzzer"
 >>"%TOOLCHAIN_INFO%" echo fuzzer-link-flags=%FUZZ_LINK_SAN%
 rem Archive presence is not capability. Build and execute the real two-step
-rem recipe so "available=true" always means a fuzzer binary really ran here.
+rem recipe only in doctor/fuzz operations; ordinary builds must not run an
+rem expected-to-fail capability probe (some UCRT64 Clang targets reject the
+rem fuzzer-no-link option even when a resource archive is installed).
+set "FUZZ_PROBE=0"
+if /I "%ACTION%"=="doctor" set "FUZZ_PROBE=1"
+if /I "%ACTION%"=="fuzz" set "FUZZ_PROBE=1"
+if "%FUZZ_PROBE%"=="0" set "FUZZ_LIB="
 set "EXPECT_FAILURE_SAVED=%DEVLINK_EXPECT_FAILURE%"
 set "DEVLINK_EXPECT_FAILURE=1"
 set "FUZZ_REASON="
@@ -357,7 +363,8 @@ if /I "%ACTION%"=="doctor" if not defined FUZZ_LIB if defined FUZZ_REASON call :
 if defined FUZZ_LIB set "FUZZ_AVAILABLE=true"
 >>"%TOOLCHAIN_INFO%" echo ASan available=%ASAN_AVAILABLE%; libFuzzer available=%FUZZ_AVAILABLE%
 if "%ASAN_AVAILABLE%"=="false" echo SKIP capability: UCRT64 ASan runtime not installed. Not a memory-test PASS.
-if "%FUZZ_AVAILABLE%"=="false" echo SKIP capability: native UCRT64 libFuzzer probe did not build, link and run. Not a fuzz-test PASS.
+if "%FUZZ_AVAILABLE%"=="false" if "%FUZZ_PROBE%"=="1" echo SKIP capability: native UCRT64 libFuzzer probe did not build, link and run. Not a fuzz-test PASS.
+if "%FUZZ_PROBE%"=="0" echo NOTE capability: libFuzzer probe deferred for this non-fuzz operation.
 if /I "%ACTION%"=="doctor" if defined GITHUB_OUTPUT (
   >>"%GITHUB_OUTPUT%" echo "asan=%ASAN_AVAILABLE%"
   >>"%GITHUB_OUTPUT%" echo "fuzz=%FUZZ_AVAILABLE%"

@@ -452,7 +452,22 @@ void lan_control_plane_host_and_guest() {
     GuestClient third(clock);
     REQUIRE(third.start(third_config));
     REQUIRE(third.wait_for([](const GuestSnapshot& snapshot) { return snapshot.phase == GuestPhase::AwaitingApproval; }, 5s));
-    CHECK(host.approve(host.snapshot()->pending[0].request_id));
+    // Wait on the authority's published pending request before issuing approval;
+    // the guest-side phase alone is not a synchronization contract for host UI state.
+    REQUIRE(host.wait_for([](const HostSnapshot& snapshot) {
+        return std::any_of(snapshot.pending.begin(), snapshot.pending.end(),
+            [](const PendingJoin& join) { return join.guest_name == "Trop"; });
+    }, 5s));
+    const auto host_view = host.snapshot();
+    const auto third_request = std::find_if(host_view->pending.begin(), host_view->pending.end(),
+        [](const PendingJoin& join) { return join.guest_name == "Trop"; });
+    REQUIRE(third_request != host_view->pending.end());
+    CHECK(host.approve(third_request->request_id));
+    CHECK(host.wait_for([](const HostSnapshot& snapshot) {
+        return std::any_of(snapshot.events.begin(), snapshot.events.end(), [](const std::string& event) {
+            return event.find("admission refusée pour « Trop »") != std::string::npos;
+        });
+    }, 5s));
     CHECK(third.wait_for([](const GuestSnapshot& snapshot) { return snapshot.phase == GuestPhase::Refused; }, 5s));
     CHECK_EQ(third.snapshot()->status_text, std::string("capacité atteinte"));
 
