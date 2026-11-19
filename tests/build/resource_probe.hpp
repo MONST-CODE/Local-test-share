@@ -241,27 +241,40 @@ inline std::optional<std::array<std::uint16_t, 4>> parse_version(std::string_vie
     return result;
 }
 
-inline bool probe_pe_icons(const std::filesystem::path& path, unsigned expected_icons) {
+inline bool probe_pe_icons(const std::filesystem::path& path, unsigned expected_icons, std::string* failure = nullptr) {
+    const auto reject = [failure](std::string reason) {
+        if (failure != nullptr) *failure = std::move(reason);
+        return false;
+    };
     const auto file = read_file(path);
-    if (!file) return false;
+    if (!file) return reject("cannot read PE or file exceeds the bounded probe limit");
     PeImage pe(*file);
-    if (!pe.initialize()) return false;
+    if (!pe.initialize()) return reject("invalid PE32+ x64 resource directory");
     const auto group = pe.find_resource(14, 1); // RT_GROUP_ICON, resource ID 1
     const auto count = pe.count_resources(3);   // RT_ICON
-    if (!group || !count || *count != expected_icons || expected_icons == 0 || expected_icons > 64 ||
-        group->size < 6 || u16(pe.bytes(), group->offset) != 0 || u16(pe.bytes(), group->offset + 2) != 1 ||
+    if (!group) return reject("RT_GROUP_ICON resource ID 1 is missing");
+    if (!count) return reject("RT_ICON directory is missing or malformed");
+    if (*count != expected_icons) return reject("RT_ICON count=" + std::to_string(*count) +
+        " expected=" + std::to_string(expected_icons));
+    if (expected_icons == 0 || expected_icons > 64 || group->size < 6 ||
+        u16(pe.bytes(), group->offset) != 0 || u16(pe.bytes(), group->offset + 2) != 1 ||
         u16(pe.bytes(), group->offset + 4) != expected_icons ||
-        group->size != 6 + static_cast<std::size_t>(expected_icons) * 14) return false;
+        group->size != 6 + static_cast<std::size_t>(expected_icons) * 14)
+        return reject("RT_GROUP_ICON directory has invalid header or entry count");
     std::set<std::uint16_t> ids;
     for (std::size_t i = 0; i < expected_icons; ++i) {
         const std::size_t entry = group->offset + 6 + i * 14;
         const std::uint32_t image_size = u32(pe.bytes(), entry + 8);
         const std::uint16_t id = u16(pe.bytes(), entry + 12);
-        if (id == 0 || image_size == 0 || !ids.insert(id).second) return false;
+        if (id == 0 || image_size == 0 || !ids.insert(id).second)
+            return reject("RT_GROUP_ICON contains a zero, empty, or duplicate image reference");
         const auto image = pe.find_resource(3, id);
-        if (!image || image->size != image_size) return false;
+        if (!image) return reject("RT_ICON resource ID " + std::to_string(id) + " is missing");
+        if (image->size != image_size) return reject("RT_ICON resource ID " + std::to_string(id) +
+            " size=" + std::to_string(image->size) + " group-size=" + std::to_string(image_size));
     }
-    return ids.size() == expected_icons;
+    if (ids.size() != expected_icons) return reject("RT_GROUP_ICON unique image count mismatch");
+    return true;
 }
 
 inline bool probe_manifest(const std::filesystem::path& path, std::string_view expected_version) {

@@ -72,12 +72,13 @@ int main(int argc, char** argv) {
     }
     if (argc == 5 && std::strcmp(argv[1], "--pe-icons") == 0 && std::strcmp(argv[3], "--expect-icons") == 0) {
         unsigned long count = 0;
+        std::string reason;
         if (parse_unsigned(argv[4], count) && count <= 64 &&
-            devlink_probe::probe_pe_icons(argv[2], static_cast<unsigned>(count))) {
+            devlink_probe::probe_pe_icons(argv[2], static_cast<unsigned>(count), &reason)) {
             std::printf("pe-icons: PASS RT_GROUP_ICON + %lu matching RT_ICON resources\n", count);
             return 0;
         }
-        std::fprintf(stderr, "PE icon validation failed: %s\n", argv[2]);
+        std::fprintf(stderr, "PE icon validation failed: %s (%s)\n", argv[2], reason.empty() ? "invalid expected icon count" : reason.c_str());
         return 1;
     }
     if (argc == 5 && std::strcmp(argv[1], "--manifest") == 0 && std::strcmp(argv[3], "--expect-version") == 0) {
