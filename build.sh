@@ -696,6 +696,7 @@ selftest() {
     run python3 "$ROOT/tests/build/synthetic_pe.py" --out-dir "$DIR/synthetic-pe"
     expect pe-icons-synthetic 0 'PASS RT_GROUP_ICON' "$OUT/doctor/probe" --pe-icons "$DIR/synthetic-pe/icons-good.exe" --expect-icons 7
     expect pe-manifest-synthetic 0 'PASS resource #1 version=0.2.0.0' "$OUT/doctor/probe" --manifest "$DIR/synthetic-pe/icons-good.exe" --expect-version 0.2.0.0
+    expect pe-manifest-only-synthetic 0 'PASS resource #1 version=0.2.0.0' "$OUT/doctor/probe" --manifest "$DIR/synthetic-pe/manifest-only.exe" --expect-version 0.2.0.0
     expect pe-icons-bad-group 1 'PE icon validation failed' "$OUT/doctor/probe" --pe-icons "$DIR/synthetic-pe/icons-bad-group.exe" --expect-icons 7
     expect pe-manifest-missing 1 'PE manifest validation failed' "$OUT/doctor/probe" --manifest "$DIR/synthetic-pe/no-manifest.exe" --expect-version 0.2.0.0
     expect pe-manifest-wrong-version 1 'PE manifest validation failed' "$OUT/doctor/probe" --manifest "$DIR/synthetic-pe/wrong-version.exe" --expect-version 0.2.0.0

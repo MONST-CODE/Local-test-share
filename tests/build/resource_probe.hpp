@@ -270,13 +270,18 @@ inline bool probe_manifest(const std::filesystem::path& path, std::string_view e
     PeImage pe(*file);
     if (!pe.initialize()) return false;
     const auto manifest = pe.find_resource(24, 1); // RT_MANIFEST, resource ID 1
-    const auto version = pe.find_resource(16, 1);  // RT_VERSION, resource ID 1
-    if (!manifest || !version || manifest->size == 0 || version->size < 6) return false;
+    const auto version = pe.find_resource(16, 1);  // RT_VERSION, resource ID 1 (desktop only)
+    if (!manifest || manifest->size == 0) return false;
     const std::string_view xml(reinterpret_cast<const char*>(pe.bytes().data() + manifest->offset), manifest->size);
     if (xml.find("asInvoker") == std::string_view::npos ||
         xml.find("PerMonitorV2") == std::string_view::npos) return false;
     const std::string expected_manifest_version = "version=\"" + std::string(expected_version) + "\"";
     if (xml.find(expected_manifest_version) == std::string_view::npos) return false;
+    // Host monitor and demo-service carry only the assembly manifest. The
+    // desktop executable additionally embeds VERSIONINFO; when present, prove
+    // that resource matches the same version rather than requiring it for all PE files.
+    if (!version) return true;
+    if (version->size < 6) return false;
 
     const auto expected = parse_version(expected_version);
     if (!expected) return false;

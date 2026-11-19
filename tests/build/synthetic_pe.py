@@ -46,13 +46,14 @@ def group_icon(count: int) -> bytes:
     return struct.pack("<HHH", 0, 1, count) + entries
 
 
-def make_resource_tree(with_manifest: bool, group_count: int, manifest_version: str) -> Node:
+def make_resource_tree(with_manifest: bool, with_version: bool, group_count: int, manifest_version: str) -> Node:
     root = Node()
     icon_children = {i: Node(children={1033: Node(data=bytes([0x28, 0, 0, 0]) + bytes([i]) * max(0, n - 4))})
                      for i, n in enumerate([40, 48, 56, 64, 72, 80, 96], 1)}
     root.children[3] = Node(children=icon_children)  # RT_ICON
     root.children[14] = Node(children={1: Node(children={1033: Node(data=group_icon(group_count))})})
-    root.children[16] = Node(children={1: Node(children={1033: Node(data=version_resource((0, 2, 0, 0)))})})
+    if with_version:
+        root.children[16] = Node(children={1: Node(children={1033: Node(data=version_resource((0, 2, 0, 0)))})})
     if with_manifest:
         xml = (f'<?xml version="1.0" encoding="UTF-8"?><assembly><assemblyIdentity '
                f'version="{manifest_version}" name="DevLink.Desktop"/><trustInfo>'
@@ -147,9 +148,9 @@ def make_pe(resource_blob: bytes) -> bytes:
     return bytes(headers) + resource_blob + bytes(raw_size - len(resource_blob))
 
 
-def write_fixture(path: Path, *, manifest: bool = True, group_count: int = 7,
+def write_fixture(path: Path, *, manifest: bool = True, version: bool = True, group_count: int = 7,
                   manifest_version: str = "0.2.0.0") -> None:
-    blob = build_resource_blob(make_resource_tree(manifest, group_count, manifest_version))
+    blob = build_resource_blob(make_resource_tree(manifest, version, group_count, manifest_version))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(make_pe(blob))
 
@@ -162,7 +163,8 @@ def main() -> None:
     write_fixture(args.out_dir / "icons-bad-group.exe", group_count=6)
     write_fixture(args.out_dir / "no-manifest.exe", manifest=False)
     write_fixture(args.out_dir / "wrong-version.exe", manifest_version="9.9.9.9")
-    print(f"Wrote four synthetic PE32+ x64 parser fixtures; ICO entries=7; output={args.out_dir}")
+    write_fixture(args.out_dir / "manifest-only.exe", version=False)
+    print(f"Wrote five synthetic PE32+ x64 parser fixtures; ICO entries=7; output={args.out_dir}")
 
 
 if __name__ == "__main__":
