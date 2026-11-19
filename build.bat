@@ -986,6 +986,7 @@ if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows::%FUZZ_NOTICE%
 exit /b 0
 
 :package
+if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows package::PACKAGE_START
 call :fresh "%OUT%\packages" || exit /b
 if "%CORE_ONLY%"=="1" (call :problem "package requires the full native desktop"& exit /b 2)
 set "MODE=release"
@@ -993,7 +994,9 @@ set "DIR=%OUT%\release"
 set "WITH_TESTS=1"
 set "NATIVE_UI=1"
 call :build_project || exit /b
+if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows package::PACKAGE_BUILD_SUCCESS
 call :tests || exit /b
+if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows package::PACKAGE_TESTS_SUCCESS
 set "STAGE=%OUT%\packages\stage"
 call :fresh "%STAGE%" || exit /b
 mkdir "%STAGE%\DevLink\bin" "%STAGE%\DevLink\docs\reports" "%STAGE%\DevLink\licenses"
@@ -1025,6 +1028,7 @@ call :run copy /y "%RUNTIME_REPORT%" "%STAGE%\DevLink\docs\runtime-dependencies.
 if errorlevel 1 exit /b
 call :run xcopy.exe /E /I /Y "%DIR%\runtime-licenses" "%STAGE%\DevLink\licenses\runtime"
 if errorlevel 1 exit /b
+if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows package::PACKAGE_STAGE_READY
 set "ARCHIVE=%OUT%\packages\DevLink-%PRODUCT_VERSION%-windows-ucrt64-x64.zip"
 call :run "%TAR%" -a -cf "%ARCHIVE%" -C "%STAGE%" DevLink
 if errorlevel 1 exit /b
@@ -1035,11 +1039,13 @@ rem integrite et SHA-256 verifiees AVANT le renommage, jamais d'ecrasement muet.
 rem Memes garanties que publish_release de build.sh (Linux).
 set "PUBLISHED=%ROOT%\releases\DevLink-%PRODUCT_VERSION%-windows-ucrt64-x64.zip"
 call :publish_release "%ARCHIVE%" "%PUBLISHED%" || exit /b
+if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows package::PACKAGE_PUBLISHED
 call :notice_file "%CMDLOG%"
 call :fresh "%OUT%\packages\check" || exit /b
 rem L'extraction de preuve porte sur l'archive PUBLIEE : celle qu'un tiers recoit.
 call :run "%TAR%" -xf "%PUBLISHED%" -C "%OUT%\packages\check"
 if errorlevel 1 exit /b
+if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows package::PACKAGE_EXTRACTED
 for %%F in ("%STAGE%\DevLink\bin\*.exe" "%STAGE%\DevLink\bin\*.dll") do (
   call :run fc.exe /b "%%~fF" "%OUT%\packages\check\DevLink\bin\%%~nxF"
   if errorlevel 1 exit /b
@@ -1058,10 +1064,12 @@ rem Prove the extracted archive does not resolve missing DLLs from the MSYS2 PAT
 set "PATH=%SystemRoot%\System32;%SystemRoot%"
 call :run "%OUT%\packages\check\DevLink\bin\devlink-monitor.exe" --version
 if errorlevel 1 exit /b
+if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows package::PACKAGE_MONITOR_EXECUTED_WITH_SYSTEM_ONLY_PATH
 set "SDL_VIDEODRIVER=windows"
 set "SDL_RENDER_DRIVER=software"
 call :run "%OUT%\packages\check\DevLink\bin\devlink-desktop.exe" --smoke-test
 if errorlevel 1 exit /b
+if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows package::PACKAGE_DESKTOP_EXECUTED_WITH_SYSTEM_ONLY_PATH
 if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows::PASS UCRT64 Release ZIP extracted and executed using native Windows video with system-only PATH
 exit /b 0
 
