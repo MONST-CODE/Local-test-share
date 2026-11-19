@@ -545,6 +545,7 @@ tests() {
     expect unit 0 '0 failures' "$BIN/devlink-unit-tests"
     expect platform 0 '0 failures' "$BIN/devlink-platform-tests"
     expect ipv6 0 '0 failures' "$BIN/devlink-platform-tests" --ipv6
+    expect demo-service 0 'SAME_HOST_INTEGRATION PASS' python3 tests/integration/demo_service_test.py "$BIN/devlink-demo-service"
     expect cli-help 0 'no probes, no server, no sharing' "$BIN/devlink-monitor" --help
     expect cli-version 0 'no sharing' "$BIN/devlink-monitor" --version
     expect cli-unknown 2 'Usage:' "$BIN/devlink-monitor" --not-a-devlink-option

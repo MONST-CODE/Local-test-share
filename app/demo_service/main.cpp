@@ -13,10 +13,14 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <charconv>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
+#include <optional>
+#include <string_view>
 #include <span>
 #include <string>
 #include <thread>
@@ -44,6 +48,9 @@ constexpr char kWebSocketGuid[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 std::atomic<bool> g_stop{false};
 std::atomic<unsigned> g_requests{0};
 std::atomic<unsigned> g_websockets{0};
+std::mutex g_state_mutex;
+std::uint64_t g_action_count = 0;
+std::string g_last_value;
 bool g_quiet = false;
 
 void log_line(const std::string& text) {
@@ -57,27 +64,155 @@ std::string http_response(std::uint16_t status, std::string_view reason, std::st
     std::string text = "HTTP/1.1 " + std::to_string(status) + " " + std::string(reason) + "\r\n" + "Content-Type: " +
         std::string(content_type) + "\r\n" + "Content-Length: " + std::to_string(body.size()) + "\r\n" +
         "Cache-Control: no-store\r\n";
+    text += "X-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n";
+    text += "Content-Security-Policy: default-src 'self'; img-src 'self'; script-src 'self'; style-src 'self'; "
+            "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'\r\n";
     if (!extra_headers.empty()) text += std::string(extra_headers) + "\r\n";
     text += "Connection: close\r\n\r\n";
     text += body;
     return text;
 }
 
-std::string index_page(std::string_view target) {
-    std::string body = "<!doctype html>\n<html lang=\"fr\">\n<head>\n<meta charset=\"utf-8\">\n"
-                       "<title>Service de démonstration DevLink</title>\n</head>\n<body>\n"
-                       "<h1>Service de démonstration DevLink</h1>\n"
-                       "<p>Cette page est servie par le service local, puis pontée par la passerelle DevLink.</p>\n"
-                       "<ul>\n<li><a href=\"/api/status\">/api/status</a> — état JSON</li>\n"
-                       "<li>/ws — écho WebSocket</li>\n</ul>\n"
-                       "<p>Requête observée : <code>" +
-        std::string(target) + "</code></p>\n</body>\n</html>\n";
-    return body;
+std::string index_page() {
+    return R"HTML(<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DevLink — application web locale de démonstration</title><link rel="stylesheet" href="/assets/app.css"></head><body><main>
+<img src="/assets/demo-mark.svg" alt="Repère visuel DevLink">
+<h1>Application web locale</h1>
+<p id="recognizable">Page de démonstration servie par le processus hôte DevLink.</p>
+<p>État serveur : <strong id="counter">chargement…</strong></p>
+<button id="increment" type="button">Incrémenter le compteur côté hôte</button>
+<form id="feedback"><label for="value">Message de test (2 à 48 caractères)</label><br>
+<input id="value" name="value" required minlength="2" maxlength="48" pattern="[A-Za-z0-9 ._'-]{2,48}">
+<button type="submit">Envoyer au serveur hôte</button></form>
+<output id="result" aria-live="polite"></output>
+<nav><a href="/details">Page détails</a><a href="/api/status">État JSON</a></nav>
+</main><script src="/assets/app.js" defer></script></body></html>)HTML";
+}
+
+std::string app_styles() {
+    return R"CSS(:root{color-scheme:dark;font:16px system-ui,sans-serif;background:#211916;color:#f7eee5}
+body{max-width:760px;margin:3rem auto;padding:0 1.25rem}main{background:#30231f;border:1px solid #705044;border-radius:16px;padding:2rem}
+h1{color:#edb27e}img{width:96px;height:96px;float:right}button{background:#bc744f;color:#fff;border:0;border-radius:8px;padding:.7rem 1rem;cursor:pointer}
+input{padding:.65rem;border-radius:6px;border:1px solid #997865;background:#211916;color:#fff}a{color:#edb27e}
+output{display:block;margin:.75rem 0;color:#d6ad8d}nav{display:flex;gap:1rem;margin-top:1.5rem})CSS";
+}
+
+std::string app_script() {
+    return R"JS('use strict';
+const counter=document.querySelector('#counter');
+const result=document.querySelector('#result');
+async function refresh(){const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw new Error('status '+r.status);const s=await r.json();counter.textContent=s.actions+' actions — '+s.last_value;}
+async function act(data){const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(data)});const v=await r.json();if(!r.ok)throw new Error(v.error||('HTTP '+r.status));result.textContent=v.message;await refresh();}
+document.querySelector('#increment').addEventListener('click',()=>act({action:'increment'}).catch(e=>result.textContent=e.message));
+document.querySelector('#feedback').addEventListener('submit',e=>{e.preventDefault();act({action:'submit',value:document.querySelector('#value').value}).catch(e=>result.textContent=e.message);});
+refresh().catch(e=>result.textContent='Service indisponible : '+e.message);
+)JS";
+}
+
+std::string details_page() {
+    return R"HTML(<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Détails — DevLink</title></head>
+<body><h1>Page détails de l’application locale</h1><p>Cette route est servie par le même serveur hôte.</p>
+<p>Ressource de test : <img src="/assets/demo-mark.svg" alt="Repère DevLink" width="64" height="64"></p>
+<a href="/">Retour à l’application</a></body></html>)HTML";
 }
 
 std::string status_json() {
-    return "{\"service\":\"plpt-demo\",\"requests\":" + std::to_string(g_requests.load()) + ",\"websockets\":" +
-        std::to_string(g_websockets.load()) + ",\"protocol\":\"HTTP/1.1+RFC6455\"}";
+    std::lock_guard<std::mutex> lock(g_state_mutex);
+    return "{\"service\":\"devlink-demo\",\"requests\":" + std::to_string(g_requests.load()) +
+        ",\"websockets\":" + std::to_string(g_websockets.load()) +
+        ",\"actions\":" + std::to_string(g_action_count) + ",\"last_value\":\"" + g_last_value +
+        "\",\"protocol\":\"HTTP/1.1+RFC6455\"}";
+}
+
+constexpr std::size_t kMaxHttpBodyBytes = 4096;
+std::optional<std::string_view> header_value(std::string_view headers, std::string_view wanted) {
+    std::size_t start = headers.find("\r\n");
+    if (start == std::string_view::npos) return std::nullopt;
+    start += 2;
+    while (start < headers.size()) {
+        const auto end = headers.find("\r\n", start);
+        if (end == std::string_view::npos || end == start) break;
+        const auto line = headers.substr(start, end - start);
+        const auto colon = line.find(':');
+        if (colon != std::string_view::npos) {
+            std::string key(line.substr(0, colon));
+            std::string target(wanted);
+            for (auto& c : key) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            for (auto& c : target) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (key == target) {
+                auto value = line.substr(colon + 1);
+                while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) value.remove_prefix(1);
+                while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) value.remove_suffix(1);
+                return value;
+            }
+        }
+        start = end + 2;
+    }
+    return std::nullopt;
+}
+
+int hex_digit(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+bool decode_form_component(std::string_view input, std::string& output) {
+    output.clear();
+    for (std::size_t i = 0; i < input.size(); ++i) {
+        unsigned char value = static_cast<unsigned char>(input[i]);
+        if (value == '+') value = ' ';
+        else if (value == '%') {
+            if (i + 2 >= input.size()) return false;
+            const int high = hex_digit(input[i + 1]), low = hex_digit(input[i + 2]);
+            if (high < 0 || low < 0) return false;
+            value = static_cast<unsigned char>((high << 4) | low);
+            i += 2;
+        }
+        // The demo accepts safe printable ASCII only; no control characters,
+        // markup injection, or malformed UTF-8 is persisted by this endpoint.
+        if (value < 0x20 || value > 0x7e) return false;
+        output.push_back(static_cast<char>(value));
+        if (output.size() > 48) return false;
+    }
+    return true;
+}
+bool safe_demo_value(std::string_view value) {
+    if (value.size() < 2 || value.size() > 48) return false;
+    for (const unsigned char c : value) {
+        const bool alpha_num = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+        if (!alpha_num && c != ' ' && c != '.' && c != '_' && c != '-' && c != '\'') return false;
+    }
+    return true;
+}
+bool parse_demo_action(std::string_view body, std::string& action, std::string& value) {
+    action.clear(); value.clear();
+    bool action_seen = false, value_seen = false;
+    std::size_t start = 0;
+    while (start <= body.size()) {
+        const auto amp = body.find('&', start);
+        const auto stop = amp == std::string_view::npos ? body.size() : amp;
+        const auto pair = body.substr(start, stop - start);
+        const auto equal = pair.find('=');
+        if (equal == std::string_view::npos) return false;
+        std::string key, decoded;
+        if (!decode_form_component(pair.substr(0, equal), key) ||
+            !decode_form_component(pair.substr(equal + 1), decoded)) return false;
+        if (key == "action" && !action_seen) { action = std::move(decoded); action_seen = true; }
+        else if (key == "value" && !value_seen) { value = std::move(decoded); value_seen = true; }
+        else return false;
+        if (amp == std::string_view::npos) break;
+        start = amp + 1;
+    }
+    if (!action_seen) return false;
+    if (action == "increment") return !value_seen;
+    if (action == "submit") return value_seen && safe_demo_value(value);
+    return false;
+}
+
+std::string demo_svg() {
+    return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 96\"><rect width=\"96\" height=\"96\" rx=\"18\" fill=\"#bc744f\"/><path d=\"M18 28h22L26 48l14 20H18L4 48zM56 28h22L64 48l14 20H56L42 48z\" fill=\"#f7eee5\"/><circle cx=\"48\" cy=\"48\" r=\"9\" fill=\"#211916\"/></svg>";
 }
 
 // ---- WebSocket RFC 6455 : poignée de main puis trames. ----
@@ -205,7 +340,22 @@ void serve_connection(Socket& socket, const IpAddress& peer) {
             reinterpret_cast<const std::uint8_t*>("\r\n\r\n") + 4);
         if (terminator != head.end()) break;
     }
+    const auto header_terminator = std::search(head.begin(), head.end(),
+        reinterpret_cast<const std::uint8_t*>("\r\n\r\n"),
+        reinterpret_cast<const std::uint8_t*>("\r\n\r\n") + 4);
+    if (header_terminator == head.end()) {
+        const auto response = http_response(431, "Request Header Fields Too Large", "text/plain; charset=utf-8", "en-têtes trop volumineux");
+        (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(response.data()), response.size()}, 2000ms);
+        return;
+    }
+    const auto header_size = static_cast<std::size_t>(header_terminator - head.begin()) + 4;
+    if (header_size > kMaxHeadBytes) {
+        const auto response = http_response(431, "Request Header Fields Too Large", "text/plain; charset=utf-8", "en-têtes trop volumineux");
+        (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(response.data()), response.size()}, 2000ms);
+        return;
+    }
     const std::string text(head.begin(), head.end());
+    const std::string_view headers(text.data(), header_size - 2);
     const auto first_line_end = text.find("\r\n");
     if (first_line_end == std::string::npos) return;
     const auto request_line = text.substr(0, first_line_end);
@@ -214,6 +364,35 @@ void serve_connection(Socket& socket, const IpAddress& peer) {
     if (first_space == std::string::npos || last_space == first_space) return;
     const auto method = request_line.substr(0, first_space);
     const auto target = request_line.substr(first_space + 1, last_space - first_space - 1);
+    const auto transfer_encoding = header_value(headers, "transfer-encoding");
+    const auto length_header = header_value(headers, "content-length");
+    std::size_t content_length = 0;
+    if (transfer_encoding) {
+        const auto response = http_response(400, "Bad Request", "text/plain; charset=utf-8", "Transfer-Encoding non pris en charge");
+        (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(response.data()), response.size()}, 2000ms);
+        return;
+    }
+    if (length_header) {
+        const auto parsed = std::from_chars(length_header->data(), length_header->data() + length_header->size(), content_length);
+        if (parsed.ec != std::errc{} || parsed.ptr != length_header->data() + length_header->size()) {
+            const auto response = http_response(400, "Bad Request", "text/plain; charset=utf-8", "Content-Length invalide");
+            (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(response.data()), response.size()}, 2000ms);
+            return;
+        }
+    }
+    if (content_length > kMaxHttpBodyBytes) {
+        const auto response = http_response(413, "Payload Too Large", "text/plain; charset=utf-8", "corps trop volumineux");
+        (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(response.data()), response.size()}, 2000ms);
+        return;
+    }
+    std::string request_body(text.data() + header_size,
+        std::min(content_length, text.size() - header_size));
+    while (request_body.size() < content_length) {
+        const auto need = std::min(buffer.size(), content_length - request_body.size());
+        auto received = socket.receive({buffer.data(), need});
+        if (!received || received.value() == 0) return;
+        request_body.append(reinterpret_cast<const char*>(buffer.data()), received.value());
+    }
     g_requests++;
     log_line("requête " + method + " " + target + " depuis " + peer.text);
 
@@ -239,9 +418,34 @@ void serve_connection(Socket& socket, const IpAddress& peer) {
     std::string_view content_type = "text/html; charset=utf-8";
     std::uint16_t status = 200;
     std::string_view reason = "OK";
-    if (target == "/" || target.rfind("/?", 0) == 0 || target.rfind("/index.html", 0) == 0) body = index_page(target);
-    else if (target.rfind("/api/status", 0) == 0) { body = status_json(); content_type = "application/json; charset=utf-8"; }
-    else if (target.rfind("/ws", 0) == 0) { body = "ce chemin attend un upgrade WebSocket"; content_type = "text/plain; charset=utf-8"; status = 426; reason = "Upgrade Required"; }
+    if ((target == "/" || target == "/index.html") && method == "GET") body = index_page();
+    else if (target == "/details" && method == "GET") body = details_page();
+    else if (target == "/assets/demo-mark.svg" && method == "GET") { body = demo_svg(); content_type = "image/svg+xml"; }
+    else if (target == "/assets/app.css" && method == "GET") { body = app_styles(); content_type = "text/css; charset=utf-8"; }
+    else if (target == "/assets/app.js" && method == "GET") { body = app_script(); content_type = "text/javascript; charset=utf-8"; }
+    else if (target == "/api/status" && method == "GET") { body = status_json(); content_type = "application/json; charset=utf-8"; }
+    else if (target == "/api/action" && method == "POST") {
+        const auto request_type = header_value(headers, "content-type");
+        std::string action, value;
+        if (!request_type || request_type->substr(0, request_type->find(';')) != "application/x-www-form-urlencoded" ||
+            !parse_demo_action(request_body, action, value)) {
+            body = "{\"error\":\"requête invalide\"}";
+            content_type = "application/json; charset=utf-8";
+            status = 400; reason = "Bad Request";
+        } else {
+            std::lock_guard<std::mutex> lock(g_state_mutex);
+            ++g_action_count;
+            g_last_value = action == "increment" ? "compteur incrémenté" : value;
+            body = "{\"actions\":" + std::to_string(g_action_count) + ",\"last_value\":\"" + g_last_value + "\",\"message\":\"" +
+                (action == "increment" ? "Compteur incrémenté sur l'hôte" : "Formulaire reçu par l'hôte") + "\"}";
+            content_type = "application/json; charset=utf-8";
+        }
+    }
+    else if (target == "/api/action" || target == "/api/status") {
+        body = "{\"error\":\"méthode non autorisée\"}"; content_type = "application/json; charset=utf-8";
+        status = 405; reason = "Method Not Allowed";
+    }
+    else if (target == "/ws") { body = "ce chemin attend un upgrade WebSocket"; content_type = "text/plain; charset=utf-8"; status = 426; reason = "Upgrade Required"; }
     else { body = "chemin inconnu"; content_type = "text/plain; charset=utf-8"; status = 404; reason = "Not Found"; }
     const auto response = http_response(status, reason, content_type, body);
     (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(response.data()), response.size()}, 2000ms);
