@@ -151,6 +151,8 @@ if not "%RC%"=="0" (
   echo Command exit %RC%: %*
   >>"%LOG%" echo Command exit %RC%: %*
   if "%GITHUB_ACTIONS%"=="true" if not "%DEVLINK_EXPECT_FAILURE%"=="1" if not "%RC%"=="%RUN_EXPECTED%" (
+    echo ::notice title=DevLink command failure::exit=%RC% command=%*
+    call :notice_file "%CMDLOG%"
     findstr /I /C:"error:" /C:"fatal" /C:"undefined" /C:"FAIL" "%CMDLOG%" >"%LOG%.diagnostics.txt"
     call :notice_file "%LOG%.diagnostics.txt"
   )
