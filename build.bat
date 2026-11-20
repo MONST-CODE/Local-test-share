@@ -582,7 +582,7 @@ rem -mwindows selects crtexewin.o and dies with "undefined reference to WinMain"
 rem SDL's own SDL_RunApp then rebuilds a real UTF-8 argc/argv from the command
 rem line, so argument handling stays identical for the smoke tests.
 if /I "%~2"=="WINDOWS" set "SUBSYSTEM=-mwindows -municode"
-call :run "%CXX%" %VFLAG% %LINK_DRIVER% %PROFILE_FLAGS% %SAN% %LINK_OBJECTS% %RESOURCE_O% %NATIVE_LIBS% %LINK_EXTRA% %SUBSYSTEM% -Wl,--no-undefined,--fatal-warnings,--dynamicbase,--nxcompat %NEGATIVE_LINK% -o "%BIN%\%~1.exe"
+call :run "%CXX%" %VFLAG% %LINK_DRIVER% %PROFILE_FLAGS% %SAN% %LINK_OBJECTS% "%RESOURCE_O%" %NATIVE_LIBS% %LINK_EXTRA% %SUBSYSTEM% -Wl,--no-undefined,--fatal-warnings,--dynamicbase,--nxcompat %NEGATIVE_LINK% -o "%BIN%\%~1.exe"
 if errorlevel 1 exit /b
 if not exist "%BIN%\%~1.exe" (call :problem "linker returned success without executable"& exit /b 1)
 call :run "%OUT%\doctor\probe.exe" --manifest "%BIN%\%~1.exe" --expect-version %VERSION_QUAD%
