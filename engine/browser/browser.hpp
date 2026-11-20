@@ -106,6 +106,9 @@ public:
     }
     // True only for a backend that runs a real browser engine.
     virtual bool real_engine() const { return false; }
+    // Releases every context AND the engine itself (browser processes,
+    // temporary profiles). Idempotent; the backend may be reused afterwards.
+    virtual void shutdown_engine() {}
 };
 
 // Backend nul : échoue explicitement. Utilisé pour prouver que le coeur ne

@@ -82,6 +82,7 @@ public:
     Result<std::string> evaluate_for_diagnostics(ContextId ctx, const std::string& script) override;
     Result<BrowserContextStats> context_stats(ContextId ctx) override;
     bool real_engine() const override { return kWebView2BackendImplemented; }
+    void shutdown_engine() override { cleanup_all(); }
 
     std::size_t active_contexts() const;
     // Socket-level egress of the browser process (SOCKS5 guard, ADR-018 §4).

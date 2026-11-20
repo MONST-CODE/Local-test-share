@@ -313,7 +313,7 @@ void protocol_golden_and_bounds() {
     // 1.4 n'existe pas et doit être refusé.
     CHECK(negotiate_version(1, 0)); CHECK(negotiate_version(1, 1)); CHECK(negotiate_version(1, 2));
     CHECK(negotiate_version(1, 3));
-    CHECK(!negotiate_version(1, 4)); CHECK(!negotiate_version(2, 0)); CHECK(!negotiate_version(0, 1));
+    CHECK(!negotiate_version(1, 5)); CHECK(!negotiate_version(2, 0)); CHECK(!negotiate_version(0, 1));
     e.payload.resize(8193); CHECK(!encode_envelope(e));
     e = chat(); e.type = static_cast<MessageType>(999); CHECK(!encode_envelope(e));
     e = chat(); e.flags = 1; CHECK(!encode_envelope(e));

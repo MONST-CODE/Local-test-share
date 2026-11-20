@@ -15,6 +15,7 @@ std::uint32_t max_payload_size(MessageType type) {
     case MessageType::TlsUpgrade: return 512; // identité + nonce publics, dernier clair.
     case MessageType::AuthChallenge: return 96; // nonce public de 32 octets.
     case MessageType::AuthProof: return 96;     // preuve HMAC de 32 octets.
+    case MessageType::MediaOffer: return 512;   // port, identité, clé PSK, mode.
     }
     return 0;
 }

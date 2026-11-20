@@ -9,7 +9,7 @@ namespace plpt::model {
 // 1.2 : Hello porte le secret de reprise, Auth le délivre. Un pair annonçant une
 // révision mineure inférieure est refusé explicitement par l'hôte (pas de repli
 // muet sur une identité devinée). Aucune révision n'a jamais retiré de champ.
-inline constexpr std::uint16_t kProtocolMajor = 1, kProtocolMinor = 3;
+inline constexpr std::uint16_t kProtocolMajor = 1, kProtocolMinor = 4;
 inline constexpr std::size_t kEnvelopeHeaderBytes = 56;
 // Flux logiques multiplexés dans stream_id. Un seul est réellement utilisé par le
 // partage LAN (Control) ; les autres restent réservés et jamais acceptés en vrac.
@@ -24,7 +24,11 @@ enum class MessageType : std::uint16_t {
     // cours de connexion (ADR-016). Jamais envoyée après l'upgrade.
     TlsUpgrade = 16,
     AuthChallenge = 17,
-    AuthProof = 18
+    AuthProof = 18,
+    // Protocole 1.4 (ADR-018) : autorisation du canal média, émise par l'hôte
+    // UNIQUEMENT sur un canal de contrôle TLS 1.3 déjà authentifié. Porte la
+    // clé PSK propre à ce participant pour le canal média séparé.
+    MediaOffer = 19
 };
 struct Envelope {
     std::uint16_t protocol_major = kProtocolMajor, protocol_minor = kProtocolMinor;

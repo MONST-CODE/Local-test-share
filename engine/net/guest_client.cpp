@@ -590,6 +590,24 @@ void GuestClient::handle_frame(const model::Envelope& envelope) {
         record_event("services publiés par l'hôte : " + std::to_string(state_.services.size()));
         return;
     }
+    case model::MessageType::MediaOffer: {
+        // Only meaningful on an encrypted control channel: a clear channel never
+        // carries a media key (the host does not send one), and one received
+        // anyway is refused rather than used.
+        if (!secure_) { record_warning({ErrorCode::PermissionDenied, "offre média reçue en clair : refusée", "guest"}); return; }
+        auto offer = decode_media_offer(envelope.payload);
+        if (!offer) { record_warning(offer.error()); return; }
+        {
+            std::lock_guard<std::mutex> guard(mutex_);
+            media_offer_ = offer.value();
+        }
+        state_.media_offered = true;
+        state_.media_mode = offer.value().mode;
+        ++state_.media_offer_revision;
+        ++revision_;
+        record_event("canal média offert par l'hôte (port " + std::to_string(offer.value().port) + ")");
+        return;
+    }
     case model::MessageType::Chat: {
         auto chat = decode_chat(envelope.payload);
         if (!chat) { record_warning(chat.error()); return; }
@@ -751,6 +769,11 @@ void GuestClient::flush(std::chrono::milliseconds budget) {
 std::string GuestClient::resume_secret() const {
     std::lock_guard<std::mutex> guard(mutex_);
     return resume_secret_;
+}
+
+std::optional<MediaOffer> GuestClient::media_offer() const {
+    std::lock_guard<std::mutex> guard(mutex_);
+    return media_offer_;
 }
 
 void GuestClient::publish() {

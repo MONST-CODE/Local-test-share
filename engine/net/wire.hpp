@@ -138,6 +138,19 @@ struct ByeNotice {
     std::string text;
 };
 
+// Autorisation du canal média (protocole 1.4, ADR-018). Émise par l'hôte après
+// admission, sur le canal de contrôle chiffré uniquement. `key` est le secret
+// PSK TLS 1.3 du canal média de CE participant : jamais journalisé, jamais
+// affiché, renouvelé à chaque admission, détruit à la révocation.
+struct MediaOffer {
+    std::uint16_t port = 0;
+    std::string identity;            // publique : devlink-media-s<session>-p<participant>
+    std::string key;                 // 64 chiffres hexadécimaux
+    std::uint8_t mode = 0;           // share::ShareMode
+    std::uint32_t viewport_width = 0;
+    std::uint32_t viewport_height = 0;
+};
+
 struct Heartbeat {
     std::uint64_t monotonic_ms = 0;
     std::uint64_t echo = 0;          // renvoyé tel quel : mesure de latence réelle.
@@ -151,6 +164,8 @@ std::vector<std::uint8_t> encode(const ChatText&);
 std::vector<std::uint8_t> encode(const ByeNotice&);
 std::vector<std::uint8_t> encode(const ErrorNotice&);
 std::vector<std::uint8_t> encode(const Heartbeat&);
+std::vector<std::uint8_t> encode(const MediaOffer&);
+Result<MediaOffer> decode_media_offer(std::span<const std::uint8_t>);
 
 Result<GuestHello> decode_guest_hello(std::span<const std::uint8_t>);
 Result<HostAuth> decode_host_auth(std::span<const std::uint8_t>);

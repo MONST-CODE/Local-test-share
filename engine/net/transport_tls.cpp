@@ -204,9 +204,19 @@ const OpenSslApi& openssl_api() {
 // Constantes de contrôle SSL_CTX_ctrl (valeurs publiées par ssl.h.in 3.0.20).
 constexpr int kSslCtrlSetMinProtoVersion = 123;
 constexpr int kSslCtrlSetMaxProtoVersion = 124;
+// SSL_CTX_set_mode est une macro sur SSL_CTX_ctrl(ctx, SSL_CTRL_MODE=33, mode).
+constexpr int kSslCtrlMode = 33;
+constexpr long kSslModeEnablePartialWrite = 0x1;
+constexpr long kSslModeAcceptMovingWriteBuffer = 0x2;
 
 bool set_ctx_proto_range(const OpenSslApi& api, SslContext* context,
     std::uint16_t min_version, std::uint16_t max_version) {
+    // Canal non bloquant (contrat v2) : sans ces modes, un SSL_write repris
+    // après WANT_WRITE doit présenter EXACTEMENT le même pointeur, ce qu'une
+    // file d'émission qui grandit (réallocation) ne garantit pas (« bad write
+    // retry »). Écritures partielles + tampon mobile : send() rend le nombre
+    // d'octets réellement chiffrés, l'appelant garde le reste.
+    api.ssl_ctx_ctrl(context, kSslCtrlMode, kSslModeEnablePartialWrite | kSslModeAcceptMovingWriteBuffer, nullptr);
     return api.ssl_ctx_ctrl(context, kSslCtrlSetMinProtoVersion, min_version, nullptr) != 0 &&
         api.ssl_ctx_ctrl(context, kSslCtrlSetMaxProtoVersion, max_version, nullptr) != 0;
 }

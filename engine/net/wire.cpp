@@ -634,6 +634,44 @@ Result<ErrorNotice> decode_error(std::span<const std::uint8_t> data) {
     return Result<ErrorNotice>::success(std::move(message));
 }
 
+std::vector<std::uint8_t> encode(const MediaOffer& m) {
+    PayloadWriter w;
+    w.u16(m.port);
+    w.text(m.identity);
+    w.text(m.key);
+    w.u8(m.mode);
+    w.u32(m.viewport_width);
+    w.u32(m.viewport_height);
+    return w.take();
+}
+
+Result<MediaOffer> decode_media_offer(std::span<const std::uint8_t> payload) {
+    PayloadReader r(payload);
+    auto port = r.u16();
+    auto identity = r.text(kMaxNameBytes + 32);
+    auto key = r.text(kMaxSecretBytes);
+    auto mode = r.u8();
+    auto w = r.u32();
+    auto h = r.u32();
+    if (!port || !identity || !key || !mode || !w || !h || !r.require_end())
+        return Result<MediaOffer>::failure({ErrorCode::ProtocolViolation, "offre média tronquée", "wire"});
+    const auto& k = key.value();
+    const bool hex = k.size() == 64 && std::all_of(k.begin(), k.end(), [](char c) {
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+    });
+    if (port.value() == 0 || identity.value().empty() || !hex || mode.value() < 1 || mode.value() > 3 ||
+        w.value() == 0 || h.value() == 0 || w.value() > 4096 || h.value() > 2160)
+        return Result<MediaOffer>::failure({ErrorCode::ProtocolViolation, "offre média invalide", "wire"});
+    MediaOffer m;
+    m.port = port.value();
+    m.identity = std::move(identity).value();
+    m.key = k;
+    m.mode = mode.value();
+    m.viewport_width = w.value();
+    m.viewport_height = h.value();
+    return Result<MediaOffer>::success(std::move(m));
+}
+
 Result<Heartbeat> decode_heartbeat(std::span<const std::uint8_t> data) {
     PayloadReader reader(data);
     Heartbeat message;

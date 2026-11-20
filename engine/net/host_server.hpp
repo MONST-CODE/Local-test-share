@@ -106,6 +106,7 @@ struct HostCounters {
     std::uint64_t invalid_frames = 0;
     std::uint64_t chat_relayed = 0;
     std::uint64_t timeouts = 0;
+    std::uint64_t media_offers = 0;    // offres de canal média émises (jamais le secret).
 };
 
 struct HostSnapshot {
@@ -133,6 +134,21 @@ struct HostSnapshot {
     std::size_t connection_count = 0;
 };
 
+// Partage réel (ADR-018) : le moteur de partage est informé de chaque admission
+// et de chaque départ. Appelé sur le thread d'E/S de l'hôte : ne doit JAMAIS
+// bloquer (aucune création de navigateur ici, seulement l'émission d'un droit).
+class IShareObserver {
+public:
+    virtual ~IShareObserver() = default;
+    // Admission sur un canal TLS 1.3 authentifié : rend l'offre média à envoyer
+    // à CE participant (clé propre, renouvelée), ou nullopt si aucun partage.
+    virtual std::optional<MediaOffer> on_participant_admitted(SessionId session, ParticipantId participant,
+        const std::string& name) = 0;
+    // Départ volontaire, coupure (revoked=false) ou révocation (revoked=true) :
+    // l'offre est invalidée et le canal média fermé immédiatement.
+    virtual void on_participant_removed(ParticipantId participant, bool revoked) = 0;
+};
+
 struct HostConfig {
     std::string session_name = "Session PLPT";
     std::string host_name = "hôte";
@@ -156,6 +172,9 @@ struct HostConfig {
     bool tls_required = true;
     std::uint32_t tls_handshake_timeout_ms = 5000;
     InviteCode invite_code;
+    // Moteur de partage réel (non possédé, doit survivre à stop()). nullptr =
+    // plan de contrôle seul, aucune offre média.
+    IShareObserver* share = nullptr;
 };
 
 class HostServer {

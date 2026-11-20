@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -104,6 +105,11 @@ struct GuestSnapshot {
     bool resume_available = false;
     std::uint32_t resume_ttl_ms = 0;
     std::string transport;   // réel : "TLSv1.3 …" ou "tcp clair" (ADR-016)
+    // Partage réel (ADR-018) : un canal média a été offert. Le secret n'est
+    // jamais dans l'instantané : voir GuestClient::media_offer().
+    bool media_offered = false;
+    std::uint64_t media_offer_revision = 0;
+    std::uint8_t media_mode = 0;
 };
 
 struct GuestConfig {
@@ -146,6 +152,9 @@ public:
     // place après une coupure. Ne jamais l'afficher, le journaliser ni l'annoncer :
     // c'est une preuve d'identité, pas une information de session.
     std::string resume_secret() const;
+    // Dernière offre de canal média (clé PSK comprise) : à remettre au client
+    // média uniquement. Ne jamais l'afficher ni la journaliser.
+    std::optional<MediaOffer> media_offer() const;
 
 private:
     enum class CommandKind : std::uint8_t { PostChat, PostDirect, Leave, Stop };
@@ -201,6 +210,7 @@ private:
 
     GuestSnapshot state_;              // propriété exclusive du thread d'entrées/sorties.
     std::string resume_secret_;        // gardée par mutex_ : lue depuis d'autres threads.
+    std::optional<MediaOffer> media_offer_; // gardée par mutex_.
     std::deque<ChatLine> chat_;        // anneau borné, même borne que l'hôte.
     std::deque<std::string> events_;
 

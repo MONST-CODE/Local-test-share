@@ -1154,6 +1154,16 @@ void HostServer::admit(Connection& connection) {
         return encode(info);
     }());
     queue_frame(connection, model::MessageType::ServiceList, encode(build_service_list()));
+    // Partage réel : la clé du canal média ne part que sur un canal TLS 1.3
+    // authentifié. Sans chiffrement, aucune offre : le partage n'est pas servi.
+    if (config_.share && connection.secure) {
+        if (auto offer = config_.share->on_participant_admitted(SessionId{session_id_}, participant, connection.guest_name)) {
+            queue_frame(connection, model::MessageType::MediaOffer, encode(*offer));
+            counters_.media_offers++;
+        }
+    } else if (config_.share) {
+        record_event("« " + connection.guest_name + " » : aucun canal média offert (canal de contrôle non chiffré)");
+    }
     ChatText notice;
     notice.sender = host_participant_;
     notice.sender_name = config_.host_name;
@@ -1222,6 +1232,7 @@ void HostServer::revoke_participant(ParticipantId participant) {
         return;
     }
     counters_.revoked++;
+    if (config_.share) config_.share->on_participant_removed(participant, true);
     const auto meta = participant_meta_.find(participant);
     const auto name = meta == participant_meta_.end() ? std::to_string(participant.value) : meta->second.name;
     reconnect_slots_.erase(std::remove_if(reconnect_slots_.begin(), reconnect_slots_.end(),
@@ -1368,6 +1379,8 @@ void HostServer::disconnect(Connection& connection, ErrorCode code, std::string 
     }
     if (connection.participant.value != 0 && session_) {
         const auto* participant = session_->find_participant(connection.participant);
+        if (participant && participant->state != model::ParticipantState::Revoked && config_.share)
+            config_.share->on_participant_removed(connection.participant, connection.voluntary_leave);
         if (participant && participant->state != model::ParticipantState::Revoked) {
             ChatText notice;
             notice.sender = host_participant_;
