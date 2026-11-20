@@ -1,10 +1,12 @@
 #pragma once
-// DevLink — portable media/input wire primitives.
-// These codecs define a bounded, explicit wire representation; they are not yet
-// connected to a WebView2 capture or a production media transport.
+// DevLink — portable media/input wire primitives (media protocol v2, ADR-018).
+// Bounded, explicit, big-endian wire representation of the frames produced by
+// the host Browser Worker and of the guest input events sent back to it. Used by
+// engine/share (TLS 1.3 media channel) on both ends.
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <optional>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -19,7 +21,7 @@
 
 namespace plpt::media {
 
-inline constexpr std::uint16_t kMediaProtocolVersion = 1;
+inline constexpr std::uint16_t kMediaProtocolVersion = 2;
 inline constexpr std::size_t kFrameHeaderBytes = 72;
 inline constexpr std::size_t kInputEventHeaderBytes = 24;
 inline constexpr std::size_t kMaxInputTextBytes = 32;
@@ -27,11 +29,15 @@ inline constexpr std::uint32_t kMaxFrameWidth = 4096;
 inline constexpr std::uint32_t kMaxFrameHeight = 2160;
 inline constexpr std::size_t kMaxFramePixels = 8'847'360; // 4096x2160
 inline constexpr std::size_t kMaxFramePayloadBytes = kMaxFramePixels * 4;
+// A compressed frame is never allowed to exceed this, whatever its dimensions.
+inline constexpr std::size_t kMaxCompressedPayloadBytes = 8u * 1024u * 1024u;
 inline constexpr std::uint16_t kFrameFlagKeyFrame = 1;
 
-// Version 1 deliberately supports one self-contained format. A codec is added
-// only when its dependency, limits and decoder are implemented and tested.
-enum class FrameCodec : std::uint8_t { Raw = 0 };
+// Every frame is self-contained (intra only): dropping a stale frame can never
+// break a reference chain. Raw = tightly packed RGBA8. Jpeg = baseline/progressive
+// JFIF produced by the host browser compositor (Page.startScreencast), decoded
+// by the guest with the OS codec; pixel_format names the decoded layout.
+enum class FrameCodec : std::uint8_t { Raw = 0, Jpeg = 1 };
 enum class PixelFormat : std::uint8_t { RGBA8 = 1 };
 
 struct FrameHeader {
@@ -52,7 +58,9 @@ struct FrameHeader {
 
 struct VideoFrame {
     FrameHeader header{};
-    std::vector<std::uint8_t> pixels; // tightly packed RGBA8, one complete frame
+    // Raw: tightly packed RGBA8 (stride = width*4). Jpeg: the complete JPEG
+    // bitstream (stride_bytes = 0). Always one complete, independent frame.
+    std::vector<std::uint8_t> pixels;
 };
 
 enum class InputEventType : std::uint8_t {
@@ -72,7 +80,7 @@ struct InputEvent {
     float y_norm = 0.0f;
     std::uint8_t button = 0; // 1..5 for mouse down/up; otherwise zero
     std::uint16_t modifiers = 0; // Shift/Ctrl/Alt/Meta/CapsLock bits 0..4
-    std::int16_t wheel_delta = 0;
+    std::int16_t wheel_delta = 0; // 1/120 notch units, positive = scroll up/away
     std::uint32_t key_code = 0; // virtual key code, 1..0xffff for key events
     std::string text; // UTF-8, max 32 bytes; never logged by this codec
 };
@@ -154,17 +162,59 @@ inline Result<void> validate_input(const InputEvent& event) {
     return Result<void>::failure(invalid_argument("champs incompatibles avec le type d'événement"));
 }
 
+inline Result<void> validate_frame(const VideoFrame& frame);
+} // namespace detail
+
+// Reads the frame dimensions from the first SOFn segment of a JPEG bitstream
+// without decoding it. Bounded walk over segment lengths; fails closed.
+struct JpegDimensions { std::uint32_t width = 0; std::uint32_t height = 0; };
+inline std::optional<JpegDimensions> jpeg_dimensions(std::span<const std::uint8_t> data) {
+    if (data.size() < 4 || data[0] != 0xFF || data[1] != 0xD8) return std::nullopt;
+    std::size_t i = 2;
+    for (int segments = 0; segments < 256 && i + 4 <= data.size(); ++segments) {
+        if (data[i] != 0xFF) return std::nullopt;
+        while (i < data.size() && data[i] == 0xFF) ++i; // fill bytes
+        if (i >= data.size()) return std::nullopt;
+        const std::uint8_t marker = data[i++];
+        if (marker == 0xD9 || marker == 0xDA) return std::nullopt; // EOI/SOS before SOF
+        if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7)) continue; // no length
+        if (i + 2 > data.size()) return std::nullopt;
+        const std::size_t length = (static_cast<std::size_t>(data[i]) << 8) | data[i + 1];
+        if (length < 2 || i + length > data.size()) return std::nullopt;
+        const bool sof = marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC;
+        if (sof) {
+            if (length < 7) return std::nullopt;
+            JpegDimensions d;
+            d.height = (static_cast<std::uint32_t>(data[i + 3]) << 8) | data[i + 4];
+            d.width = (static_cast<std::uint32_t>(data[i + 5]) << 8) | data[i + 6];
+            if (d.width == 0 || d.height == 0) return std::nullopt;
+            return d;
+        }
+        i += length;
+    }
+    return std::nullopt;
+}
+
+namespace detail {
 inline Result<void> validate_frame(const VideoFrame& frame) {
     const auto& h = frame.header;
     if (h.version != kMediaProtocolVersion)
         return Result<void>::failure({ErrorCode::UnsupportedVersion, "version média non prise en charge", "media"});
-    if (h.codec != FrameCodec::Raw || h.pixel_format != PixelFormat::RGBA8)
+    if ((h.codec != FrameCodec::Raw && h.codec != FrameCodec::Jpeg) || h.pixel_format != PixelFormat::RGBA8)
         return Result<void>::failure({ErrorCode::Unsupported, "codec ou format pixel non pris en charge", "media"});
     if (h.flags != kFrameFlagKeyFrame)
         return Result<void>::failure(protocol_error("flags de frame réservés ou invalides"));
     if (h.context.value == 0 || h.width == 0 || h.height == 0 ||
         h.width > kMaxFrameWidth || h.height > kMaxFrameHeight)
         return Result<void>::failure(invalid_argument("identifiant de contexte ou dimensions invalides"));
+    if (h.codec == FrameCodec::Jpeg) {
+        if (h.stride_bytes != 0 || frame.pixels.empty() || frame.pixels.size() > kMaxCompressedPayloadBytes)
+            return Result<void>::failure(invalid_argument("stride ou taille de frame JPEG invalide"));
+        const auto dims = jpeg_dimensions(frame.pixels);
+        if (!dims || dims->width != h.width || dims->height != h.height)
+            return Result<void>::failure(invalid_argument("dimensions JPEG incohérentes avec l'en-tête"));
+        return Result<void>::success();
+    }
     const std::uint64_t expected_stride = static_cast<std::uint64_t>(h.width) * 4;
     const std::uint64_t expected_size = expected_stride * h.height;
     if (expected_size > kMaxFramePayloadBytes || h.stride_bytes != expected_stride ||
@@ -219,7 +269,7 @@ inline Result<VideoFrame> deserialize_video_frame(std::span<const std::uint8_t> 
     if (detail::read_be<std::uint16_t>(bytes, 6) != kFrameHeaderBytes)
         return Result<VideoFrame>::failure(detail::protocol_error("taille d'en-tête média invalide"));
     const auto payload_size = detail::read_be<std::uint32_t>(bytes, 68);
-    if (payload_size > kMaxFramePayloadBytes)
+    if (payload_size > std::max(kMaxFramePayloadBytes, kMaxCompressedPayloadBytes))
         return Result<VideoFrame>::failure({ErrorCode::TooLarge, "payload vidéo au-delà de la limite", "media"});
     if (bytes.size() != kFrameHeaderBytes + static_cast<std::size_t>(payload_size))
         return Result<VideoFrame>::failure(detail::protocol_error("taille de payload vidéo incohérente"));

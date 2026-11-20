@@ -5,7 +5,7 @@
 // passerelle DevLink, avec son jeton, le rend joignable depuis le LAN.
 //
 // Usage :
-//   devlink-demo-service [--port <num>] [--host <adresse>] [--quiet] [--once]
+//   devlink-demo-service [--port <num>] [--host <adresse>] [--quiet] [--once] [--run-id <16 hex>]
 // Le port réel est imprimé sur stdout (« port=<num> »), 0 demandant un port
 // éphémère. Codes de sortie : 0 arrêt propre, 2 usage invalide, 3 échec réseau.
 #include <algorithm>
@@ -59,14 +59,21 @@ void log_line(const std::string& text) {
     std::fflush(stdout);
 }
 
+constexpr std::string_view kDefaultCsp = "default-src 'self'; img-src 'self'; script-src 'self'; style-src 'self'; "
+    "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+// The qualification fixture deliberately lets the PAGE try to reach other
+// origins (connect/img/frame '*'): the test must prove that DevLink's Browser
+// Worker blocks them by itself, not that the page's own CSP did.
+constexpr std::string_view kFixtureCsp = "default-src 'self'; script-src 'self'; style-src 'self'; "
+    "img-src * data:; connect-src *; frame-src *; object-src 'none'; base-uri 'none'";
+
 std::string http_response(std::uint16_t status, std::string_view reason, std::string_view content_type, std::string_view body,
-    std::string_view extra_headers = {}) {
+    std::string_view extra_headers = {}, std::string_view csp = kDefaultCsp) {
     std::string text = "HTTP/1.1 " + std::to_string(status) + " " + std::string(reason) + "\r\n" + "Content-Type: " +
         std::string(content_type) + "\r\n" + "Content-Length: " + std::to_string(body.size()) + "\r\n" +
         "Cache-Control: no-store\r\n";
     text += "X-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n";
-    text += "Content-Security-Policy: default-src 'self'; img-src 'self'; script-src 'self'; style-src 'self'; "
-            "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'\r\n";
+    text += "Content-Security-Policy: " + std::string(csp) + "\r\n";
     if (!extra_headers.empty()) text += std::string(extra_headers) + "\r\n";
     text += "Connection: close\r\n\r\n";
     text += body;
@@ -107,6 +114,56 @@ async function act(data){const r=await fetch('/api/action',{method:'POST',header
 document.querySelector('#increment').addEventListener('click',()=>act({action:'increment'}).catch(e=>result.textContent=e.message));
 document.querySelector('#feedback').addEventListener('submit',e=>{e.preventDefault();act({action:'submit',value:document.querySelector('#value').value}).catch(e=>result.textContent=e.message);});
 refresh().catch(e=>result.textContent='Service indisponible : '+e.message);
+)JS";
+}
+
+// ---------------------------------------------------------------------------
+// Qualification fixture (/fixture): a real page whose rendered PIXELS carry the
+// run identifier, so a guest can prove that what it displays was rendered by
+// the host browser for THIS run. Fixed layout (1280x720 CSS viewport):
+//   band   : y 0..24, 64 cells of 20 px, MSB first, white = 1, black = 0
+//   square : x 40..240, y 100..300, colour = clicks mod 4 (red/green/blue/yellow)
+//   button : x 300..600, y 100..200   input : x 300..700, y 260..300
+// ---------------------------------------------------------------------------
+std::string g_run_id = "0000000000000000";
+
+std::string fixture_page() {
+    std::string band;
+    for (int bit = 0; bit < 64; ++bit) {
+        const char c = g_run_id[static_cast<std::size_t>(bit / 4)];
+        const int nibble = c <= '9' ? c - '0' : c - 'a' + 10;
+        const bool one = (nibble >> (3 - bit % 4)) & 1;
+        band += one ? "<i class=\"b1\"></i>" : "<i class=\"b0\"></i>";
+    }
+    return "<!doctype html><html lang=\"fr\"><head><meta charset=\"utf-8\"><title>DevLink fixture " + g_run_id +
+        "</title><link rel=\"stylesheet\" href=\"/fixture.css\"></head><body data-run=\"" + g_run_id + "\">"
+        "<div id=\"band\">" + band + "</div><div id=\"square\" class=\"c0\"></div>"
+        "<button id=\"hit\" type=\"button\">Cliquer ici</button><input id=\"field\" autocomplete=\"off\" spellcheck=\"false\">"
+        "<p id=\"echo\"></p><p id=\"clicks\">clics : 0</p><p id=\"ticker\">t=0</p><p id=\"runtext\">RUN " + g_run_id + "</p>"
+        "<script src=\"/fixture.js\"></script></body></html>";
+}
+std::string fixture_styles() {
+    return R"CSS(html,body{margin:0;background:#f4ecdf;color:#2a1d17;font:22px system-ui,sans-serif;overflow:hidden}
+#band{position:fixed;left:0;top:0;width:1280px;height:24px;display:flex}#band i{display:block;width:20px;height:24px}
+.b0{background:#000}.b1{background:#fff}
+#square{position:fixed;left:40px;top:100px;width:200px;height:200px}
+.c0{background:#d01010}.c1{background:#10b010}.c2{background:#1030d0}.c3{background:#e0d010}
+#hit{position:fixed;left:300px;top:100px;width:300px;height:100px;font-size:26px;background:#bc744f;color:#fff;border:0;border-radius:10px}
+#field{position:fixed;left:300px;top:260px;width:400px;height:40px;font-size:22px}
+#echo{position:fixed;left:300px;top:320px;margin:0}#clicks{position:fixed;left:40px;top:320px;margin:0}
+#ticker{position:fixed;left:40px;top:400px;margin:0}#runtext{position:fixed;left:300px;top:400px;margin:0})CSS";
+}
+std::string fixture_script() {
+    return R"JS('use strict';
+let clicks=0,ticks=0,keys=0;
+const sq=document.getElementById('square'),hit=document.getElementById('hit'),field=document.getElementById('field');
+hit.addEventListener('click',e=>{if(!e.isTrusted)return;clicks++;sq.className='c'+(clicks%4);document.getElementById('clicks').textContent='clics : '+clicks;});
+field.addEventListener('input',()=>{document.getElementById('echo').textContent=field.value;});
+field.addEventListener('keydown',e=>{if(e.isTrusted)keys++;});
+setInterval(()=>{document.getElementById('ticker').textContent='t='+(++ticks);},100);
+window.devlinkFixture=()=>JSON.stringify({run:document.body.dataset.run,clicks,keys,value:field.value,ticks,
+  focused:document.activeElement&&document.activeElement.id,owner:localStorage.getItem('devlink-owner'),
+  session:sessionStorage.getItem('devlink-owner'),cookie:document.cookie});
 )JS";
 }
 
@@ -418,7 +475,18 @@ void serve_connection(Socket& socket, const IpAddress& peer) {
     std::string_view content_type = "text/html; charset=utf-8";
     std::uint16_t status = 200;
     std::string_view reason = "OK";
+    std::string_view csp = kDefaultCsp;
+    std::string extra;
     if ((target == "/" || target == "/index.html") && method == "GET") body = index_page();
+    else if (target == "/fixture" && method == "GET") { body = fixture_page(); csp = kFixtureCsp; }
+    else if (target == "/fixture.css" && method == "GET") { body = fixture_styles(); content_type = "text/css; charset=utf-8"; }
+    else if (target == "/fixture.js" && method == "GET") { body = fixture_script(); content_type = "text/javascript; charset=utf-8"; }
+    else if (target == "/redirect-out" && method == "GET") {
+        // Redirect towards a port that is NEVER allowlisted (discard/9): the
+        // Browser Worker must refuse to follow it.
+        body = "redirection"; content_type = "text/plain; charset=utf-8"; status = 302; reason = "Found";
+        extra = "Location: http://127.0.0.1:9/";
+    }
     else if (target == "/details" && method == "GET") body = details_page();
     else if (target == "/assets/demo-mark.svg" && method == "GET") { body = demo_svg(); content_type = "image/svg+xml"; }
     else if (target == "/assets/app.css" && method == "GET") { body = app_styles(); content_type = "text/css; charset=utf-8"; }
@@ -447,7 +515,7 @@ void serve_connection(Socket& socket, const IpAddress& peer) {
     }
     else if (target == "/ws") { body = "ce chemin attend un upgrade WebSocket"; content_type = "text/plain; charset=utf-8"; status = 426; reason = "Upgrade Required"; }
     else { body = "chemin inconnu"; content_type = "text/plain; charset=utf-8"; status = 404; reason = "Not Found"; }
-    const auto response = http_response(status, reason, content_type, body);
+    const auto response = http_response(status, reason, content_type, body, extra, csp);
     (void)write_all(socket, {reinterpret_cast<const std::uint8_t*>(response.data()), response.size()}, 2000ms);
 }
 
@@ -476,7 +544,8 @@ void usage() {
                 "  --port  port d'écoute loopback (0 = éphémère, défaut 0)\n"
                 "  --host  adresse d'écoute (défaut 127.0.0.1)\n"
                 "  --quiet pas de journal des requêtes\n"
-                "  --once  sert une seule connexion puis s'arrête (tests)\n");
+                "  --once  sert une seule connexion puis s'arrête (tests)\n"
+                "  --run-id <16 hex> identifiant de run affiché par /fixture (qualification)\n");
 }
 } // namespace
 
@@ -489,6 +558,14 @@ int main(int argc, char** argv) {
         const std::string_view argument = argv[index];
         if (argument == "--quiet") g_quiet = true;
         else if (argument == "--once") once = true;
+        else if (argument == "--run-id" && index + 1 < argc) {
+            const std::string value = argv[++index];
+            const bool hex = value.size() == 16 && std::all_of(value.begin(), value.end(), [](char c) {
+                return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+            });
+            if (!hex) { std::fprintf(stderr, "run-id invalide : 16 chiffres hexadécimaux minuscules attendus\n"); return 2; }
+            g_run_id = value;
+        }
         else if (argument == "--help" || argument == "-h") { usage(); return 0; }
         else if (argument == "--port" && index + 1 < argc) {
             // 0 est une valeur valide : port éphémère choisi par l'OS.

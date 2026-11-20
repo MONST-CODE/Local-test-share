@@ -6,6 +6,7 @@
 // - Capture de frames et injection d'événements.
 // - Nettoyage complet des profils temporaires à la destruction (§37).
 #include <algorithm>
+#include <chrono>
 #include <charconv>
 #include <cstdint>
 #include <filesystem>
@@ -46,6 +47,34 @@ struct BrowserContextInfo {
     std::string current_origin;
 };
 
+// A frame really produced by the browser compositor of one context. `data` is
+// the complete JPEG bitstream (media::FrameCodec::Jpeg); width/height are read
+// from the JPEG itself, never assumed. Immutable once published.
+struct CapturedFrame {
+    std::uint64_t sequence = 0;      // strictly increasing per context, starts at 1
+    std::uint64_t captured_ns = 0;   // steady clock, when the compositor delivered it
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    std::vector<std::uint8_t> data;
+};
+
+// Honest per-context counters for the UI, diagnostics and qualification.
+struct BrowserContextStats {
+    bool navigated = false;              // last navigation completed successfully
+    int last_http_status = 0;
+    std::uint64_t frames = 0;            // compositor frames received
+    std::uint64_t frame_bytes = 0;
+    std::uint64_t blocked_navigations = 0;
+    std::uint64_t blocked_requests = 0;  // sub-resources refused by the allowlist
+    std::uint64_t blocked_popups = 0;
+    std::uint64_t blocked_downloads = 0;
+    std::uint64_t denied_permissions = 0;
+    std::uint64_t inputs = 0;
+    std::uint32_t viewport_width = 0;
+    std::uint32_t viewport_height = 0;
+    std::string current_url;             // host-side only, never sent to guests
+};
+
 class IRemoteBrowserBackend {
 public:
     virtual ~IRemoteBrowserBackend() = default;
@@ -55,6 +84,28 @@ public:
     // Capture : retourne une frame brute (l'encodage est dans capture_encode/).
     virtual Result<std::vector<std::uint8_t>> capture_frame(ContextId ctx) = 0;
     virtual Result<void> inject_input(ContextId ctx, const std::vector<std::uint8_t>& event) = 0;
+
+    // Real frame pipeline (ADR-018). Waits up to `timeout` for a frame whose
+    // sequence is greater than `after_sequence` and returns the LATEST one:
+    // intermediate frames are skipped on purpose, latency never accumulates.
+    // Backends without a real compositor fail closed.
+    virtual Result<std::shared_ptr<const CapturedFrame>> wait_frame(ContextId, std::uint64_t /*after_sequence*/,
+        std::chrono::milliseconds /*timeout*/) {
+        return Result<std::shared_ptr<const CapturedFrame>>::failure(
+            Error{ErrorCode::Unsupported, "ce backend ne produit pas de frames réelles", "browser"});
+    }
+    // HOST-SIDE diagnostics/qualification only (reads DOM state to prove that an
+    // injected event really changed the page). Never reachable from a guest.
+    virtual Result<std::string> evaluate_for_diagnostics(ContextId, const std::string& /*script*/) {
+        return Result<std::string>::failure(
+            Error{ErrorCode::Unsupported, "évaluation indisponible sur ce backend", "browser"});
+    }
+    virtual Result<BrowserContextStats> context_stats(ContextId) {
+        return Result<BrowserContextStats>::failure(
+            Error{ErrorCode::Unsupported, "statistiques indisponibles sur ce backend", "browser"});
+    }
+    // True only for a backend that runs a real browser engine.
+    virtual bool real_engine() const { return false; }
 };
 
 // Backend nul : échoue explicitement. Utilisé pour prouver que le coeur ne

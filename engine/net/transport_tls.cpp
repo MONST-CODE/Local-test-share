@@ -11,9 +11,12 @@
 // PSK attendue ; un pair sans le secret échoue à la poignée de main, et le
 // canal refusé n'est JAMAIS rendu comme connecté (pas de repli silencieux).
 //
-// Chargement : libssl.so.3 puis libssl.so (Linux) ; sous Windows aucune
-// bibliothèque n'est encore câblée (Schannel ou OpenSSL MSYS2 : ADR-016), la
-// fabrique se déclare alors indisponible avec la raison exacte. Un chemin
+// Chargement : libssl.so.3 puis libssl.so (Linux) ; sous Windows
+// libssl-3-x64.dll / libcrypto-3-x64.dll (OpenSSL 3 du paquet MSYS2 UCRT64
+// épinglé, livrés à côté de l'exécutable) chargées par LoadLibraryExW
+// restreint au dossier de l'application : jamais le dossier courant ni le
+// PATH (pas de détournement de DLL). Absentes : fabrique indisponible avec la
+// raison exacte, jamais de repli clair. Un chemin
 // explicite DEVLINK_TLS_LIBRARY_PATH (variable de TEST) force la bibliothèque
 // chargée, ce qui permet de prouver le chemin « indisponible » sans mentir.
 #include "transport.hpp"
@@ -29,6 +32,8 @@
 
 #ifndef _WIN32
 #include <dlfcn.h>
+#else
+#include <windows.h>
 #endif
 
 namespace plpt::net {
@@ -93,40 +98,66 @@ struct OpenSslApi {
         unsigned char*, std::size_t*) = nullptr;
 };
 
+// Chargeur portable : dlopen/dlsym sous POSIX, LoadLibraryExW/GetProcAddress
+// (dossier de l'application et System32 uniquement) sous Windows.
 #ifndef _WIN32
+void* library_open(const char* name) { return dlopen(name, RTLD_NOW | RTLD_LOCAL); }
+void* library_symbol(void* handle, const char* name) { return dlsym(handle, name); }
+std::string library_error() {
+    const char* e = dlerror();
+    return e != nullptr ? e : "erreur inconnue";
+}
+#else
+void* library_open(const char* name) {
+    const int n = MultiByteToWideChar(CP_UTF8, 0, name, -1, nullptr, 0);
+    if (n <= 0) return nullptr;
+    std::wstring wide(static_cast<std::size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, name, -1, wide.data(), n);
+    const DWORD flags = std::strchr(name, '\\') || std::strchr(name, '/')
+        ? LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32
+        : LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32;
+    return reinterpret_cast<void*>(LoadLibraryExW(wide.c_str(), nullptr, flags));
+}
+void* library_symbol(void* handle, const char* name) {
+    return reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(handle), name));
+}
+std::string library_error() { return "code Windows " + std::to_string(GetLastError()); }
+#endif
+
 void* bind_symbol(void* handle, const char* name, OpenSslApi& api) {
-    void* symbol = dlsym(handle, name);
+    void* symbol = library_symbol(handle, name);
     if (symbol == nullptr && api.failure.empty()) {
         api.failure = std::string("symbole OpenSSL manquant : ") + name;
     }
     return symbol;
 }
-#endif
 
 const OpenSslApi& openssl_api() {
     static OpenSslApi api = [] {
         OpenSslApi loaded;
-#ifdef _WIN32
-        loaded.failure = "runtime TLS non cable sur Windows (Schannel/OpenSSL MSYS2 : ADR-016)";
-        return loaded;
-#else
         const char* override_path = std::getenv("DEVLINK_TLS_LIBRARY_PATH");
+#ifdef _WIN32
+        const char* ssl_names[] = {override_path != nullptr ? override_path : "libssl-3-x64.dll",
+            override_path != nullptr ? override_path : "libssl-3-x64.dll"};
+        const char* crypto_names[] = {"libcrypto-3-x64.dll", "libcrypto-3-x64.dll"};
+#else
         const char* ssl_names[] = {override_path != nullptr ? override_path : "libssl.so.3",
             override_path != nullptr ? override_path : "libssl.so"};
         const char* crypto_names[] = {"libcrypto.so.3", "libcrypto.so"};
+#endif
         const int attempts = override_path != nullptr ? 1 : 2;
         for (int i = 0; i < attempts && loaded.ssl_handle == nullptr; ++i) {
-            loaded.ssl_handle = dlopen(ssl_names[i], RTLD_NOW | RTLD_LOCAL);
+            loaded.ssl_handle = library_open(ssl_names[i]);
         }
         if (loaded.ssl_handle == nullptr) {
-            loaded.failure = std::string("libssl introuvable (dlopen) : ") + dlerror();
+            loaded.failure = std::string("libssl introuvable : ") + library_error();
             return loaded;
         }
         for (int i = 0; i < 2 && loaded.crypto_handle == nullptr; ++i) {
-            loaded.crypto_handle = dlopen(crypto_names[i], RTLD_NOW | RTLD_LOCAL);
+            loaded.crypto_handle = library_open(crypto_names[i]);
         }
         if (loaded.crypto_handle == nullptr) {
-            loaded.failure = std::string("libcrypto introuvable (dlopen) : ") + dlerror();
+            loaded.failure = std::string("libcrypto introuvable : ") + library_error();
             return loaded;
         }
 #define DEVLINK_BIND(field, name, handle) \
@@ -166,7 +197,6 @@ const OpenSslApi& openssl_api() {
         if (!loaded.failure.empty()) return loaded;
         loaded.loaded = true;
         return loaded;
-#endif
     }();
     return api;
 }

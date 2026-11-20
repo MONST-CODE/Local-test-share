@@ -1253,7 +1253,7 @@ void remote_frame_and_input_serialization() {
     unsupported_codec[8] = 99;
     CHECK(!deserialize_video_frame(unsupported_codec));
     auto unsupported_version = enc_frame.value();
-    unsupported_version[5] = 2;
+    unsupported_version[5] = 99;
     auto bad_version = deserialize_video_frame(unsupported_version);
     CHECK(!bad_version);
     if (!bad_version) CHECK_EQ(bad_version.error().code, ErrorCode::UnsupportedVersion);
@@ -1364,20 +1364,33 @@ void bounded_frame_queue_enforces_limits_and_lifecycle() {
 }
 
 void browser_backend_selection_and_lifecycle() {
-    CHECK(!plpt::browser::WebView2Backend::is_available());
-    plpt::browser::WebView2Backend unavailable;
+    // Availability is a runtime fact, never a constant: implemented code AND an
+    // installed runtime. The real browser is exercised by devlink-browser-tests;
+    // here only the fail-closed contract that needs no browser process.
+    CHECK_EQ(plpt::browser::WebView2Backend::is_available(),
+        plpt::browser::kWebView2BackendImplemented && plpt::browser::WebView2Backend::runtime_available());
+    plpt::browser::WebView2Backend real;
     BrowserPolicy policy;
     policy.allowed_origins.push_back("http://127.0.0.1:3000");
-    auto rejected_context = unavailable.create_context(ParticipantId{7}, policy);
-    CHECK(!rejected_context);
-    CHECK_EQ(rejected_context.error().code, ErrorCode::PlatformError);
-    auto rejected_frame = unavailable.capture_frame(ContextId{1});
+    auto bad_owner = real.create_context(ParticipantId{0}, policy);
+    CHECK(!bad_owner);
+    if (!bad_owner) CHECK(bad_owner.error().code == ErrorCode::InvalidArgument || bad_owner.error().code == ErrorCode::PlatformError);
+    auto no_selection = real.create_context(ParticipantId{7}, BrowserPolicy{});
+    CHECK(!no_selection); // no explicit origin, no browser
+    BrowserPolicy wildcard;
+    wildcard.allowed_origins.push_back("http://*:3000");
+    CHECK(!real.create_context(ParticipantId{7}, wildcard));
+    auto rejected_frame = real.capture_frame(ContextId{1});
     CHECK(!rejected_frame);
-    CHECK_EQ(rejected_frame.error().code, ErrorCode::PlatformError);
-    auto rejected_input = unavailable.inject_input(ContextId{1}, std::vector<std::uint8_t>{1, 2, 3});
-    CHECK(!rejected_input);
-    CHECK_EQ(rejected_input.error().code, ErrorCode::PlatformError);
-    CHECK_EQ(unavailable.active_contexts(), 0U);
+    auto rejected_input = real.inject_input(ContextId{1}, std::vector<std::uint8_t>{1, 2, 3});
+    CHECK(!rejected_input); // malformed and unknown context
+    CHECK(!real.wait_frame(ContextId{1}, 0, std::chrono::milliseconds(0)));
+    CHECK(real.destroy_context(ContextId{1})); // idempotent on unknown
+    CHECK_EQ(real.active_contexts(), 0U);
+    CHECK_EQ(real.real_engine(), plpt::browser::kWebView2BackendImplemented);
+    plpt::DemoBrowserBackend synthetic_check;
+    CHECK(!synthetic_check.real_engine()); // the demo backend never claims a real engine
+    CHECK(!synthetic_check.wait_frame(ContextId{1}, 0, std::chrono::milliseconds(0)));
 
     // Le backend géré est utilisé ici comme fixture synthétique de test; il ne
     // constitue jamais une preuve de capture navigateur réelle.
