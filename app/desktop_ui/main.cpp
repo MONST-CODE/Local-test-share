@@ -3,14 +3,17 @@
 //
 // Contrat d'architecture (mandat §12) : l'interface ne possède AUCUN état de
 // session. Elle lit des instantanés immuables publiés par les threads du moteur
-// (Monitor, HostServer, GuestClient, ServiceProxy, DiscoveryListener, Announcer)
+// (Monitor, ShareHost, HostServer, GuestClient, ShareGuest, DiscoveryListener, Announcer)
 // et n'écrit que des commandes. Aucun écran ne met en scène un état
 // « connecté », « sécurisé », « streaming » ou « session active » que le moteur
 // n'a pas confirmé : un démarrage est transactionnel et tout échec est affiché.
 //
-// Le plan de contrôle a un transport TLS 1.3 PSK sous Linux ; Windows et le
-// futur plan média ne sont pas encore qualifiés. L'interface ne doit pas annoncer
-// une session partagée réelle tant que le backend navigateur échoue fermé.
+// Partage reel (ADR-018) : l'hote execute ShareHost (navigateur WebView2 reel,
+// images du compositeur, canal media TLS 1.3 PSK par invite) relie au plan de
+// controle HostServer ; l'invite ouvre ShareGuest apres admission, affiche les
+// images decodees dans une texture SDL3 et renvoie souris/clavier, que l'hote
+// autorise ou refuse cote serveur (SharePolicy). Le proxy HTTP ne fait plus
+// partie du chemin de partage : il donnerait aux invites les ressources web.
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -23,6 +26,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <future>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -46,7 +50,10 @@
 #include "engine/net/discovery.hpp"
 #include "engine/net/guest_client.hpp"
 #include "engine/net/host_server.hpp"
-#include "engine/net/proxy.hpp"
+#include "engine/media/jpeg_decoder.hpp"
+#include "engine/share/share_guest.hpp"
+#include "engine/share/share_host.hpp"
+#include "engine/share/view_mapping.hpp"
 #include "engine/platform/native.hpp"
 #include "engine/port_allocator/port_allocator.hpp"
 
@@ -59,7 +66,12 @@ using devlink::ui::MainNavigationTab;
 const std::string kWindowTitle =
     std::string(devlink::kProductName) + " - " + std::string(devlink::kProductTagline);
 const std::string kUsage =
-    "Usage: devlink-desktop [--smoke-test [--screenshot file.bmp]] [--demo-synthetic-browser]\n";
+    "Usage: devlink-desktop [--smoke-test [--screenshot file.bmp]] [--demo-synthetic-browser]\n"
+    "       devlink-desktop --host <origine[,origine]> [--entry URL] [--mode A|B|C] [--bind IP] [--no-approval]\n"
+    "                       [--print-invite] [--report-fixture] [--exit-when-guests-gone]\n"
+    "       devlink-desktop --join <IP> <port> --code <code> [--name nom] [--request-control]\n"
+    "                       [--auto-click x,y] [--auto-type texte]\n"
+    "       options communes : [--capture-after secondes fichier.bmp] [--exit-after secondes]\n";
 
 // Le moniteur publie des instantanés immuables ; l'interface demande un
 // rafraîchissement périodique au lieu de bloquer sur wait_for_revision()
@@ -86,15 +98,6 @@ std::string describe(const plpt::Error& error) {
 // demande et l'affiche, elle ne l'impose jamais elle-même.
 enum class ParticipationMode : int { Independent = 0, Collaborative = 1, Observation = 2 };
 
-plpt::Role role_of(ParticipationMode mode) {
-    switch (mode) {
-    case ParticipationMode::Independent: return plpt::Role::IndependentTester;
-    case ParticipationMode::Collaborative: return plpt::Role::Collaborator;
-    case ParticipationMode::Observation: return plpt::Role::Observer;
-    }
-    return plpt::Role::Observer; // valeur d'enum hors domaine : mode le plus restrictif.
-}
-
 const char* mode_label(ParticipationMode mode) {
     switch (mode) {
     case ParticipationMode::Independent: return "Mode A - test indépendant";
@@ -102,18 +105,6 @@ const char* mode_label(ParticipationMode mode) {
     case ParticipationMode::Observation: return "Mode C - observation seule";
     }
     return "mode inconnu";
-}
-
-// Libelle du role tel que le moteur le nomme : l'interface n'invente pas de
-// vocabulaire, elle affiche celui du modele de session.
-const char* role_text(plpt::Role role) {
-    switch (role) {
-    case plpt::Role::Host: return "hote";
-    case plpt::Role::IndependentTester: return "testeur independant";
-    case plpt::Role::Collaborator: return "collaborateur";
-    case plpt::Role::Observer: return "observateur";
-    }
-    return "role inconnu";
 }
 
 const char* mode_capability_note(ParticipationMode mode) {
@@ -127,8 +118,6 @@ const char* mode_capability_note(ParticipationMode mode) {
     }
     return "";
 }
-
-bool mode_allows_input(ParticipationMode mode) { return mode != ParticipationMode::Observation; }
 
 const char* platform_label() {
 #if defined(_WIN32)
@@ -152,45 +141,38 @@ float pane_width(float fraction, float minimum) {
 // ---------------------------------------------------------------------------
 
 struct BrowserEngine {
-    std::unique_ptr<plpt::IRemoteBrowserBackend> backend;
-    bool real = false;           // vrai moteur navigateur operationnel
-    bool demo_synthetic = false; // backend synthetique, demande explicitement
+    bool real = false;           // vrai moteur navigateur operationnel (WebView2)
+    bool demo_synthetic = false; // demonstration demandee explicitement : jamais partageable
     std::string status = "non initialise";
 
     // Une session de partage reelle exige un moteur reel : le repli synthetique
-    // silencieux est interdit en production.
-    bool usable_for_real_session() const { return real && backend != nullptr; }
+    // silencieux est interdit (ShareHost le refuse aussi, defense en profondeur).
+    bool usable_for_real_session() const { return real; }
 };
 
 BrowserEngine create_browser_engine(bool allow_synthetic_demo) {
     BrowserEngine engine;
     if (plpt::browser::WebView2Backend::is_available()) {
-        engine.backend = std::make_unique<plpt::browser::WebView2Backend>();
         engine.real = true;
         engine.status = "Microsoft Edge WebView2 (moteur reel)";
         return engine;
     }
     if (allow_synthetic_demo) {
-        // Chemin de demonstration explicite : jamais le repli automatique de la
-        // fabrique, et toujours signale a l'ecran par un bandeau permanent.
-        engine.backend = plpt::browser::create_demo_browser_backend();
-        engine.demo_synthetic = engine.backend != nullptr;
-        engine.status = engine.backend
-            ? "moteur synthetique (demonstration) - AUCUN partage reel"
-            : "moteur navigateur indisponible";
+        engine.demo_synthetic = true;
+        engine.status = "moteur synthetique (demonstration) - AUCUN partage reel";
         return engine;
     }
-    // Cause exacte, jamais un message generique : le remede n'est pas le meme
-    // selon que le SDK manque a la compilation ou que le runtime n'est pas installe.
 #if defined(_WIN32)
     if (!plpt::browser::kWebView2SdkCompiled) {
         engine.status = "partage navigateur indisponible : SDK WebView2 absent de cette compilation";
     } else {
-        engine.status = std::string("partage navigateur indisponible : contrôleur, capture et injection WebView2 non implémentés; runtime détecté=") +
-            (plpt::browser::WebView2Backend::runtime_available() ? "oui" : "non");
+        engine.status = std::string("partage navigateur indisponible : runtime WebView2 ") +
+            (plpt::browser::WebView2Backend::runtime_available()
+                ? "detecte mais non initialisable"
+                : "absent (installer Microsoft Edge WebView2 Runtime)");
     }
 #else
-    engine.status = "partage navigateur indisponible : backend WebView2 opérationnel non implémenté (WebView2 est propre à Windows)";
+    engine.status = "partage navigateur indisponible : le Browser Worker reel est propre a Windows (ADR-018)";
 #endif
     return engine;
 }
@@ -207,6 +189,28 @@ struct SelectedService {
     std::uint16_t port = 0;
     plpt::TransportProtocol protocol = plpt::TransportProtocol::Unknown;
 };
+
+// Origine HTTP proposee pour un service TCP selectionne. Elle est affichee et
+// modifiable AVANT le demarrage : la detection ne vaut jamais autorisation.
+std::string origin_for_service(const SelectedService& service) {
+    std::string host = "127.0.0.1";
+    const std::string& a = service.address;
+    if (a == "::1" || a == "::" || a == "[::]" || a == "[::1]") {
+        host = "[::1]";
+    } else if (!a.empty() && a != "0.0.0.0" && a != "127.0.0.1" && a != "*") {
+        if (auto parsed = plpt::IpAddress::parse(a); parsed && parsed.value().family == plpt::IpFamily::Ipv4) host = a;
+    }
+    return "http://" + host + ":" + std::to_string(service.port);
+}
+
+plpt::share::ShareMode share_mode_of(ParticipationMode mode) {
+    switch (mode) {
+    case ParticipationMode::Independent: return plpt::share::ShareMode::Independent;
+    case ParticipationMode::Collaborative: return plpt::share::ShareMode::Collaborative;
+    case ParticipationMode::Observation: return plpt::share::ShareMode::ObserveOnly;
+    }
+    return plpt::share::ShareMode::ObserveOnly;
+}
 
 // ---------------------------------------------------------------------------
 // Ressources SDL/ImGui : liberation dans l'ordre inverse de la creation,
@@ -231,6 +235,47 @@ struct Runtime {
     }
 };
 
+// Texture SDL3 d'une image distante. Creee, mise a jour et detruite sur le
+// thread principal uniquement (modele d'execution SDL3) ; reallouee seulement
+// quand les dimensions changent.
+struct RemoteTexture {
+    SDL_Renderer* renderer = nullptr;
+    SDL_Texture* texture = nullptr;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    std::uint64_t sequence = 0;
+
+    bool update(const plpt::media::DecodedImage& image, std::uint64_t seq) {
+        if (!renderer || image.width == 0 || image.height == 0 ||
+            image.rgba.size() != static_cast<std::size_t>(image.width) * image.height * 4) return false;
+        if (!texture || width != image.width || height != image.height) {
+            reset();
+            texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING,
+                static_cast<int>(image.width), static_cast<int>(image.height));
+            if (!texture) return false;
+            (void)SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_LINEAR);
+            width = image.width;
+            height = image.height;
+        }
+        if (!SDL_UpdateTexture(texture, nullptr, image.rgba.data(), static_cast<int>(image.width * 4))) return false;
+        sequence = seq;
+        return true;
+    }
+    void reset() {
+        if (texture) SDL_DestroyTexture(texture);
+        texture = nullptr;
+        width = height = 0;
+        sequence = 0;
+    }
+    RemoteTexture() = default;
+    RemoteTexture(const RemoteTexture&) = delete;
+    RemoteTexture& operator=(const RemoteTexture&) = delete;
+    ~RemoteTexture() { reset(); }
+};
+
+// Resultat du demarrage asynchrone : vide = succes confirme par le moteur.
+using LaunchErrors = std::vector<std::string>;
+
 // ---------------------------------------------------------------------------
 // Etat de l'application : formulaires + pointeurs vers le moteur
 // ---------------------------------------------------------------------------
@@ -238,9 +283,11 @@ struct Runtime {
 struct AppState {
     plpt::SystemClock clock;
     std::unique_ptr<plpt::NativeNetworkInterfaceProvider> interfaces;
+    SDL_Window* window = nullptr;
 
     // Navigation et apparence
     MainNavigationTab tab = MainNavigationTab::Dashboard;
+    MainNavigationTab nav_shown = MainNavigationTab::Dashboard; // onglet reellement affiche par ImGui
     bool host_mode = true;
     devlink::ui::ThemeMode theme_mode = devlink::ui::ThemeMode::DevDark;
     float dpi_scale = 1.0f;
@@ -253,25 +300,34 @@ struct AppState {
     int frames_since_announce = 0;
     bool monitor_refresh_accepted = false;
 
-    // Plan de controle et plan de donnees de l'hote
+    // Hote : partage reel (navigateur + canal media) et plan de controle
+    std::unique_ptr<plpt::share::ShareHost> share;
     std::unique_ptr<plpt::net::HostServer> host;
     std::unique_ptr<plpt::net::Announcer> announcer;
-    std::unique_ptr<plpt::net::ServiceProxy> proxy;
+    std::future<LaunchErrors> host_launch;
+    bool host_launching = false;
     plpt::InviteCode invite_code;
-    std::string service_token;
     bool host_running = false;
     std::string host_note = "aucune session hote";
     std::vector<std::string> host_errors;
+    RemoteTexture host_preview;
+    plpt::media::JpegDecoder preview_decoder; // thread principal uniquement
 
     // Moteur navigateur
     BrowserEngine browser;
-    plpt::ContextId browser_ctx{};
-    std::string browser_profile;
-    std::string browser_origin;
     bool browser_demo_requested = false;
 
-    // Plan invite
+    // Plan invite : controle + canal media
     std::unique_ptr<plpt::net::GuestClient> guest;
+    std::unique_ptr<plpt::share::ShareGuest> media;
+    std::uint64_t media_offer_revision = 0;
+    plpt::IpAddress guest_host_ip{};
+    RemoteTexture guest_view;
+    plpt::share::ViewRect guest_rect{};  // ou l'image a ete dessinee (frame precedente)
+    bool remote_capture = false;       // clavier dirige vers la vue distante
+    std::uint8_t remote_buttons = 0;   // boutons appuyes depuis la vue (bits 0..2)
+    float remote_last_x = -1.0f;
+    float remote_last_y = -1.0f;
     std::unique_ptr<plpt::net::DiscoveryListener> listener;
     bool guest_running = false;
     bool listener_running = false;
@@ -282,9 +338,10 @@ struct AppState {
     char host_name[64] = "hote";
     char bind_address[64] = "";      // vide = DevLink choisit (LAN reel sinon boucle locale)
     char allowed_origins[256] = "";  // allowlist du navigateur distant
+    char entry_url[256] = "";        // vide = premiere origine autorisee
     int max_participants = 5;
     bool approval_required = true;
-    ParticipationMode mode = ParticipationMode::Independent;
+    ParticipationMode mode = ParticipationMode::Collaborative;
 
     // Formulaires invite
     char guest_name[64] = "invite";
@@ -307,24 +364,8 @@ struct AppState {
     }
 };
 
-// ---------------------------------------------------------------------------
-// Contexte navigateur : creation et destruction reelles, resultats verifies
-// ---------------------------------------------------------------------------
-
-void destroy_browser_context(AppState& state) {
-    if (state.browser.backend && state.browser_ctx.value != 0) {
-        auto destroyed = state.browser.backend->destroy_context(state.browser_ctx);
-        if (!destroyed) {
-            state.host_errors.push_back("destruction du contexte navigateur : " + describe(destroyed.error()));
-        }
-    }
-    state.browser_ctx = plpt::ContextId{};
-    state.browser_profile.clear();
-    state.browser_origin.clear();
-}
-
 // Allowlist stricte : les origines saisies, separees par des virgules. Une liste
-// vide n'autorise rien (BrowserPolicy::is_origin_allowed refuse tout).
+// vide n'autorise rien.
 std::vector<std::string> parse_origins(const char* raw) {
     std::vector<std::string> origins;
     const std::string_view text(raw);
@@ -342,147 +383,125 @@ std::vector<std::string> parse_origins(const char* raw) {
     return origins;
 }
 
-bool open_browser_context(AppState& state, plpt::ParticipantId owner, const std::vector<std::string>& origins) {
-    if (!state.browser.backend) return false;
-    plpt::BrowserPolicy policy;
-    policy.allowed_origins = origins;
-    auto context = state.browser.backend->create_context(owner, policy);
-    if (!context) {
-        state.host_errors.push_back("contexte navigateur : " + describe(context.error()));
-        return false;
-    }
-    state.browser_ctx = context.value().context;
-    state.browser_profile = context.value().profile_id;
-    state.browser_origin = context.value().current_origin;
-    return true;
-}
-
 // ---------------------------------------------------------------------------
-// Demarrage transactionnel de la session hote (mandat §12 et §18)
+// Demarrage transactionnel de la session hote (ADR-018)
+//
+// Le thread UI valide et prepare ; un thread de lancement execute ShareHost::
+// start (navigateur reel, navigation, PREMIERE IMAGE REELLE, canal media) puis
+// le plan de controle. L'UI ne bloque jamais (un contexte WebView2 prend
+// plusieurs secondes) et n'affiche « actif » qu'apres confirmation du moteur.
 // ---------------------------------------------------------------------------
 
 bool start_host_session(AppState& state) {
     state.host_errors.clear();
-    // Refuser AVANT de générer des secrets, d'ouvrir un socket ou d'annoncer une
-    // session : le plan de contrôle seul n'est pas un partage applicatif réel.
     if (!state.browser.usable_for_real_session()) {
-        state.host_errors.push_back("partage refuse : moteur navigateur reel indisponible — " + state.browser.status);
+        state.host_errors.push_back("partage refuse : moteur navigateur reel indisponible - " + state.browser.status);
         return false;
     }
-    if (state.host_running) {
+    if (state.host_running || state.host_launching) {
         state.host_errors.push_back("une session hote est deja en cours");
         return false;
     }
+    // 1. Selection explicite : origines saisies, sinon celle du service choisi.
+    std::vector<std::string> origins = parse_origins(state.allowed_origins);
+    if (origins.empty() && state.selected.valid && state.selected.protocol == plpt::TransportProtocol::Tcp)
+        origins.push_back(origin_for_service(state.selected));
+    if (origins.empty()) {
+        state.host_errors.push_back("aucune origine autorisee : choisissez un service dans la decouverte ou saisissez "
+                                    "l'origine de l'application (ex. http://127.0.0.1:3000)");
+        return false;
+    }
+    const std::string entry = state.entry_url[0] ? std::string(state.entry_url) : origins.front() + "/";
 
-    // 1. Secrets reels generés par le moteur : code d'invitation et jeton.
+    // 2. Secret d'invitation genere par le moteur.
     auto code = plpt::generate_invite_code();
     if (!code) {
         state.host_errors.push_back("code d'invitation : " + describe(code.error()));
         return false;
     }
-    auto token = plpt::generate_service_token();
-    if (!token) {
-        state.host_errors.push_back("jeton de service : " + describe(token.error()));
-        return false;
-    }
 
-    // 2. Adresse d'ecoute : vide = le moteur choisit une interface privee LAN
-    //    reellement presente, sinon la boucle locale, et publie la raison dans
-    //    bind_note. Jamais toutes les interfaces par defaut.
-    plpt::IpAddress bind{};
+    // 3. Une seule interface pour le controle ET le media : resolue ici, une fois.
+    plpt::IpAddress configured{};
     if (state.bind_address[0] != '\0') {
         auto parsed = plpt::IpAddress::parse(state.bind_address);
         if (!parsed) {
             state.host_errors.push_back("adresse d'ecoute : " + describe(parsed.error()));
             return false;
         }
-        bind = parsed.value();
+        configured = parsed.value();
+    }
+    auto bind = plpt::resolve_bind_address(configured, plpt::IpFamily::Ipv4);
+    if (!bind) {
+        state.host_errors.push_back("interface d'ecoute : " + describe(bind.error()));
+        return false;
     }
 
-    // 3. Plan de controle. control_port = 0 : l'OS choisit, start() renvoie le
-    //    port reellement lie. Aucune reservation prealable, donc pas de TOCTOU.
+    plpt::share::ShareHostConfig share_config;
+    share_config.mode = share_mode_of(state.mode);
+    share_config.allowed_origins = origins;
+    share_config.entry_url = entry;
+    share_config.bind_address = bind.value().address;
+    share_config.max_guests = static_cast<std::size_t>(std::clamp(state.max_participants, 1, 5));
+
     plpt::net::HostConfig config;
     config.session_name = state.session_name;
     config.host_name = state.host_name;
-    config.bind_address = bind;
-    config.control_port = 0;
-    config.max_participants = static_cast<std::size_t>(std::max(1, state.max_participants));
+    config.bind_address = bind.value().address;
+    config.control_port = 0; // l'OS choisit ; aucun TOCTOU
+    config.max_participants = share_config.max_guests;
     config.approval_required = state.approval_required;
     config.invite_code = code.value();
+    config.tls_required = true; // jamais de repli clair (ADR-016/017)
 
+    state.share = std::make_unique<plpt::share::ShareHost>(std::make_unique<plpt::browser::WebView2Backend>());
     state.host = std::make_unique<plpt::net::HostServer>(state.clock);
-    auto started = state.host->start(config);
-    if (!started) {
-        state.host_errors.push_back("serveur hote : " + describe(started.error()));
-        state.host.reset();
-        return false;
-    }
-
-    // 4. Plan de donnees : proxy reel UNIQUEMENT si un service local a ete
-    //    choisi dans la decouverte. Sans amont reel, aucun partage applicatif
-    //    n'est pretendu.
-    const std::vector<std::string> origins = parse_origins(state.allowed_origins);
-    if (state.selected.valid) {
-        plpt::net::ProxyConfig proxy_config;
-        proxy_config.label = state.selected.label;
-        proxy_config.bind_address = bind;
-        proxy_config.exposed_port = 0;
-        proxy_config.upstream_address = plpt::IpAddress::loopback(plpt::IpFamily::Ipv4);
-        proxy_config.upstream_port = state.selected.port;
-        proxy_config.token = token.value();
-        state.proxy = std::make_unique<plpt::net::ServiceProxy>(state.clock);
-        auto proxy_started = state.proxy->start(proxy_config);
-        if (!proxy_started) {
-            state.host_errors.push_back("proxy applicatif : " + describe(proxy_started.error()));
-            state.proxy.reset();
-            state.host->stop();
-            state.host.reset();
-            return false;
-        }
-        // Publication a l'autorite de session de ce qui est reellement joignable :
-        // l'URL et l'etat amont viennent du proxy, jamais d'une hypothese.
-        auto proxy_view = state.proxy->snapshot();
-        if (proxy_view) {
-            plpt::net::SharedServiceRecord record;
-            record.key = 1;
-            record.label = state.selected.label;
-            record.local_port = state.selected.port;
-            record.exposed_port = proxy_view->exposed_port;
-            record.token = token.value();
-            record.url = proxy_view->url;
-            record.available = proxy_view->running;
-            record.upstream_alive = proxy_view->upstream_alive;
-            if (!state.host->set_services(std::vector<plpt::net::SharedServiceRecord>{record})) {
-                state.host_errors.push_back("publication du service refusee par le moteur de session");
+    config.share = state.share.get();
+    state.invite_code = code.value();
+    state.host_launching = true;
+    state.host_note = "demarrage du partage";
+    state.host_launch = std::async(std::launch::async,
+        [share = state.share.get(), host = state.host.get(), share_config, config]() -> LaunchErrors {
+            auto shared = share->start(share_config);
+            if (!shared) return {"partage applicatif : " + describe(shared.error())};
+            auto started = host->start(config);
+            if (!started) {
+                share->stop();
+                return {"serveur hote : " + describe(started.error())};
             }
-            if (!proxy_view->upstream_alive) {
-                state.host_errors.push_back(
-                    "service local injoignable sur le port " + std::to_string(state.selected.port) +
-                    " : le proxy repondra 502 tant que l'amont ne demarre pas");
-            }
-        }
-    }
+            return {};
+        });
+    return true;
+}
 
-    // 5. Moteur navigateur : contexte reel par origine autorisee. Sans moteur
-    //    reel, la session de partage applicatif distant n'est pas demarree.
-    if (!open_browser_context(state, plpt::ParticipantId{1}, origins)) {
-        if (state.proxy) { state.proxy->stop(); state.proxy.reset(); }
-        state.host->stop();
+void stop_host_session(AppState& state, std::string reason) {
+    if (state.host_launch.valid()) state.host_launch.wait(); // jamais d'objet detruit sous un lancement
+    state.host_launching = false;
+    if (state.announcer) { state.announcer->stop(); state.announcer.reset(); }
+    if (state.host) { state.host->stop(); state.host.reset(); }
+    // Coupe les canaux media, detruit chaque contexte et le processus navigateur.
+    if (state.share) { state.share->stop(); state.share.reset(); }
+    state.host_preview.reset();
+    state.host_running = false;
+    state.host_note = std::move(reason);
+    state.invite_code = plpt::InviteCode{};
+}
+
+// Fin du lancement asynchrone : annonce LAN puis publication de l'etat actif.
+void poll_host_launch(AppState& state) {
+    if (!state.host_launching || !state.host_launch.valid()) return;
+    if (state.host_launch.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
+    LaunchErrors errors = state.host_launch.get();
+    state.host_launching = false;
+    if (!errors.empty()) {
+        state.host_errors = errors;
         state.host.reset();
-        return false;
+        if (state.share) { state.share->stop(); state.share.reset(); }
+        state.invite_code = plpt::InviteCode{};
+        state.host_note = "demarrage refuse";
+        state.notify("Demarrage refuse : voir les echecs dans la configuration");
+        return;
     }
-
-    // 6. Annonce LAN sur les interfaces reellement presentes (+ boucle locale
-    //    pour la demonstration sur une seule machine).
     auto snapshot = state.host->snapshot();
-    if (!snapshot) {
-        state.host_errors.push_back("instantane de session indisponible apres demarrage");
-        destroy_browser_context(state);
-        if (state.proxy) { state.proxy->stop(); state.proxy.reset(); }
-        state.host->stop();
-        state.host.reset();
-        return false;
-    }
     plpt::net::Announcement announcement;
     announcement.session_id = snapshot->session_id;
     announcement.session_name = snapshot->session_name;
@@ -490,67 +509,44 @@ bool start_host_session(AppState& state) {
     announcement.control_port = snapshot->control_port;
     announcement.participants = 0;
     announcement.max_participants = static_cast<std::uint16_t>(std::max(1, state.max_participants));
-    announcement.shared_services = state.proxy ? 1 : 0;
+    announcement.shared_services = 1;
     announcement.accepting = true;
     announcement.wall_ms = state.clock.now_wall_ms();
-
     std::vector<plpt::NetworkInterfaceInfo> interface_list;
     if (state.interfaces) {
-        auto enumerated = state.interfaces->enumerate();
-        if (enumerated) {
-            interface_list = enumerated.value();
-        } else {
-            state.host_errors.push_back("interfaces reseau : " + describe(enumerated.error()));
-        }
+        if (auto enumerated = state.interfaces->enumerate()) interface_list = enumerated.value();
+        else state.host_errors.push_back("interfaces reseau : " + describe(enumerated.error()));
     }
-    auto targets = plpt::net::announce_targets(
-        interface_list, announcement, plpt::Port{plpt::net::kDiscoveryPort}, true);
+    auto targets = plpt::net::announce_targets(interface_list, announcement, plpt::Port{plpt::net::kDiscoveryPort}, true);
     state.announcer = std::make_unique<plpt::net::Announcer>(state.clock);
-    auto announced = state.announcer->start(targets);
-    if (!announced) {
-        state.host_errors.push_back("annonceur LAN : " + describe(announced.error()));
+    if (auto announced = state.announcer->start(targets); !announced) {
+        // L'annonce n'est qu'une commodite : l'invitation manuelle reste possible.
+        state.host_errors.push_back("annonce LAN indisponible (invitation manuelle possible) : " + describe(announced.error()));
         state.announcer.reset();
-        destroy_browser_context(state);
-        if (state.proxy) { state.proxy->stop(); state.proxy.reset(); }
-        state.host->stop();
-        state.host.reset();
-        return false;
     }
-
-    // 7. Succes confirme par le moteur : l'etat actif n'est affiche qu'ici.
-    state.invite_code = code.value();
-    state.service_token = token.value();
-    state.host_running = state.host->running();
+    state.host_running = state.host->running() && state.share && state.share->active();
     if (!state.host_running) {
-        state.host_errors.push_back("le serveur hote s'est arrete immediatement apres le demarrage");
-        state.announcer->stop();
-        state.announcer.reset();
-        destroy_browser_context(state);
-        if (state.proxy) { state.proxy->stop(); state.proxy.reset(); }
-        state.host.reset();
-        return false;
+        stop_host_session(state, "le moteur s'est arrete juste apres le demarrage");
+        state.host_errors.push_back("le serveur hote ou le partage s'est arrete immediatement apres le demarrage");
+        return;
     }
     state.host_note = "controle sur " + snapshot->control_address + ":" + std::to_string(snapshot->control_port) +
         " - " + snapshot->bind_note;
-    return true;
-}
-
-void stop_host_session(AppState& state, std::string reason) {
-    if (state.announcer) { state.announcer->stop(); state.announcer.reset(); }
-    if (state.host) { state.host->stop(); state.host.reset(); }
-    if (state.proxy) { state.proxy->stop(); state.proxy.reset(); }
-    destroy_browser_context(state);
-    state.host_running = false;
-    state.host_note = std::move(reason);
-    // Le code d'invitation et le jeton sont des secrets : ils ne survivent pas a
-    // la session et ne sont plus affiches apres l'arret.
-    state.invite_code = plpt::InviteCode{};
-    state.service_token.clear();
+    state.tab = MainNavigationTab::ActiveSession;
+    state.notify("Partage actif : navigateur reel, premiere image capturee, canal media TLS 1.3 ouvert");
 }
 
 // ---------------------------------------------------------------------------
-// Demarrage transactionnel cote invite (mandat §19)
+// Demarrage transactionnel cote invite
 // ---------------------------------------------------------------------------
+
+void stop_guest_media(AppState& state) {
+    if (state.media) { state.media->stop(); state.media.reset(); }
+    state.media_offer_revision = 0;
+    state.remote_capture = false;
+    state.remote_buttons = 0;
+    state.guest_view.reset();
+}
 
 bool start_guest_session(AppState& state) {
     state.guest_errors.clear();
@@ -578,8 +574,8 @@ bool start_guest_session(AppState& state) {
     config.control_port = static_cast<std::uint16_t>(state.guest_port);
     config.guest_name = state.guest_name;
     config.invite_code = plpt::InviteCode{decoded.value(), plpt::format_invite_code(decoded.value())};
-    // Reconnexion automatique : jamais sans consentement explicite (§6).
-    config.auto_reconnect = false;
+    config.auto_reconnect = false; // jamais sans consentement explicite
+    config.tls_required = true;
 
     state.guest = std::make_unique<plpt::net::GuestClient>(state.clock);
     auto started = state.guest->start(config);
@@ -588,8 +584,7 @@ bool start_guest_session(AppState& state) {
         state.guest.reset();
         return false;
     }
-    // start() ouvre le plan de controle ; la connexion et l'authentification sont
-    // asynchrones. L'etat reel vient de la phase publiee, jamais d'un succes suppose.
+    state.guest_host_ip = address.value();
     state.guest_running = state.guest->running();
     if (!state.guest_running) {
         state.guest_errors.push_back("le client invite ne tourne pas apres le demarrage");
@@ -600,9 +595,8 @@ bool start_guest_session(AppState& state) {
 }
 
 void stop_guest_session(AppState& state) {
+    stop_guest_media(state);
     if (state.guest) {
-        // Depart volontaire : la place est rendue immediatement (Bye) puis le
-        // plan de controle est arrete proprement.
         if (!state.guest->leave()) {
             state.guest_errors.push_back("depart volontaire non accepte par le moteur (arret force ensuite)");
         }
@@ -610,6 +604,35 @@ void stop_guest_session(AppState& state) {
         state.guest.reset();
     }
     state.guest_running = false;
+}
+
+// Chaque frame : le canal media suit l'etat REEL du plan de controle. Une
+// nouvelle offre (admission, reprise) remplace l'ancien canal ; une perte du
+// controle coupe le media.
+void tick_guest_media(AppState& state) {
+    auto snapshot = state.guest ? state.guest->snapshot() : nullptr;
+    if (!snapshot || snapshot->phase != plpt::net::GuestPhase::Connected) {
+        if (state.media) stop_guest_media(state);
+        return;
+    }
+    if (!snapshot->media_offered || snapshot->media_offer_revision == state.media_offer_revision) return;
+    auto offer = state.guest->media_offer();
+    if (!offer) return;
+    stop_guest_media(state);
+    plpt::share::ShareGuestConfig config;
+    config.host = state.guest_host_ip;
+    config.offer = *offer;
+    config.session = plpt::SessionId{snapshot->session_id};
+    config.self = snapshot->self;
+    state.media = std::make_unique<plpt::share::ShareGuest>();
+    auto started = state.media->start(config);
+    state.media_offer_revision = snapshot->media_offer_revision;
+    if (!started) {
+        state.guest_errors.push_back("canal media : " + describe(started.error()));
+        state.media.reset();
+        return;
+    }
+    state.tab = MainNavigationTab::SharedView;
 }
 
 bool start_discovery_listener(AppState& state) {
@@ -683,10 +706,13 @@ void render_dashboard(AppState& state, const plpt::MonitorView& view) {
             ImGui::Text("Code d'invitation :");
             ImGui::SameLine();
             text_code(state.invite_code.text);
+            if (state.share) {
+                const auto share_view = state.share->snapshot();
+                ImGui::Spacing();
+                ImGui::Text("Application : %s - %zu invite(s) sur le flux media",
+                    share_view.entry_url.c_str(), share_view.peers.size());
+            }
             ImGui::Spacing();
-            ImGui::Text("Jeton de service :");
-            ImGui::SameLine();
-            text_code(plpt::mask_secret(state.service_token));
             if (button_danger("Arreter la session", ImVec2(220, 34))) {
                 stop_host_session(state, "session arretee par l'hote");
                 state.notify("Session arretee : sockets fermees, secrets oublies");
@@ -799,15 +825,17 @@ void render_discovery_center(AppState& state, const plpt::MonitorView& view) {
             : "Rafraichissement refuse : le moniteur ne tourne pas");
     }
 
-    if (!view.warnings.empty() && card_begin("##discovery_warnings", ImVec2(0, 0))) {
-        devlink::ui::icons::icon(devlink::ui::icons::Icon::Warning, 15.0f, ImGui::ColorConvertFloat4ToU32(devlink::ui::theme_colors().accent_light));
-        ImGui::SameLine();
-        text_card_title("Avertissements du moniteur");
-        for (const auto& warning : view.warnings) {
-            ImGui::TextWrapped("%s", describe(warning).c_str());
+    if (!view.warnings.empty()) {
+        if (card_begin("##discovery_warnings", ImVec2(0, 0))) {
+            devlink::ui::icons::icon(devlink::ui::icons::Icon::Warning, 15.0f, ImGui::ColorConvertFloat4ToU32(devlink::ui::theme_colors().accent_light));
+            ImGui::SameLine();
+            text_card_title("Avertissements du moniteur");
+            for (const auto& warning : view.warnings) {
+                ImGui::TextWrapped("%s", describe(warning).c_str());
+            }
         }
+        card_end();
     }
-    card_end();
 
     ImGui::Spacing();
 
@@ -885,6 +913,11 @@ void render_discovery_center(AppState& state, const plpt::MonitorView& view) {
                 chosen.port = endpoint.local.port.value;
                 chosen.protocol = endpoint.protocol;
                 state.selected = chosen;
+                // Proposition d'origine VISIBLE et modifiable avant le demarrage :
+                // l'hote confirme explicitement ce que le navigateur pourra ouvrir.
+                std::snprintf(state.allowed_origins, sizeof(state.allowed_origins), "%s",
+                    origin_for_service(chosen).c_str());
+                state.entry_url[0] = '\0';
                 // Effet reel dans le moteur : la selection est enregistrée par le
                 // registre (locale, sans effet reseau), pas seulement dans l'UI.
                 if (state.monitor && !state.monitor->request_selection(service.service_id, endpoint.local)) {
@@ -930,8 +963,8 @@ void render_share_setup(AppState& state) {
         } else {
             status_pill("AUCUN SERVICE SELECTIONNE", colors.status_warning);
             ImGui::Spacing();
-            ImGui::TextWrapped("Sans service local reel, le plan de controle peut demarrer "
-                "(invitation, chat, approbations) mais aucun partage applicatif n'est publie.");
+            ImGui::TextWrapped("Choisissez le serveur de votre application dans la decouverte, ou saisissez "
+                "son origine ci-dessous. Rien n'est partage sans cette selection explicite.");
             if (button_secondary("Choisir dans la decouverte", ImVec2(260, 32))) {
                 state.tab = MainNavigationTab::DiscoveryCenter;
             }
@@ -939,8 +972,10 @@ void render_share_setup(AppState& state) {
         ImGui::Spacing();
         ImGui::InputText("Origines autorisees du navigateur (separees par des virgules)",
             state.allowed_origins, sizeof(state.allowed_origins));
-        text_disabled_label("Allowlist stricte : file:, javascript:, data: et les hotes non "
-                            "autorises sont refuses par le moteur navigateur.");
+        text_disabled_label("Allowlist stricte : file:, javascript:, data:, les redirections et les "
+                            "hotes:ports non listes sont refuses ; le navigateur ne sort que par la garde "
+                            "reseau DevLink (aucun autre port local, ni base de donnees, ni Docker).");
+        ImGui::InputText("URL d'entree (vide = premiere origine)", state.entry_url, sizeof(state.entry_url));
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -960,7 +995,14 @@ void render_share_setup(AppState& state) {
         ImGui::Separator();
         ImGui::Spacing();
 
-        if (state.host_running) {
+        if (state.host_launching) {
+            const auto view = state.share ? state.share->snapshot() : plpt::share::ShareSnapshot{};
+            status_pill("DEMARRAGE EN COURS", colors.status_info);
+            ImGui::SameLine();
+            ImGui::Text("Etape reelle : %s", plpt::share::share_stage_text(view.stage));
+            text_disabled_label("Actif seulement apres : navigateur reel cree, application chargee, premiere "
+                                "image capturee, canal media TLS 1.3 ouvert, plan de controle lie.");
+        } else if (state.host_running) {
             status_pill("SESSION DEJA ACTIVE", colors.status_warning);
             ImGui::SameLine();
             if (button_secondary("Aller a la session active", ImVec2(240, 32))) {
@@ -982,8 +1024,7 @@ void render_share_setup(AppState& state) {
             ImGui::EndDisabled();
             if (start_clicked) {
                 if (start_host_session(state)) {
-                    state.tab = MainNavigationTab::ActiveSession;
-                    state.notify("Session hôte démarrée : moteur navigateur opérationnel, port lié et annonce réelle");
+                    state.notify("Demarrage du partage : navigateur reel en preparation");
                 } else {
                     state.notify("Démarrage refusé : voir les échecs ci-dessous");
                 }
@@ -1188,58 +1229,124 @@ void render_active_session(AppState& state) {
 
     ImGui::SameLine();
 
-    if (card_begin("##services_card", ImVec2(0, 0))) {
-        text_card_title("Services publies aux invites");
+    if (card_begin("##share_card", ImVec2(0, 0))) {
+        text_card_title("Partage applicatif reel");
         ImGui::Spacing();
-        if (snapshot->services.empty()) {
-            text_muted("Aucun service publie. Le partage applicatif exige un service "
-                       "local reel selectionne dans la decouverte.");
+        if (!state.share) {
+            text_muted("Aucun moteur de partage.");
         } else {
-            for (const auto& service : snapshot->services) {
-                text_card_title(service.label);
-                ImGui::Text("Port expose %u - amont local %u - connexions %zu",
-                    static_cast<unsigned int>(service.exposed_port),
-                    static_cast<unsigned int>(service.local_port), service.active_connections);
-                if (service.upstream_alive) {
-                    status_pill("AMONT JOIGNABLE", colors.status_success);
-                } else {
-                    status_pill("AMONT INJOIGNABLE (502)", colors.status_error);
+            const auto share = state.share->snapshot();
+            const bool active = share.stage == plpt::share::ShareStage::Active;
+            status_pill(plpt::share::share_stage_text(share.stage), active ? colors.status_success : colors.status_error);
+            ImGui::SameLine();
+            status_pill(plpt::share::share_mode_text(share.mode), colors.accent_light);
+            if (share.paused) {
+                ImGui::SameLine();
+                status_pill("ENTREES SUSPENDUES", colors.status_warning);
+            }
+            ImGui::Spacing();
+            ImGui::TextWrapped("Application : %s", share.entry_url.c_str());
+            std::string origins;
+            for (const auto& o : share.origins) origins += (origins.empty() ? "" : ", ") + o;
+            ImGui::TextWrapped("Origines autorisees : %s", origins.c_str());
+            ImGui::Text("Canal media TLS 1.3 : port %u - premiere image en %llu ms - poignees ok %llu / refusees %llu",
+                static_cast<unsigned int>(share.media_port), static_cast<unsigned long long>(share.first_frame_ms),
+                static_cast<unsigned long long>(share.handshakes_ok), static_cast<unsigned long long>(share.handshakes_failed));
+            ImGui::Text("Navigateur : contextes crees %llu - detruits %llu - images %llu - HTTP %d",
+                static_cast<unsigned long long>(share.contexts_created),
+                static_cast<unsigned long long>(share.contexts_destroyed),
+                static_cast<unsigned long long>(share.primary.frames), share.primary.last_http_status);
+            ImGui::Text("Bloques par la politique : navigations %llu - requetes %llu - fenetres %llu - telechargements %llu - permissions %llu",
+                static_cast<unsigned long long>(share.primary.blocked_navigations),
+                static_cast<unsigned long long>(share.primary.blocked_requests),
+                static_cast<unsigned long long>(share.primary.blocked_popups),
+                static_cast<unsigned long long>(share.primary.blocked_downloads),
+                static_cast<unsigned long long>(share.primary.denied_permissions));
+            ImGui::TextWrapped("Page courante (hote uniquement) : %s", share.primary.current_url.c_str());
+            if (share.mode == plpt::share::ShareMode::Independent) {
+                text_disabled_label("Mode A : profils navigateur distincts (cookies, stockage). Le backend de "
+                                    "l'application (base de donnees, API) reste COMMUN a tous les invites.");
+            }
+            ImGui::Spacing();
+            if (share.mode == plpt::share::ShareMode::Collaborative) {
+                std::string holder = "personne (vue en lecture pour tous)";
+                for (const auto& p : share.peers)
+                    if (p.id == share.controller) holder = p.name;
+                ImGui::Text("Controle exclusif : %s - en attente : %zu", holder.c_str(), share.waiting.size());
+                if (share.controller.value != 0 && button_secondary("Reprendre le controle", ImVec2(220, 28))) {
+                    state.notify(state.share->grant_control(plpt::ParticipantId{})
+                        ? "Controle repris : plus aucun invite ne peut agir" : "Refuse par le moteur");
                 }
-                ImGui::Spacing();
-                ImGui::TextWrapped("URL invite : %s", service.url.c_str());
-                ImGui::Text("Requetes %llu - montant %llu - descendant %llu",
-                    static_cast<unsigned long long>(service.requests),
-                    static_cast<unsigned long long>(service.bytes_up),
-                    static_cast<unsigned long long>(service.bytes_down));
-                ImGui::Separator();
             }
-        }
-        if (state.proxy) {
-            if (button_secondary("Sonder l'amont maintenant", ImVec2(240, 30))) {
-                const bool alive = state.proxy->probe_upstream();
-                state.notify(alive ? "Amont joignable (connexion TCP reelle)"
-                                   : "Amont injoignable : le proxy repondra 502");
+            if (share.mode != plpt::share::ShareMode::ObserveOnly) {
+                if (share.controller.value != 0) ImGui::SameLine();
+                if (button_secondary(share.paused ? "Reprendre les entrees" : "Suspendre les entrees", ImVec2(220, 28))) {
+                    state.share->set_paused(!share.paused);
+                }
+            }
+            ImGui::Spacing();
+            if (share.peers.empty()) {
+                text_muted("Aucun invite sur le flux media.");
+            } else if (ImGui::BeginTable("##share_peers", 6,
+                           ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+                ImGui::TableSetupColumn("Invite");
+                ImGui::TableSetupColumn("Flux");
+                ImGui::TableSetupColumn("Images / debit");
+                ImGui::TableSetupColumn("Entrees acceptees / refusees");
+                ImGui::TableSetupColumn("Dernier refus");
+                ImGui::TableSetupColumn("Action");
+                ImGui::TableHeadersRow();
+                for (const auto& p : share.peers) {
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%s", p.name.c_str());
+                    ImGui::TableNextColumn();
+                    status_pill(p.media_connected ? (p.context_ready ? "RECOIT" : "PREPARATION") : "DECONNECTE",
+                        p.media_connected ? colors.status_success : colors.text_disabled);
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%llu - %.1f i/s - %.1f Mo", static_cast<unsigned long long>(p.frames_sent), p.send_fps,
+                        static_cast<double>(p.bytes_sent) / 1e6);
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%llu / %llu%s", static_cast<unsigned long long>(p.inputs_accepted),
+                        static_cast<unsigned long long>(p.inputs_rejected), p.may_input ? " (peut agir)" : "");
+                    ImGui::TableNextColumn();
+                    text_muted(p.last_rejection.empty() ? std::string("-") : p.last_rejection);
+                    ImGui::TableNextColumn();
+                    if (share.mode == plpt::share::ShareMode::Collaborative && share.controller != p.id) {
+                        const std::string give = "Donner le controle##" + std::to_string(p.id.value);
+                        if (button_secondary(give.c_str(), ImVec2(170, 24))) {
+                            state.notify(state.share->grant_control(p.id) ? "Controle transfere" : "Transfert refuse par le moteur");
+                        }
+                    } else {
+                        text_disabled_label("-");
+                    }
+                }
+                ImGui::EndTable();
             }
         }
     }
     card_end();
 
-    if (!snapshot->warnings.empty() && card_begin("##session_warnings", ImVec2(0, 0))) {
-        text_card_title("Avertissements de la session");
-        for (const auto& warning : snapshot->warnings) {
-            ImGui::TextWrapped("%s", describe(warning).c_str());
+    if (!snapshot->warnings.empty()) {
+        if (card_begin("##session_warnings", ImVec2(0, 0))) {
+            text_card_title("Avertissements de la session");
+            for (const auto& warning : snapshot->warnings) {
+                ImGui::TextWrapped("%s", describe(warning).c_str());
+            }
         }
+        card_end();
     }
-    card_end();
 
-    if (!snapshot->events.empty() && card_begin("##session_events", ImVec2(0, 0))) {
-        text_card_title("Evenements recents");
-        const std::size_t first = snapshot->events.size() > 12 ? snapshot->events.size() - 12 : 0;
-        for (std::size_t index = first; index < snapshot->events.size(); ++index) {
-            text_muted(snapshot->events[index]);
+    if (!snapshot->events.empty()) {
+        if (card_begin("##session_events", ImVec2(0, 0))) {
+            text_card_title("Evenements recents");
+            const std::size_t first = snapshot->events.size() > 12 ? snapshot->events.size() - 12 : 0;
+            for (std::size_t index = first; index < snapshot->events.size(); ++index) {
+                text_muted(snapshot->events[index]);
+            }
         }
+        card_end();
     }
-    card_end();
 
     ImGui::Spacing();
     if (button_danger("Arreter la session", ImVec2(220, 36))) {
@@ -1248,48 +1355,291 @@ void render_active_session(AppState& state) {
     }
 }
 
-void render_shared_view(AppState& state) {
+// ---------------------------------------------------------------------------
+// Vue partagee : vraies images du navigateur hote, entrees renvoyees a l'hote
+// ---------------------------------------------------------------------------
+
+std::uint16_t media_modifiers(SDL_Keymod mod) {
+    std::uint16_t m = 0;
+    if (mod & SDL_KMOD_SHIFT) m |= 0x1;
+    if (mod & SDL_KMOD_CTRL) m |= 0x2;
+    if (mod & SDL_KMOD_ALT) m |= 0x4;
+    if (mod & SDL_KMOD_GUI) m |= 0x8;
+    if (mod & SDL_KMOD_CAPS) m |= 0x10;
+    return m;
+}
+
+std::uint16_t imgui_modifiers() {
+    const ImGuiIO& io = ImGui::GetIO();
+    std::uint16_t m = 0;
+    if (io.KeyShift) m |= 0x1;
+    if (io.KeyCtrl) m |= 0x2;
+    if (io.KeyAlt) m |= 0x4;
+    if (io.KeySuper) m |= 0x8;
+    return m;
+}
+
+// Touche SDL -> code de touche virtuel (celui qu'attend le navigateur hote).
+std::uint32_t virtual_key_of(SDL_Keycode key) {
+    if (key >= SDLK_A && key <= SDLK_Z) return 'A' + static_cast<std::uint32_t>(key - SDLK_A);
+    if (key >= SDLK_0 && key <= SDLK_9) return '0' + static_cast<std::uint32_t>(key - SDLK_0);
+    if (key >= SDLK_F1 && key <= SDLK_F12) return 0x70 + static_cast<std::uint32_t>(key - SDLK_F1);
+    switch (key) {
+    case SDLK_RETURN: case SDLK_KP_ENTER: return 0x0D;
+    case SDLK_BACKSPACE: return 0x08;
+    case SDLK_TAB: return 0x09;
+    case SDLK_ESCAPE: return 0x1B;
+    case SDLK_SPACE: return 0x20;
+    case SDLK_PAGEUP: return 0x21;
+    case SDLK_PAGEDOWN: return 0x22;
+    case SDLK_END: return 0x23;
+    case SDLK_HOME: return 0x24;
+    case SDLK_LEFT: return 0x25;
+    case SDLK_UP: return 0x26;
+    case SDLK_RIGHT: return 0x27;
+    case SDLK_DOWN: return 0x28;
+    case SDLK_INSERT: return 0x2D;
+    case SDLK_DELETE: return 0x2E;
+    case SDLK_LSHIFT: case SDLK_RSHIFT: return 0x10;
+    case SDLK_LCTRL: case SDLK_RCTRL: return 0x11;
+    case SDLK_LALT: case SDLK_RALT: return 0x12;
+    case SDLK_CAPSLOCK: return 0x14;
+    case SDLK_LGUI: case SDLK_RGUI: return 0x5B;
+    default: return 0;
+    }
+}
+
+bool remote_input_allowed(const AppState& state) {
+    if (!state.media) return false;
+    const auto s = state.media->snapshot();
+    return s.phase == plpt::share::MediaPhase::Streaming && s.have_state && s.state.you_may_input;
+}
+
+void release_remote_capture(AppState& state) {
+    if (!state.remote_capture) return;
+    state.remote_capture = false;
+    if (state.media) {
+        plpt::media::InputEvent lost;
+        lost.type = plpt::media::InputEventType::FocusLost;
+        (void)state.media->send_input(lost);
+    }
+    if (state.window) (void)SDL_StopTextInput(state.window);
+}
+
+// Evenements clavier/texte SDL pendant la capture : renvoyes a l'hote, jamais a
+// ImGui (sinon Tab/fleches pilotent aussi l'interface locale). Retourne true si
+// l'evenement a ete consomme par la vue distante.
+bool forward_remote_keyboard(AppState& state, const SDL_Event& event) {
+    if (!state.remote_capture || !state.media) return false;
+    if (event.type != SDL_EVENT_KEY_DOWN && event.type != SDL_EVENT_KEY_UP && event.type != SDL_EVENT_TEXT_INPUT) return false;
+    if (!remote_input_allowed(state)) {
+        release_remote_capture(state);
+        return false;
+    }
+    if (event.type == SDL_EVENT_TEXT_INPUT) {
+        plpt::share::split_utf8(event.text.text, plpt::media::kMaxInputTextBytes, [&](const char* p, std::size_t n) {
+            plpt::media::InputEvent e;
+            e.type = plpt::media::InputEventType::TextInput;
+            e.text.assign(p, n);
+            (void)state.media->send_input(e);
+        });
+        return true;
+    }
+    const std::uint32_t vk = virtual_key_of(event.key.key);
+    if (vk == 0) return true; // touche sans equivalent : ignoree, pas transmise a ImGui non plus
+    plpt::media::InputEvent e;
+    e.type = event.type == SDL_EVENT_KEY_DOWN ? plpt::media::InputEventType::KeyDown : plpt::media::InputEventType::KeyUp;
+    e.key_code = vk;
+    e.modifiers = media_modifiers(event.key.mod);
+    (void)state.media->send_input(e);
+    return true;
+}
+
+// Dessine `texture` en letterbox dans tout l'espace restant ; retourne le
+// rectangle reellement occupe par l'image (coordonnees ecran ImGui).
+plpt::share::ViewRect draw_remote_texture(const RemoteTexture& texture, const char* id) {
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    const plpt::share::ViewRect area{origin.x, origin.y, avail.x, std::max(avail.y, 120.0f)};
+    const auto rect = plpt::share::fit_letterbox(area, texture.width, texture.height);
+    ImGui::InvisibleButton(id, ImVec2(area.width, area.height),
+        ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    draw->AddRectFilled(ImVec2(area.x, area.y), ImVec2(area.x + area.width, area.y + area.height), IM_COL32(0, 0, 0, 255));
+    if (texture.texture && rect.width > 0) {
+        draw->AddImage(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(texture.texture)),
+            ImVec2(rect.x, rect.y), ImVec2(rect.x + rect.width, rect.y + rect.height));
+    }
+    return rect;
+}
+
+// Souris : coordonnees normalisees de l'IMAGE (letterbox, taille du panneau et
+// DPI neutralises) ; l'hote les reporte sur son viewport CSS.
+void forward_remote_mouse(AppState& state, const plpt::share::ViewRect& rect, bool hovered) {
+    const ImGuiIO& io = ImGui::GetIO();
+    const bool allowed = remote_input_allowed(state);
+    const bool held = state.remote_buttons != 0;
+    // Un clic hors de la vue rend le clavier a l'interface locale.
+    if (state.remote_capture && !hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)))
+        release_remote_capture(state);
+    if (!allowed) {
+        state.remote_buttons = 0;
+        if (state.remote_capture) release_remote_capture(state);
+        return;
+    }
+    const auto point = plpt::share::to_normalized(rect, io.MousePos.x, io.MousePos.y, held);
+    if (!point) return;
+    auto send = [&](plpt::media::InputEventType type, std::uint8_t button = 0, std::int16_t wheel = 0) {
+        plpt::media::InputEvent e;
+        e.type = type;
+        e.x_norm = point->x;
+        e.y_norm = point->y;
+        e.button = button;
+        e.wheel_delta = wheel;
+        e.modifiers = imgui_modifiers();
+        (void)state.media->send_input(e);
+    };
+    if (point->x != state.remote_last_x || point->y != state.remote_last_y) {
+        send(plpt::media::InputEventType::MouseMove);
+        state.remote_last_x = point->x;
+        state.remote_last_y = point->y;
+    }
+    // ImGui : 0 gauche, 1 droit, 2 milieu -> protocole : 1 gauche, 3 droit, 2 milieu.
+    static constexpr std::uint8_t kButtonOf[3] = {1, 3, 2};
+    for (int b = 0; b < 3; ++b) {
+        const std::uint8_t bit = static_cast<std::uint8_t>(1u << b);
+        if (hovered && ImGui::IsMouseClicked(b) && !(state.remote_buttons & bit)) {
+            state.remote_buttons |= bit;
+            if (!state.remote_capture) {
+                state.remote_capture = true;
+                if (state.window) (void)SDL_StartTextInput(state.window);
+            }
+            send(plpt::media::InputEventType::MouseDown, kButtonOf[b]);
+        }
+        if ((state.remote_buttons & bit) && ImGui::IsMouseReleased(b)) {
+            state.remote_buttons = static_cast<std::uint8_t>(state.remote_buttons & ~bit);
+            send(plpt::media::InputEventType::MouseUp, kButtonOf[b]);
+        }
+    }
+    if (hovered && io.MouseWheel != 0.0f) {
+        const float notches = std::clamp(io.MouseWheel, -10.0f, 10.0f);
+        send(plpt::media::InputEventType::MouseWheel, 0, static_cast<std::int16_t>(notches * 120.0f));
+    }
+}
+
+void render_guest_remote_view(AppState& state) {
     using namespace devlink::ui;
     const auto& colors = theme_colors();
-
-    text_section_title("Vue applicative partagee");
+    if (!state.media) {
+        status_pill("AUCUN FLUX", colors.text_disabled);
+        ImGui::Spacing();
+        auto snapshot = state.guest ? state.guest->snapshot() : nullptr;
+        if (!snapshot) {
+            text_muted("Rejoignez une session : la vue de l'application apparait ici apres admission par l'hote.");
+        } else if (snapshot->phase == plpt::net::GuestPhase::Connected && !snapshot->media_offered) {
+            text_muted("Admis par l'hote, en attente de l'offre du canal media (hote sans partage actif ?).");
+        } else {
+            ImGui::TextWrapped("Plan de controle : %s - %s", plpt::net::guest_phase_text(snapshot->phase),
+                snapshot->status_text.c_str());
+        }
+        return;
+    }
+    const auto ms = state.media->snapshot();
+    if (auto image = state.media->latest(state.guest_view.sequence)) {
+        if (!state.guest_view.update(image->image, image->sequence)) {
+            state.guest_errors.push_back(std::string("texture SDL : ") + SDL_GetError());
+        }
+    }
+    // Bandeau d'etat : uniquement ce que le moteur a confirme.
+    const bool streaming = ms.phase == plpt::share::MediaPhase::Streaming;
+    status_pill(streaming ? (ms.frames ? "FLUX REEL" : "CONNECTE - ATTENTE IMAGE") : plpt::share::media_phase_text(ms.phase),
+        streaming ? colors.status_success : colors.status_error);
+    ImGui::SameLine();
+    if (!ms.transport.empty()) status_pill(ms.transport.c_str(), colors.status_success);
+    if (ms.have_state) {
+        ImGui::SameLine();
+        status_pill(plpt::share::share_mode_text(ms.state.mode), colors.accent_light);
+        ImGui::SameLine();
+        if (ms.state.paused) status_pill("ENTREES SUSPENDUES PAR L'HOTE", colors.status_warning);
+        else if (ms.state.you_may_input) status_pill(state.remote_capture ? "VOUS PILOTEZ (clavier capture)" : "VOUS POUVEZ PILOTER", colors.status_success);
+        else if (ms.state.mode == plpt::share::ShareMode::ObserveOnly) status_pill("OBSERVATION SEULE", colors.status_info);
+        else if (ms.state.you_waiting) status_pill("EN ATTENTE DU CONTROLE", colors.status_warning);
+        else status_pill("LECTURE SEULE", colors.status_info);
+        if (ms.state.mode == plpt::share::ShareMode::Collaborative && streaming) {
+            ImGui::SameLine();
+            if (ms.state.controller == ms.state.you) {
+                if (button_secondary("Rendre le controle", ImVec2(190, 26))) {
+                    release_remote_capture(state);
+                    (void)state.media->release_control();
+                }
+            } else if (!ms.state.you_waiting && button_primary("Demander le controle", ImVec2(200, 26))) {
+                (void)state.media->request_control();
+            }
+        }
+    }
+    ImGui::Text("%ux%u - %.1f img/s - %.0f kbit/s - decodage %.1f ms - entree->image %.0f ms - images %llu - rejets %llu",
+        ms.frame_width, ms.frame_height, ms.fps, ms.kbps, ms.decode_ms_avg, ms.input_rtt_ms_last,
+        static_cast<unsigned long long>(ms.frames), static_cast<unsigned long long>(ms.invalid_records + ms.decode_failures));
+    if (!streaming && !ms.status.empty()) ImGui::TextColored(colors.status_error, "%s", ms.status.c_str());
+    if (state.remote_capture) text_disabled_label("Clavier envoye a l'application : cliquez hors de la vue pour le liberer.");
     ImGui::Spacing();
-
-    if (!state.browser.usable_for_real_session()) {
-        status_pill("MOTEUR NAVIGATEUR INDISPONIBLE", colors.status_error);
-        ImGui::Spacing();
-        ImGui::TextWrapped("Etat reel : %s. Aucune image n'est affichee, parce qu'aucune "
-            "application n'est reellement capturee. Une trame synthetique ne serait pas "
-            "un partage et n'est jamais presentee comme tel.", state.browser.status.c_str());
-        ImGui::Spacing();
-        text_muted("Chaine exigee par le mandat : navigateur reel -> acquisition pixels -> "
-                   "trame normalisee -> encodage -> transporte authentifie -> decodage -> "
-                   "texture SDL3 -> affichage invite.");
+    if (!state.guest_view.texture) {
+        state.guest_rect = plpt::share::ViewRect{};
+        empty_state("Aucune image recue", streaming ? "Le canal est authentifie ; la premiere image arrive."
+                                                     : "Le flux media n'est pas etabli.");
         return;
     }
+    ImGui::BeginChild("##remote_view", ImVec2(0, 0), ImGuiChildFlags_None,
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    const auto rect = draw_remote_texture(state.guest_view, "##remote_surface");
+    state.guest_rect = rect;
+    const bool hovered = ImGui::IsItemHovered();
+    forward_remote_mouse(state, rect, hovered);
+    if (hovered && remote_input_allowed(state)) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    ImGui::EndChild();
+}
 
-    if (state.browser_ctx.value == 0) {
-        status_pill("AUCUN CONTEXTE NAVIGATEUR", colors.status_warning);
-        ImGui::Spacing();
-        text_muted("Le contexte est cree au demarrage d'une session, avec l'allowlist "
-                   "d'origines saisie dans la configuration.");
+void render_host_preview(AppState& state) {
+    using namespace devlink::ui;
+    const auto& colors = theme_colors();
+    if (!state.share || (!state.host_running && !state.host_launching)) {
+        if (!state.browser.usable_for_real_session()) {
+            status_pill("MOTEUR NAVIGATEUR INDISPONIBLE", colors.status_error);
+            ImGui::Spacing();
+            ImGui::TextWrapped("Etat reel : %s. Aucune image n'est affichee : rien n'est capture.", state.browser.status.c_str());
+        } else {
+            empty_state("Aucun partage actif", "Demarrez un partage : cette vue montre alors ce que voient vos invites.");
+        }
         return;
     }
-
-    if (card_begin("##shared_view_card", ImVec2(0, 0))) {
-        text_card_title("Contexte navigateur de l'hote");
-        ImGui::Text("Identifiant %llu - profil %s",
-            static_cast<unsigned long long>(state.browser_ctx.value), state.browser_profile.c_str());
-        ImGui::Text("Origine courante : %s",
-            state.browser_origin.empty() ? "(aucune navigation reussie)" : state.browser_origin.c_str());
-        ImGui::Spacing();
-        status_pill("TRANSPORT VIDEO NON INTEGRE", colors.status_warning);
-        ImGui::Spacing();
-        ImGui::TextWrapped("La capture locale existe, mais le transport authentifie des trames "
-            "vers l'invite n'est pas encore implemente : l'invite ne recoit donc rien. "
-            "Cet ecran n'affiche pas d'image tant que la chaine complete n'est pas verifiee.");
+    const auto share = state.share->snapshot();
+    if (share.stage != plpt::share::ShareStage::Active) {
+        status_pill(plpt::share::share_stage_text(share.stage), colors.status_info);
+        return;
     }
-    card_end();
+    if (auto frame = state.share->preview(state.host_preview.sequence)) {
+        plpt::media::DecodedImage image;
+        if (state.preview_decoder.decode(frame->data, frame->width, frame->height, image))
+            (void)state.host_preview.update(image, frame->sequence);
+    }
+    status_pill("APERCU HOTE DU CONTEXTE PARTAGE", colors.accent_light);
+    ImGui::SameLine();
+    text_muted(share.mode == plpt::share::ShareMode::Independent
+        ? "Mode A : chaque invite pilote son propre contexte ; ceci est le contexte hote."
+        : "Exactement les images envoyees aux invites de la vue partagee.");
+    ImGui::Spacing();
+    ImGui::BeginChild("##host_preview", ImVec2(0, 0), ImGuiChildFlags_None,
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    (void)draw_remote_texture(state.host_preview, "##host_preview_surface");
+    ImGui::EndChild();
+}
+
+void render_shared_view(AppState& state) {
+    using namespace devlink::ui;
+    text_section_title(state.host_mode ? "Vue partagee (apercu hote)" : "Application partagee");
+    ImGui::Spacing();
+    if (state.host_mode) render_host_preview(state);
+    else render_guest_remote_view(state);
 }
 
 void render_guest_sessions(AppState& state) {
@@ -1327,11 +1677,13 @@ void render_guest_sessions(AppState& state) {
         }
     }
 
-    if (!state.guest_errors.empty() && card_begin("##guest_errors_discovery", ImVec2(0, 0))) {
-        text_card_title("Erreurs reelles");
-        for (const auto& line : state.guest_errors) ImGui::TextWrapped("%s", line.c_str());
+    if (!state.guest_errors.empty()) {
+        if (card_begin("##guest_errors_discovery", ImVec2(0, 0))) {
+            text_card_title("Erreurs reelles");
+            for (const auto& line : state.guest_errors) ImGui::TextWrapped("%s", line.c_str());
+        }
+        card_end();
     }
-    card_end();
 
     ImGui::Spacing();
 
@@ -1478,12 +1830,15 @@ void render_guest_join(AppState& state) {
                     snapshot->host_name.empty() ? "(inconnu)" : snapshot->host_name.c_str(),
                     static_cast<unsigned int>(snapshot->latency_ms),
                     snapshot->resume_available ? "oui" : "non");
-                ImGui::Text("Mode demande : %s (role moteur : %s)", mode_label(state.mode),
-                    role_text(role_of(state.mode)));
-                text_disabled_label(mode_capability_note(state.mode));
-                text_disabled_label(mode_allows_input(state.mode)
-                    ? "Entree autorisee par ce mode, sous controle du bail accorde par l'hote."
-                    : "Entree refusee par ce mode : l'observation seule ne transmet aucun evenement.");
+                if (state.media) {
+                    const auto ms = state.media->snapshot();
+                    if (ms.have_state) {
+                        ImGui::Text("Mode decide par l'hote : %s", plpt::share::share_mode_text(ms.state.mode));
+                        text_disabled_label(ms.state.you_may_input
+                            ? "Vos entrees sont acceptees par l'hote en ce moment."
+                            : "Vos entrees sont refusees par l'hote en ce moment (mode, controle ou suspension).");
+                    }
+                }
                 if (snapshot->last_error != plpt::ErrorCode::Ok) {
                     ImGui::Spacing();
                     status_pill("DERNIERE ERREUR MOTEUR", colors.status_error);
@@ -1503,22 +1858,20 @@ void render_guest_join(AppState& state) {
         ImGui::Spacing();
         const float left = pane_width(0.5f, 380.0f);
         if (card_begin("##guest_services_card", ImVec2(left, 0))) {
-            text_card_title("Services publies par l'hote");
+            text_card_title("Flux de l'application");
             ImGui::Spacing();
-            if (!snapshot || snapshot->services.empty()) {
-                text_muted("Aucun service recu. La liste n'arrive qu'apres admission par l'hote.");
+            if (!state.media) {
+                text_muted("Aucun canal media : il est ouvert automatiquement apres admission, avec la cle "
+                           "recue sur le canal de controle chiffre.");
             } else {
-                for (const auto& service : snapshot->services) {
-                    text_card_title(service.label);
-                    if (service.available) {
-                        status_pill("DISPONIBLE", colors.status_success);
-                    } else {
-                        status_pill("INDISPONIBLE", colors.status_error);
-                    }
-                    ImGui::Spacing();
-                    ImGui::TextWrapped("%s", service.url.c_str());
-                    ImGui::Separator();
-                }
+                const auto ms = state.media->snapshot();
+                status_pill(plpt::share::media_phase_text(ms.phase),
+                    ms.phase == plpt::share::MediaPhase::Streaming ? colors.status_success : colors.status_error);
+                ImGui::Spacing();
+                ImGui::TextWrapped("%s", ms.status.c_str());
+                ImGui::Text("%llu image(s) - %.1f img/s - %s", static_cast<unsigned long long>(ms.frames), ms.fps,
+                    ms.transport.empty() ? "transport non etabli" : ms.transport.c_str());
+                if (button_primary("Ouvrir l'application partagee", ImVec2(280, 32))) state.tab = MainNavigationTab::SharedView;
             }
         }
         card_end();
@@ -1692,8 +2045,17 @@ void render_diagnostics(AppState& state, const plpt::MonitorView& view, const Ru
         ImGui::Text("Backend navigateur reel operationnel : %s",
             plpt::browser::WebView2Backend::is_available() ? "oui" : "non (pipeline non implemente)");
         ImGui::Text("Backend utilise : %s", state.browser.status.c_str());
-        ImGui::Text("Contexte navigateur : %llu",
-            static_cast<unsigned long long>(state.browser_ctx.value));
+        if (state.share) {
+            const auto share = state.share->snapshot();
+            ImGui::Text("Partage : %s - port media %u - contextes %llu/%llu", plpt::share::share_stage_text(share.stage),
+                static_cast<unsigned int>(share.media_port), static_cast<unsigned long long>(share.contexts_created),
+                static_cast<unsigned long long>(share.contexts_destroyed));
+        }
+        if (state.media) {
+            const auto ms = state.media->snapshot();
+            ImGui::Text("Canal media invite : %s - %s", plpt::share::media_phase_text(ms.phase),
+                ms.transport.empty() ? "non etabli" : ms.transport.c_str());
+        }
         ImGui::Spacing();
         // Côté invité : le transport affiché est celui du canal réel (ADR-016).
         {
@@ -1745,19 +2107,6 @@ void render_diagnostics(AppState& state, const plpt::MonitorView& view, const Ru
         } else {
             text_muted("Aucun serveur hote.");
         }
-        if (state.proxy) {
-            if (auto proxy_view = state.proxy->snapshot()) {
-                ImGui::Text("Proxy : %s - amont %s - joignable : %s", proxy_view->bind_address.c_str(),
-                    proxy_view->upstream.c_str(), proxy_view->upstream_alive ? "oui" : "non");
-                ImGui::Text("Autorises %llu - refuses %llu - echecs amont %llu - jetons retires %llu",
-                    static_cast<unsigned long long>(proxy_view->counters.authorized),
-                    static_cast<unsigned long long>(proxy_view->counters.refused),
-                    static_cast<unsigned long long>(proxy_view->counters.upstream_failures),
-                    static_cast<unsigned long long>(proxy_view->counters.tokens_redacted));
-            }
-        } else {
-            text_muted("Aucun proxy applicatif.");
-        }
         if (state.announcer) {
             ImGui::Text("Annonceur : %llu datagramme(s) envoye(s) - %zu echec(s)",
                 static_cast<unsigned long long>(state.announcer->sent_datagrams()),
@@ -1779,10 +2128,18 @@ void render_diagnostics(AppState& state, const plpt::MonitorView& view, const Ru
 }
 
 // Barre d'onglets : l'espace hote et l'espace invite ne mélangent pas leurs ecrans.
+// Une navigation demandee par le code (state.tab change hors de la barre) est
+// appliquee avec SetSelected et rejouee tant qu'ImGui ne l'a pas affichee :
+// sinon l'onglet memorise par ImGui l'ecrase a la frame suivante.
 void render_navigation(AppState& state) {
-    const auto push_tab = [&state](MainNavigationTab tab) {
-        if (ImGui::BeginTabItem(devlink::ui::nav_label(tab))) {
-            state.tab = tab;
+    const bool pending = state.tab != state.nav_shown;
+    MainNavigationTab chosen = state.tab;
+    bool requested_open = false;
+    const auto push_tab = [&](MainNavigationTab tab) {
+        const ImGuiTabItemFlags flags = (pending && tab == state.tab) ? ImGuiTabItemFlags_SetSelected : 0;
+        if (ImGui::BeginTabItem(devlink::ui::nav_label(tab), nullptr, flags)) {
+            if (!pending) chosen = tab;
+            if (tab == state.tab) requested_open = true;
             ImGui::EndTabItem();
         }
     };
@@ -1803,6 +2160,8 @@ void render_navigation(AppState& state) {
     push_tab(MainNavigationTab::Feedback);
     push_tab(MainNavigationTab::Diagnostics);
     ImGui::EndTabBar();
+    state.tab = chosen;
+    if (!pending || requested_open) state.nav_shown = state.tab;
 }
 
 // ---------------------------------------------------------------------------
@@ -1836,12 +2195,192 @@ float window_display_scale(SDL_Window* window) {
     return scale;
 }
 
+// ---------------------------------------------------------------------------
+// Lancement scriptable (qualification, protocole LAN physique reproductible)
+//
+// --host / --join remplissent les MEMES formulaires et appellent les MEMES
+// fonctions que les boutons ; --auto-click / --auto-type injectent des
+// evenements SDL dans la fenetre reelle : ils traversent ImGui, le mappage
+// letterbox, le canal media TLS et l'autorisation cote hote exactement comme
+// une souris et un clavier physiques. Rien n'est court-circuite.
+// ---------------------------------------------------------------------------
+
+struct Qualification {
+    // hote
+    bool host = false;
+    bool report_fixture = false;
+    bool print_invite = false;    // secret : seulement sur demande explicite
+    bool exit_when_guests_gone = false;
+    bool announced_active = false;
+    bool saw_guest = false;
+    // invite
+    bool join = false;
+    bool request_control = false;
+    bool requested = false;
+    std::vector<std::pair<float, float>> clicks; // points normalises, dans l'ordre
+    std::string type_text;
+    std::size_t input_step = 0;   // 3 etapes par clic (mouvement, appui, relache) puis le texte
+    int input_wait_frames = 0;
+    // commun
+    double capture_after_s = -1.0;
+    std::string capture_path;
+    bool captured = false;
+    double exit_after_s = -1.0;
+    std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point last_report = started;
+    bool any() const { return host || join || capture_after_s >= 0 || exit_after_s >= 0; }
+    double elapsed() const {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+    }
+};
+
+bool parse_unit_pair(const char* text, float& x, float& y) {
+    char* end = nullptr;
+    x = std::strtof(text, &end);
+    if (!end || *end != ',') return false;
+    y = std::strtof(end + 1, &end);
+    return end && *end == '\0' && x >= 0.0f && x <= 1.0f && y >= 0.0f && y <= 1.0f;
+}
+
+// Point (normalise) de l'image -> coordonnees fenetre, d'apres le rectangle
+// reellement dessine a la frame precedente.
+void push_mouse(SDL_Window* window, const plpt::share::ViewRect& rect, float nx, float ny, Uint32 type) {
+    SDL_Event e{};
+    e.type = type;
+    const float x = rect.x + nx * rect.width;
+    const float y = rect.y + ny * rect.height;
+    // Fenetre active : le backend ImGui lit la position GLOBALE du curseur a
+    // chaque frame ; le curseur reel est donc place la ou « la main » clique.
+    SDL_WarpMouseInWindow(window, x, y);
+    if (type == SDL_EVENT_MOUSE_MOTION) {
+        e.motion.windowID = SDL_GetWindowID(window);
+        e.motion.x = x;
+        e.motion.y = y;
+    } else {
+        e.button.windowID = SDL_GetWindowID(window);
+        e.button.button = SDL_BUTTON_LEFT;
+        e.button.down = type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+        e.button.clicks = 1;
+        e.button.x = x;
+        e.button.y = y;
+    }
+    (void)SDL_PushEvent(&e);
+}
+
+std::string qualification_text_storage; // vit jusqu'au traitement de l'evenement pousse
+
+void qualification_tick(Qualification& q, AppState& app, const plpt::share::ViewRect& guest_rect, bool& running) {
+    if (q.host && q.announced_active == false && app.host_running && app.host && app.share) {
+        auto view = app.host->snapshot();
+        const auto share = app.share->snapshot();
+        std::printf("devlink-host: active invite=%s control=%s:%u media=%u mode=%u first_frame_ms=%llu\n",
+            q.print_invite ? app.invite_code.text.c_str() : plpt::mask_secret(app.invite_code.text).c_str(),
+            view->control_address.c_str(), static_cast<unsigned int>(view->control_port),
+            static_cast<unsigned int>(share.media_port), static_cast<unsigned int>(share.mode),
+            static_cast<unsigned long long>(share.first_frame_ms));
+        std::fflush(stdout);
+        q.announced_active = true;
+    }
+    if (q.host && !app.host_running && !app.host_launching && !q.announced_active && !app.host_errors.empty()) {
+        for (const auto& e : app.host_errors) std::printf("devlink-host: error %s\n", e.c_str());
+        std::fflush(stdout);
+        running = false;
+        return;
+    }
+    const bool report_now = std::chrono::steady_clock::now() - q.last_report >= std::chrono::milliseconds(500);
+    if (report_now) q.last_report = std::chrono::steady_clock::now();
+    if (q.host && app.share && app.host_running && report_now) {
+        const auto share = app.share->snapshot();
+        std::uint64_t accepted = 0, rejected = 0;
+        for (const auto& p : share.peers) { accepted += p.inputs_accepted; rejected += p.inputs_rejected; }
+        std::printf("devlink-host: peers=%zu controller=%llu inputs_accepted=%llu inputs_rejected=%llu contexts=%llu/%llu\n",
+            share.peers.size(), static_cast<unsigned long long>(share.controller.value),
+            static_cast<unsigned long long>(accepted), static_cast<unsigned long long>(rejected),
+            static_cast<unsigned long long>(share.contexts_created), static_cast<unsigned long long>(share.contexts_destroyed));
+        if (q.report_fixture) {
+            // Diagnostic HOTE uniquement : lit le DOM du contexte partage.
+            auto dom = app.share->evaluate_for_diagnostics(plpt::ParticipantId{},
+                "window.devlinkFixture ? window.devlinkFixture() : null");
+            if (dom) std::printf("devlink-host-fixture: %s\n", dom.value().c_str());
+        }
+        std::fflush(stdout);
+        bool connected = false;
+        for (const auto& p : share.peers) connected = connected || p.media_connected;
+        if (connected) q.saw_guest = true;
+        if (q.exit_when_guests_gone && q.saw_guest && !connected) running = false;
+    }
+    if (q.join && app.media) {
+        const auto ms = app.media->snapshot();
+        if (report_now) {
+            std::printf("devlink-guest: phase=%s frames=%llu fps=%.1f transport=%s mode=%u may_input=%d controller=%llu "
+                        "inputs_sent=%llu input_rtt_ms=%.1f invalid=%llu\n",
+                plpt::share::media_phase_text(ms.phase), static_cast<unsigned long long>(ms.frames), ms.fps,
+                ms.transport.empty() ? "-" : ms.transport.c_str(), static_cast<unsigned int>(ms.state.mode),
+                ms.state.you_may_input ? 1 : 0, static_cast<unsigned long long>(ms.state.controller),
+                static_cast<unsigned long long>(ms.inputs_sent), ms.input_rtt_ms_last,
+                static_cast<unsigned long long>(ms.invalid_records + ms.decode_failures));
+            std::fflush(stdout);
+        }
+        if (q.request_control && !q.requested && ms.phase == plpt::share::MediaPhase::Streaming && ms.have_state) {
+            q.requested = app.media->request_control();
+        }
+        // Clic puis saisie, seulement quand l'hote dit que nos entrees sont admises
+        // et qu'une image a ete dessinee (rectangle connu).
+        const bool ready = ms.state.you_may_input && app.guest_view.texture && guest_rect.width > 0 &&
+            app.tab == MainNavigationTab::SharedView;
+        const std::size_t steps = q.clicks.size() * 3 + 1;
+        if (!q.clicks.empty() && ready && q.input_step < steps && --q.input_wait_frames <= 0) {
+            q.input_wait_frames = 4;
+            if (q.input_step < q.clicks.size() * 3) {
+                const auto [cx, cy] = q.clicks[q.input_step / 3];
+                static constexpr Uint32 kPhase[3] = {SDL_EVENT_MOUSE_MOTION, SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_EVENT_MOUSE_BUTTON_UP};
+                push_mouse(app.window, guest_rect, cx, cy, kPhase[q.input_step % 3]);
+            } else {
+                if (!q.type_text.empty()) {
+                    qualification_text_storage = q.type_text;
+                    SDL_Event e{};
+                    e.type = SDL_EVENT_TEXT_INPUT;
+                    e.text.windowID = SDL_GetWindowID(app.window);
+                    e.text.text = qualification_text_storage.c_str();
+                    (void)SDL_PushEvent(&e);
+                }
+            }
+            ++q.input_step;
+        }
+    }
+    if (q.capture_after_s >= 0 && !q.captured && q.elapsed() >= q.capture_after_s) q.captured = true; // capture en fin de frame
+    if (q.exit_after_s >= 0 && q.elapsed() >= q.exit_after_s) running = false;
+}
+
+bool save_window_capture(SDL_Renderer* renderer, const std::string& path) {
+    SDL_Surface* capture = SDL_RenderReadPixels(renderer, nullptr);
+    if (!capture) {
+        std::fprintf(stderr, "SDL_RenderReadPixels: %s\n", SDL_GetError());
+        return false;
+    }
+    const bool saved = SDL_SaveBMP(capture, path.c_str());
+    if (!saved) std::fprintf(stderr, "SDL_SaveBMP: %s\n", SDL_GetError());
+    std::printf("devlink-capture: %s %dx%d %s\n", path.c_str(), capture->w, capture->h, saved ? "saved" : "FAILED");
+    std::fflush(stdout);
+    SDL_DestroySurface(capture);
+    return saved;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     bool smoke = false;
     bool demo_browser = false;
     const char* screenshot_path = nullptr;
+    Qualification q;
+    std::string q_origins, q_entry, q_bind, q_join_ip, q_code, q_name;
+    int q_join_port = 0;
+    char q_mode = 'B';
+    bool q_no_approval = false;
+    const auto usage_error = [&]() {
+        std::fprintf(stderr, "%.*s", static_cast<int>(kUsage.size()), kUsage.data());
+        return 2;
+    };
 
     for (int index = 1; index < argc; ++index) {
         const std::string_view argument(argv[index]);
@@ -1851,6 +2390,46 @@ int main(int argc, char** argv) {
             // Build de demonstration explicite : seul chemin qui autorise un
             // backend synthetique, et il est signale en permanence a l'ecran.
             demo_browser = true;
+        } else if (argument == "--host" && index + 1 < argc) {
+            q.host = true;
+            q_origins = argv[++index];
+        } else if (argument == "--entry" && index + 1 < argc) {
+            q_entry = argv[++index];
+        } else if (argument == "--mode" && index + 1 < argc) {
+            const std::string_view m(argv[++index]);
+            if (m != "A" && m != "B" && m != "C") return usage_error();
+            q_mode = m[0];
+        } else if (argument == "--bind" && index + 1 < argc) {
+            q_bind = argv[++index];
+        } else if (argument == "--no-approval") {
+            q_no_approval = true;
+        } else if (argument == "--print-invite") {
+            q.print_invite = true;
+        } else if (argument == "--report-fixture") {
+            q.report_fixture = true;
+        } else if (argument == "--exit-when-guests-gone") {
+            q.exit_when_guests_gone = true;
+        } else if (argument == "--join" && index + 2 < argc) {
+            q.join = true;
+            q_join_ip = argv[++index];
+            q_join_port = std::atoi(argv[++index]);
+        } else if (argument == "--code" && index + 1 < argc) {
+            q_code = argv[++index];
+        } else if (argument == "--name" && index + 1 < argc) {
+            q_name = argv[++index];
+        } else if (argument == "--request-control") {
+            q.request_control = true;
+        } else if (argument == "--auto-click" && index + 1 < argc) {
+            float cx = 0.0f, cy = 0.0f;
+            if (!parse_unit_pair(argv[++index], cx, cy)) return usage_error();
+            q.clicks.emplace_back(cx, cy);
+        } else if (argument == "--auto-type" && index + 1 < argc) {
+            q.type_text = argv[++index];
+        } else if (argument == "--capture-after" && index + 2 < argc) {
+            q.capture_after_s = std::atof(argv[++index]);
+            q.capture_path = argv[++index];
+        } else if (argument == "--exit-after" && index + 1 < argc) {
+            q.exit_after_s = std::atof(argv[++index]);
         } else if (argument == "--screenshot") {
             if (index + 1 >= argc) {
                 std::fprintf(stderr, "%.*s", static_cast<int>(kUsage.size()), kUsage.data());
@@ -1862,6 +2441,8 @@ int main(int argc, char** argv) {
             return 2;
         }
     }
+    if ((q.host && q.join) || (q.join && (q_code.empty() || q_join_port <= 0)) || (smoke && q.any()))
+        return usage_error();
     if (screenshot_path && !smoke) {
         std::fprintf(stderr, "--screenshot exige --smoke-test. Aucune capture interactive implicite.\n");
         return 2;
@@ -1926,6 +2507,9 @@ int main(int argc, char** argv) {
     runtime.render_backend = true;
 
     AppState app;
+    app.window = runtime.window;
+    app.host_preview.renderer = runtime.renderer;
+    app.guest_view.renderer = runtime.renderer;
     app.browser_demo_requested = demo_browser;
     app.interfaces = std::make_unique<plpt::NativeNetworkInterfaceProvider>();
     app.monitor = std::make_unique<plpt::Monitor>(
@@ -1954,6 +2538,31 @@ int main(int argc, char** argv) {
             "Aucun partage reel n'est possible dans ce mode.\n");
     }
 
+    if (q.host) {
+        std::snprintf(app.allowed_origins, sizeof(app.allowed_origins), "%s", q_origins.c_str());
+        std::snprintf(app.entry_url, sizeof(app.entry_url), "%s", q_entry.c_str());
+        std::snprintf(app.bind_address, sizeof(app.bind_address), "%s", q_bind.c_str());
+        app.mode = q_mode == 'A' ? ParticipationMode::Independent
+            : q_mode == 'C' ? ParticipationMode::Observation : ParticipationMode::Collaborative;
+        app.approval_required = !q_no_approval;
+        if (!start_host_session(app)) {
+            for (const auto& e : app.host_errors) std::printf("devlink-host: error %s\n", e.c_str());
+            return 1;
+        }
+    }
+    if (q.join) {
+        app.host_mode = false;
+        app.tab = MainNavigationTab::GuestJoin;
+        std::snprintf(app.guest_address, sizeof(app.guest_address), "%s", q_join_ip.c_str());
+        app.guest_port = q_join_port;
+        std::snprintf(app.guest_code, sizeof(app.guest_code), "%s", q_code.c_str());
+        if (!q_name.empty()) std::snprintf(app.guest_name, sizeof(app.guest_name), "%s", q_name.c_str());
+        if (!start_guest_session(app)) {
+            for (const auto& e : app.guest_errors) std::printf("devlink-guest: error %s\n", e.c_str());
+            return 1;
+        }
+    }
+
     bool running = true;
     int smoke_frames = 0;
     static const plpt::MonitorView kEmptyView;
@@ -1961,7 +2570,8 @@ int main(int argc, char** argv) {
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            ImGui_ImplSDL3_ProcessEvent(&event);
+            // Clavier capture par la vue distante : envoye a l'hote, pas a ImGui.
+            if (!forward_remote_keyboard(app, event)) ImGui_ImplSDL3_ProcessEvent(&event);
             if (event.type == SDL_EVENT_QUIT) running = false;
             if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
                 event.window.windowID == SDL_GetWindowID(runtime.window)) {
@@ -2007,6 +2617,10 @@ int main(int argc, char** argv) {
             app.guest_running = false;
             app.notify("La connexion invite s'est terminee cote moteur");
         }
+        poll_host_launch(app);
+        tick_guest_media(app);
+        // La capture clavier ne survit pas a un changement d'ecran.
+        if (app.remote_capture && (app.tab != MainNavigationTab::SharedView || app.host_mode)) release_remote_capture(app);
 
         int width = 0;
         int height = 0;
@@ -2024,8 +2638,12 @@ int main(int argc, char** argv) {
         std::string status_text = "PRET";
         ImVec4 status_color = devlink::ui::theme_colors().text_disabled;
         devlink::ui::icons::Icon status_glyph = devlink::ui::icons::Icon::Info;
-        if (app.host_running) {
-            status_text = "SESSION HOTE ACTIVE";
+        if (app.host_launching) {
+            status_text = "DEMARRAGE DU PARTAGE";
+            status_color = devlink::ui::theme_colors().status_info;
+            status_glyph = devlink::ui::icons::Icon::Pulse;
+        } else if (app.host_running) {
+            status_text = "PARTAGE ACTIF";
             status_color = devlink::ui::theme_colors().status_success;
             status_glyph = devlink::ui::icons::Icon::Session;
         } else if (app.guest_running) {
@@ -2099,7 +2717,13 @@ int main(int argc, char** argv) {
         SDL_SetRenderDrawColorFloat(runtime.renderer, background.x, background.y, background.z, 1.0f);
         SDL_RenderClear(runtime.renderer);
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), runtime.renderer);
+        // Capture de la VRAIE fenetre, avant presentation (contenu garanti).
+        if (q.captured && !q.capture_path.empty()) {
+            (void)save_window_capture(runtime.renderer, q.capture_path);
+            q.capture_path.clear();
+        }
         SDL_RenderPresent(runtime.renderer);
+        if (q.any()) qualification_tick(q, app, app.guest_rect, running);
 
         if (smoke) {
             ++smoke_frames;
@@ -2142,7 +2766,14 @@ int main(int argc, char** argv) {
 
     // Arret propre : rien ne survit a la fenetre.
     if (app.guest_running) stop_guest_session(app);
-    if (app.host_running) stop_host_session(app, "arret du poste de commande");
+    if (q.host && app.share) {
+        app.share->stop(); // idempotent : stop_host_session le refait
+        const auto end = app.share->snapshot();
+        std::printf("devlink-host: stopped stage=%s contexts=%llu/%llu\n", plpt::share::share_stage_text(end.stage),
+            static_cast<unsigned long long>(end.contexts_created), static_cast<unsigned long long>(end.contexts_destroyed));
+        std::fflush(stdout);
+    }
+    if (app.host_running || app.host_launching) stop_host_session(app, "arret du poste de commande");
     if (app.listener) { app.listener->stop(); app.listener.reset(); }
     app.listener_running = false;
     app.monitor.reset();

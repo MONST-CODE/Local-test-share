@@ -26,6 +26,7 @@ Décisions techniques complémentaires :
 - [ADR-015 — Identité publique DevLink, version unique et identifiants internes stables](ADR-015-identite-publique-et-version-unique.md)
 - [ADR-016 — Transport des sessions réelles : interface versionnée, TLS 1.3 PSK authentifié, disponibilité honnête](ADR-016-transport-tls13-psk.md)
 - [ADR-017 — Authentification par défi-réponse et basculement du plan de contrôle sur TLS 1.3](ADR-017-defi-reponse-et-basculement-tls13.md)
+- [ADR-018 — Rendu distant réel : Browser Worker WebView2, canal média TLS 1.3 par invité, autorité des entrées côté hôte](ADR-018-rendu-distant-reel-webview2.md)
 
 Décidé par ADR-016 : le transport sécurisé des sessions réelles est TLS 1.3 à
 PSK externe (pile OpenSSL chargée à l'exécution sur Linux ; Windows à câbler —
@@ -41,9 +42,10 @@ encore un secret en clair est refusé. Sans runtime TLS, un partage réel est
 des deux côtés, et il est alors étiqueté partout. Le canal historique XOR/HMAC
 (`secure_channel`) est **supprimé** du dépôt : plus aucune crypto maison n'est
 liée, en production comme dans les tests.
-À instruire (aucune décision prise à ce jour) : Browser Worker / capture de
-surface (prototype WebView2 et sa porte de validation avant toute interface
-définitive).
+Décidé et **implémenté** par ADR-018 : Browser Worker WebView2 hors écran (un
+profil par contexte), images du compositeur, garde réseau SOCKS5, canal média
+TLS 1.3 PSK par invité, autorité des entrées côté hôte (modes A/B/C). Qualifié
+en boucle locale sur Windows ; LAN physique encore à exécuter.
 
 Une modification future d'une décision VALIDÉE doit exposer contexte, options,
 conséquences, risques et tests, puis obtenir l'arbitrage du propriétaire. Le fait

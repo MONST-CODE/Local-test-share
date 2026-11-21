@@ -1,13 +1,46 @@
 # Changelog — DevLink
 
 > **Historique non qualifié, pas une déclaration de release.** Les entrées datées du
-> 17 novembre contiennent des affirmations de fonctionnalités qui ne correspondent
-> pas au code audité (notamment moteur navigateur, profils, capture et interactions).
-> Le backend WebView2 réel n'est pas implémenté ; le moteur synthétique a été renommé
-> `DemoBrowserBackend`. Se référer à `docs/reports/FINAL_COMPLETION_AUDIT.md` pour le
-> statut vérifié. Aucune version 1.0.0 partage fonctionnel n'est qualifiée.
+> 17 novembre contiennent des affirmations qui ne correspondaient pas au code audité
+> à l'époque (moteur navigateur, profils, capture, interactions). L'entrée
+> « Non publié » ci-dessous décrit ce qui est réellement implémenté et testé depuis.
+> Statut vérifié : `docs/reports/FINAL_COMPLETION_AUDIT.md`.
 
 Toutes les évolutions et jalons notables de **DevLink** sont consignés dans ce fichier.
+
+---
+
+## [Non publié] — 2026-11-21 — partage réel (Windows, qualifié sur une machine)
+
+### Ajouté
+- `engine/share/` : `ShareHost` (démarrage transactionnel : navigateur réel →
+  navigation → **première image réelle** → canal média → actif ; rollback et arrêt
+  idempotent), `ShareGuest` (canal média TLS 1.3 PSK, décodage WIC), `SharePolicy`
+  (modes A/B/C imposés côté hôte, bail exclusif à époque, rejeu refusé),
+  `media_wire` (enregistrements bornés avant allocation), `view_mapping`
+  (letterbox → coordonnées normalisées).
+- Poste desktop : « Démarrer le partage » lance le partage réel sans bloquer l'UI.
+  « Vue partagée » montre la page de l'hôte dans une texture SDL3 et renvoie
+  souris, molette, clavier et texte Unicode. « Session active » permet de donner ou
+  reprendre le contrôle, de suspendre les entrées et de suivre les compteurs par
+  invité. Un aperçu côté hôte est disponible.
+- Lancement scriptable `devlink-desktop --host … / --join …` (qualification et
+  runbook LAN), avec capture de la vraie fenêtre.
+- Tests : `devlink-share-tests` (6 cas, attaques, 5 invités),
+  `devlink-desktop-e2e-tests` (vrais exécutables hôte et invité), tests unitaires
+  `SharePolicy`, enregistrements média, mappage et découpage UTF-8.
+- ADR-018.
+
+### Modifié
+- Le proxy HTTP ne fait plus partie du parcours de partage du poste desktop.
+
+### Corrigé
+- Navigation programmatique entre onglets, annulée par la barre ImGui (les boutons
+  « Aller à… » n'avaient aucun effet).
+- `EndChild` sans `BeginChild` quand une carte conditionnelle était vide :
+  assertion ImGui qui figeait l'écran invité ou la session active.
+- Mode A : une déconnexion orphelinait le contexte navigateur du participant.
+- Mesure de latence entrée → image faussée par les entrées refusées.
 
 ---
 

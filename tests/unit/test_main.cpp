@@ -25,6 +25,9 @@
 #include "engine/browser/remote_frame.hpp"
 #include "engine/media/frame_queue.hpp"
 #include "engine/browser/webview2_backend.hpp"
+#include "engine/share/media_wire.hpp"
+#include "engine/share/share_policy.hpp"
+#include "engine/share/view_mapping.hpp"
 
 using namespace plpt;
 using namespace plpt::model;
@@ -1425,6 +1428,203 @@ void browser_backend_selection_and_lifecycle() {
     CHECK(destroy_res);
 }
 
+// ---- engine/share : policy (modes A/B/C), media records, view mapping ----
+
+static void share_policy_modes_are_enforced_server_side() {
+    using namespace plpt::share;
+    const ParticipantId a{11}, b{12}, c{13};
+    // Mode C: valid, fresh records are still refused; no lease ever exists.
+    {
+        SharePolicy p(ShareMode::ObserveOnly);
+        p.set_shared_context(ContextId{7});
+        REQUIRE(p.add(a, "A"));
+        ContextId target{};
+        CHECK(p.authorize(a, 1, &target) == InputDecision::ObserveOnlyMode);
+        CHECK(!p.request_control(a));
+        CHECK(!p.host_grant(a));
+        CHECK(!p.may_input(a));
+        CHECK_EQ(target.value, 0U);
+    }
+    // Mode B: exclusive lease, FIFO transfer, refused after release/revocation.
+    {
+        SharePolicy p(ShareMode::Collaborative);
+        p.set_shared_context(ContextId{7});
+        REQUIRE(p.add(a, "A"));
+        REQUIRE(p.add(b, "B"));
+        REQUIRE(p.add(c, "C"));
+        ContextId target{};
+        CHECK(p.authorize(a, 1, &target) == InputDecision::NotController); // nobody holds the lease
+        CHECK(p.request_control(a));
+        const auto epoch = p.lease().epoch;
+        CHECK(p.authorize(a, 2, &target) == InputDecision::Accepted);
+        CHECK_EQ(target.value, 7U);
+        CHECK(p.authorize(b, 1, &target) == InputDecision::NotController);
+        CHECK(!p.request_control(b));
+        CHECK(!p.request_control(c));
+        CHECK_EQ(p.lease().waiting.size(), 2U);
+        p.release_control(a);
+        CHECK(p.lease().holder == b);              // FIFO
+        CHECK(p.lease().epoch > epoch);
+        CHECK(p.authorize(a, 3, &target) == InputDecision::NotController); // former controller refused
+        CHECK(p.authorize(b, 2, &target) == InputDecision::Accepted);
+        // Replay of an already consumed sequence, and a non-increasing one.
+        CHECK(p.authorize(b, 2, &target) == InputDecision::Replayed);
+        CHECK(p.authorize(b, 1, &target) == InputDecision::Replayed);
+        // Pause blocks the controller too.
+        p.set_paused(true);
+        CHECK(p.authorize(b, 3, &target) == InputDecision::Paused);
+        p.set_paused(false);
+        // Revoking the holder passes the lease on; the revoked id never comes back.
+        p.remove(b, true);
+        CHECK(p.lease().holder == c);
+        CHECK(p.authorize(b, 10, &target) == InputDecision::Revoked);
+        CHECK(!p.add(b, "B again"));
+        CHECK(!p.host_grant(b));
+        CHECK(p.host_grant(ParticipantId{}));      // host takes control back
+        CHECK(p.authorize(c, 1, &target) == InputDecision::NotController);
+    }
+    // Mode A: each participant drives only its own context; a disconnection
+    // keeps that context for the resume (regression: it used to be zeroed,
+    // orphaning a live browser context and creating a second one).
+    {
+        SharePolicy p(ShareMode::Independent);
+        p.set_shared_context(ContextId{1});
+        REQUIRE(p.add(a, "A"));
+        REQUIRE(p.add(b, "B"));
+        ContextId target{};
+        CHECK(p.authorize(a, 1, &target) == InputDecision::NoContext);
+        p.set_context(a, ContextId{21});
+        p.set_context(b, ContextId{22});
+        CHECK(p.authorize(a, 2, &target) == InputDecision::Accepted);
+        CHECK_EQ(target.value, 21U);
+        CHECK(p.authorize(b, 1, &target) == InputDecision::Accepted);
+        CHECK_EQ(target.value, 22U);
+        CHECK(!p.request_control(a)); // no lease in mode A
+        p.remove(a, false);
+        REQUIRE(p.find(a));
+        CHECK_EQ(p.find(a)->context.value, 21U);
+        REQUIRE(p.add(a, "A resumed"));
+        CHECK_EQ(p.find(a)->context.value, 21U);
+        p.remove(a, true);
+        CHECK(p.find(a) == nullptr);
+    }
+}
+
+static void share_media_records_are_bounded() {
+    using namespace plpt::share;
+    // Hello roundtrip and refusal of any trailing/oversized bytes.
+    auto hello = encode_hello(MediaHello{5, 9});
+    RecordAssembler hello_reader(kMaxHelloRecord);
+    REQUIRE(hello_reader.feed(hello));
+    auto body = hello_reader.next();
+    REQUIRE(body);
+    auto decoded = decode_hello(*body);
+    REQUIRE(decoded);
+    CHECK_EQ(decoded.value().session, 5U);
+    CHECK_EQ(decoded.value().participant, 9U);
+    CHECK(!decode_hello(std::vector<std::uint8_t>{1, 0, 0}));
+    // A length beyond the bound fails BEFORE any allocation and poisons the stream.
+    RecordAssembler bounded(64);
+    const std::uint8_t huge[] = {0x7F, 0xFF, 0xFF, 0xFF, 1};
+    CHECK(!bounded.feed(huge));
+    CHECK(bounded.failed());
+    CHECK(!bounded.feed(hello));
+    // Input record: zero sequence refused both ways, oversized text refused.
+    InputRecord in;
+    in.input_seq = 0;
+    in.event.type = plpt::media::InputEventType::MouseMove;
+    CHECK(!encode_input(in));
+    in.input_seq = 42;
+    in.event.x_norm = 0.25f;
+    in.event.y_norm = 0.75f;
+    auto rec = encode_input(in);
+    REQUIRE(rec);
+    RecordAssembler reader(kMaxControlRecord);
+    REQUIRE(reader.feed(rec.value()));
+    auto in_body = reader.next();
+    REQUIRE(in_body);
+    auto back = decode_input(*in_body);
+    REQUIRE(back);
+    CHECK_EQ(back.value().input_seq, 42U);
+    auto zero = *in_body;
+    for (int i = 1; i <= 8; ++i) zero[static_cast<std::size_t>(i)] = 0;
+    CHECK(!decode_input(zero));
+    // Control: only the two defined actions.
+    auto ctl = encode_control(ControlAction::RequestControl);
+    CHECK(decode_control(std::span<const std::uint8_t>(ctl).subspan(4)));
+    const std::uint8_t bad_ctl[] = {static_cast<std::uint8_t>(RecordKind::Control), 9};
+    CHECK(!decode_control(bad_ctl));
+    // State roundtrip, invalid mode refused.
+    StateRecord st;
+    st.mode = ShareMode::Collaborative;
+    st.you = 3;
+    st.controller = 3;
+    st.lease_epoch = 4;
+    st.you_may_input = true;
+    st.viewport_width = 1280;
+    st.viewport_height = 720;
+    st.note = "ok";
+    auto st_rec = encode_state(st);
+    auto st_back = decode_state(std::span<const std::uint8_t>(st_rec).subspan(4));
+    REQUIRE(st_back);
+    CHECK(st_back.value().you_may_input);
+    CHECK(st_back.value().mode == ShareMode::Collaborative);
+    auto bad_state = std::vector<std::uint8_t>(st_rec.begin() + 4, st_rec.end());
+    bad_state[1] = 9;
+    CHECK(!decode_state(bad_state));
+    // The PSK identity is public and never contains the key.
+    CHECK(media_identity(1, 2) == "devlink-media-s1-p2");
+}
+
+static void share_view_mapping_letterbox_and_text_split() {
+    using namespace plpt::share;
+    // 1280x720 frame in a 1000x1000 panel: full width, centred vertically.
+    const auto r = fit_letterbox(ViewRect{100, 50, 1000, 1000}, 1280, 720);
+    CHECK_EQ(r.width, 1000.0f);
+    CHECK_EQ(r.height, 562.0f);
+    CHECK_EQ(r.x, 100.0f);
+    CHECK_EQ(r.y, 50.0f + 219.0f);
+    // Centre of the picture -> (0.5, 0.5) whatever the panel or DPI.
+    auto centre = to_normalized(r, r.x + r.width / 2, r.y + r.height / 2, false);
+    REQUIRE(centre);
+    CHECK(std::fabs(centre->x - 0.5f) < 1e-4f);
+    CHECK(std::fabs(centre->y - 0.5f) < 1e-4f);
+    // The same logical point at 200 % (all coordinates doubled) maps identically.
+    const auto r2 = fit_letterbox(ViewRect{200, 100, 2000, 2000}, 1280, 720);
+    auto centre2 = to_normalized(r2, r2.x + r2.width / 2, r2.y + r2.height / 2, false);
+    REQUIRE(centre2);
+    CHECK(std::fabs(centre2->x - centre->x) < 1e-3f);
+    // Letterbox bars are not part of the page; a drag is clamped to the edge.
+    CHECK(!to_normalized(r, 500, 60, false));
+    auto clamped = to_normalized(r, 500, 60, true);
+    REQUIRE(clamped);
+    CHECK_EQ(clamped->y, 0.0f);
+    CHECK(fit_letterbox(ViewRect{0, 0, 100, 100}, 0, 720).width == 0.0f);
+    CHECK(!to_normalized(ViewRect{}, 1, 1, true));
+    // UTF-8 split never cuts a code point and drops invalid lead bytes.
+    std::vector<std::string> parts;
+    split_utf8("é✓abc", 4, [&](const char* p, std::size_t n) { parts.emplace_back(p, n); });
+    REQUIRE(parts.size() == 3);
+    CHECK(parts[0] == "é");
+    CHECK(parts[1] == "✓a");
+    CHECK(parts[2] == "bc");
+    parts.clear();
+    split_utf8("Bob écrit ✓ — 32 octets au plus par enregistrement", plpt::media::kMaxInputTextBytes,
+        [&](const char* p, std::size_t n) { parts.emplace_back(p, n); });
+    std::string joined;
+    for (const auto& part : parts) {
+        CHECK(part.size() <= plpt::media::kMaxInputTextBytes);
+        joined += part;
+    }
+    CHECK(joined == "Bob écrit ✓ — 32 octets au plus par enregistrement");
+    parts.clear();
+    const char invalid[] = {'a', static_cast<char>(0xFF), 'b', 0};
+    split_utf8(invalid, 32, [&](const char* p, std::size_t n) { parts.emplace_back(p, n); });
+    std::string kept;
+    for (const auto& part : parts) kept += part;
+    CHECK(kept == "ab");
+}
+
 int main() {
     CASE(result_invariants); CASE(exact_classifier_and_ancestry); CASE(cycles_missing_and_reused_pid);
     CASE(registry_grouping_and_no_auto_share); CASE(registry_churn_and_incomplete); CASE(unknown_owner_cannot_retain_selection);
@@ -1443,6 +1643,8 @@ int main() {
     CASE(resume_secret_is_the_only_proof_of_a_place);
     CASE(remote_frame_and_input_serialization); CASE(bounded_frame_queue_enforces_limits_and_lifecycle);
     CASE(browser_backend_selection_and_lifecycle);
+    CASE(share_policy_modes_are_enforced_server_side); CASE(share_media_records_are_bounded);
+    CASE(share_view_mapping_letterbox_and_text_split);
     return plpt_test::finish("unit");
 }
 

@@ -60,7 +60,7 @@ Ces vérifications ne prouvent pas à elles seules l'identité de l'appelant, so
 sa capacité ou son droit à une entrée. Ces décisions doivent être vérifiées par le
 moteur de session et attachées au canal réellement authentifié.
 
-## Codec média v1 présent, pipeline de partage absent
+## Codec média et canal média (protocole 1.4, ADR-018)
 
 `engine/browser/remote_frame.hpp` définit maintenant un codec de payload versionné
 à entiers big-endian, avec magic/header explicites, identité de session/participant,
@@ -71,16 +71,32 @@ versionné distinct, coordonnées normalisées Q0.16, champs réservés contrôl
 texte UTF-8 borné à 32 octets. Des tests négatifs et une entrée fuzz exercent ces
 parseurs ; ils n'établissent pas une connexion de production.
 
-Ce codec ne traverse **pas encore** l'enveloppe réseau/TLS et n'est relié ni à une
-capture WebView2, ni à un encodeur/décodeur compressé, ni à une texture invitée, ni à
-l'autorisation d'input côté serveur. Le plafond du protocole de contrôle est distinct
-du plafond du codec média : ne pas envoyer une frame par un canal qui ne supporte pas
-explicitement sa taille. Il n'y a donc toujours pas de pipeline média livré.
+Le codec v2 ajoute le type JPEG (images du compositeur WebView2), validé contre
+les dimensions SOF avant décodage.
 
-Le vrai Browser Worker WebView2, la politique de navigation effective, le pipeline
-de pixels, le retour d'interactions et les tests A/B/C sur réseau restent à
-implémenter. Ne présentez aucun rendu synthétique comme une capture du navigateur
-réel.
+**Canal média** (`engine/share/media_wire.*`), une connexion TCP par invité,
+séparée du contrôle :
+
+1. Après admission, et seulement sur un contrôle TLS, l'hôte envoie
+   `MessageType::MediaOffer` (19) : port, identité PSK publique
+   `devlink-media-s<session>-p<participant>`, clé de 32 octets propre au
+   participant, mode, viewport. Il n'y a jamais d'offre en clair.
+2. L'invité envoie un unique `Hello` en clair (`u32 longueur`, `u8 1`,
+   `u32 "DLMH"`, `u16 version=1`, `u64 session`, `u64 participant`). Tout octet
+   supplémentaire avant TLS fait refuser la connexion.
+3. TLS 1.3 PSK avec la clé du participant (TLS 1.2 refusé), puis des enregistrements
+   `u32 longueur big-endian | u8 type | corps`, longueur bornée **avant**
+   allocation : `Frame` (2 : `u64 last_input_seq` + image v2), `Input` (3 :
+   `u64 séquence > 0` + événement), `Control` (4 : 1 = demander, 2 = rendre le
+   contrôle), `State` (5 : mode, vous, contrôleur, époque du bail, drapeaux,
+   viewport, dernier refus, note), `Closing` (6).
+
+L'hôte n'injecte un `Input` qu'après `SharePolicy::authorize` (participant non
+révoqué, séquence strictement croissante, non suspendu, mode, bail). Un
+enregistrement hors bornes ferme le canal. Les modes A/B/C, les attaques (mauvaise
+clé, usurpation, autre session, downgrade, rejeu, enregistrement surdimensionné)
+et la charge à 5 invités sont testés dans `tests/integration/share_pipeline_tests.cpp`.
+Le parcours complet entre les vrais exécutables l'est dans `desktop_e2e_tests.cpp`.
 
 ## Tests existants
 

@@ -2,11 +2,15 @@
 
 **C++20 · SDL3 · Dear ImGui · Windows x64 / Linux x64 selon toolchain disponible**
 
-> **État important : le partage réel d'une application web n'est pas disponible.**
-> Le backend WebView2 échoue volontairement fermé : il ne crée pas de navigateur,
-> ne capture pas de page et n'injecte pas d'interactions. Le backend synthétique sert
-> uniquement aux tests et à une démonstration explicitement demandée. Cette branche
-> n'est pas une release LAN prête à distribuer.
+> **État : le partage réel fonctionne sous Windows et il est qualifié sur une seule
+> machine. Le test LAN sur deux machines physiques n'a pas encore été exécuté.**
+> L'hôte exécute l'application dans un vrai navigateur (WebView2), envoie ses images
+> par un canal TLS 1.3 propre à chaque invité, et l'invité pilote la page (souris,
+> clavier, texte Unicode) selon le mode A/B/C, que l'hôte fait respecter. Preuve :
+> `devlink-desktop-e2e-tests` lance les vrais exécutables hôte et invité ; le clic et
+> la saisie faits dans la fenêtre invitée modifient le DOM de l'hôte (ADR-018). Tant
+> que `docs/reports/REAL_LAN_QUALIFICATION.md` n'est pas exécuté sur deux machines,
+> cette branche n'est pas une release LAN qualifiée.
 
 DevLink réunit un poste desktop et un moteur local en cours de reconstruction pour
 observer des services, contrôler des sessions et, à terme, partager temporairement
@@ -21,15 +25,21 @@ ne sont pas à confondre avec les fonctions qualifiées dans l'état actuel.
 - **Poste desktop :** interface SDL3/ImGui, design system, ressources de marque et
   commandes reliées aux composants moteur disponibles. Le smoke test headless ne
   constitue pas une qualification de fenêtre native sur Windows ou Linux.
-- **Plan de contrôle :** hôte/invité, admission, défi-réponse et transport TLS 1.3
-  PSK figurent dans le code et ont des preuves d'intégration loopback consignées.
-  La qualification actuelle Windows n'est pas établie ; l'implémentation TLS est
-  indisponible sur Windows et le démarrage échoue si TLS est requis mais absent.
-- **Proxy HTTP :** un proxy applicatif existe, mais son transport LAN n'est pas
-  présenté comme chiffré de bout en bout et il ne remplace pas le partage de pixels.
-- **Navigateur et médias :** WebView2 opérationnel, capture de vrais pixels, flux
-  média vers un invité et retour d'interactions restent non implémentés. Aucun mode
-  de participation A/B/C n'est qualifié sur un parcours réseau complet.
+- **Plan de contrôle :** hôte/invité, admission, défi-réponse et TLS 1.3 PSK
+  (OpenSSL 3 UCRT64 épinglé sous Windows, chargé depuis le dossier de l'application).
+  Le démarrage d'un partage est refusé si TLS est indisponible, sans repli en clair.
+- **Navigateur réel (Windows) :** WebView2 hors écran, un profil InPrivate par
+  contexte, allowlist d'origines appliquée aux navigations, redirections,
+  sous-ressources, fenêtres et téléchargements. Le navigateur ne sort que par une
+  garde réseau SOCKS5 qui n'ouvre que les `hôte:port` choisis : pas d'autre port
+  local, pas de base de données, pas de Docker.
+- **Partage :** images JPEG du compositeur, canal média TLS 1.3 PSK séparé et propre
+  à chaque invité (clé émise sur le contrôle chiffré), décodage WIC, texture SDL3,
+  retour souris/molette/clavier/texte. Le mode A donne des profils navigateur
+  indépendants (le backend de l'application reste commun). Le mode B donne un
+  contrôle exclusif transférable. En mode C, les entrées sont refusées côté hôte.
+- **Proxy HTTP :** le module existe encore, mais il **ne fait plus partie du
+  partage** : il donnerait aux invités les ressources web du projet (ADR-013/018).
 
 ## Plateformes et limites
 
@@ -43,8 +53,12 @@ ne sont pas à confondre avec les fonctions qualifiées dans l'état actuel.
 - **DPI :** captures SDL logiciel aux facteurs typographiques 100/125/150/200 %
   disponibles sous `docs/reports/evidence/dpi-captures/`. Elles ne prouvent pas une
   transition entre moniteurs physiques.
-- **LAN multi-machine :** aucun parcours hôte/invité sur deux machines n'est
-  qualifié. Les tests loopback ne sont pas une preuve de connectivité physique.
+- **LAN multi-machine :** pas encore exécuté. Le protocole reproductible (avec les
+  commandes `devlink-desktop --host` / `--join`) se trouve dans
+  `docs/reports/REAL_LAN_QUALIFICATION.md`. Les tests en boucle locale ne prouvent
+  pas la connectivité physique.
+- **Invité Linux :** non disponible (décodeur JPEG portable à intégrer). Hôte et
+  invité : Windows 10/11 x64.
 
 ## Construire et tester
 

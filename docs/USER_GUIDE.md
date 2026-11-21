@@ -1,31 +1,71 @@
-# Guide d'utilisation — état actuel de la préversion
+# Guide d'utilisation — partager une application web locale
 
-> **Aucun parcours de partage hôte/invité n'est actuellement livrable.** Le backend
-> navigateur réel WebView2 est indisponible ; la capture et le rendu des pixels chez
-> un invité ne sont pas implémentés. Ne suivez pas les anciens écrans/étapes décrits
-> dans les documents historiques comme s'ils constituaient une fonctionnalité active.
+> **Portée réelle :** hôte et invité sous Windows 10/11 x64 (runtime Microsoft Edge
+> WebView2 requis côté hôte, présent par défaut sur Windows 11). Le parcours est
+> qualifié sur **une machine** (vrais exécutables hôte et invité). Le test sur deux
+> ordinateurs du même LAN n'a pas encore été exécuté : voir
+> `docs/reports/REAL_LAN_QUALIFICATION.md`.
 
-## Fonctions utilisables dans cette préversion
+## Ce que voit et fait l'invité
 
-- Le moniteur local observe les services et ports visibles sous le compte courant.
-- Le poste desktop peut être lancé pour évaluer son interface et ses diagnostics.
-- Le mode `--smoke-test` est réservé à la validation technique et au rendu dummy ;
-  il ne représente pas une session de partage.
-- Le mode de démonstration synthétique, lorsqu'il est activé explicitement, n'affiche
-  que des données artificielles et ne prouve aucun chargement de page réelle.
+L'invité **ne reçoit ni le code, ni les fichiers, ni le `.env`, ni un accès HTTP** à
+votre application. Un navigateur s'exécute sur votre machine, l'invité reçoit ses
+images et lui renvoie souris, molette, clavier et texte. Il ne peut joindre que les
+origines que vous avez choisies : pas d'autre port local, pas de base de données,
+pas de Docker, pas de `file://`.
 
-Pour connaître les options réellement offertes par les binaires de cette build,
-utiliser `devlink-monitor --help` et `devlink-desktop --help`. Ne saisissez pas de
-code d'invitation réel : cette préversion ne doit pas être exposée à des invités.
+## Côté hôte
 
-## Fonctions futures / non qualifiées
+1. Lancez votre application comme d'habitude (Next.js, API, base locale…).
+2. **Découverte** : repérez le serveur de l'application (port, processus) et
+   cliquez « Choisir ». Rien n'est partagé à cette étape.
+3. **Configuration** :
+   - vérifiez l'**origine autorisée** proposée (par exemple
+     `http://127.0.0.1:3000`). Ajoutez, séparées par des virgules, les autres
+     origines dont la page a besoin (par exemple une API sur un autre port) ;
+   - l'**URL d'entrée** (vide = racine de la première origine) ;
+   - le **mode** :
+     - **A — test indépendant** : chaque invité a son propre navigateur (cookies et
+       stockage séparés). Le backend de l'application reste commun : un compte créé
+       par un invité existe pour les autres ;
+     - **B — collaboration** : une vue commune, un seul invité pilote à la fois ;
+       vous donnez ou reprenez le contrôle ;
+     - **C — observation** : les invités regardent, toute entrée est refusée par
+       votre machine ;
+   - l'approbation de chaque invité (activée par défaut).
+4. « **Démarrer le partage** ». L'état passe par les étapes réelles (navigateur,
+   chargement, première image, canal média). « Actif » n'apparaît qu'une fois tout
+   confirmé. Un échec est affiché avec sa cause.
+5. Communiquez le **code d'invitation** (écran « Session active ») par un canal de
+   votre choix. Il n'est jamais diffusé sur le réseau.
+6. **Session active** : approuvez, révoquez, donnez ou reprenez le contrôle,
+   suspendez les entrées, suivez images et entrées acceptées ou refusées par invité.
+   « Vue partagée » montre ce que voient les invités.
+7. « **Arrêter la session** » coupe les flux, détruit les navigateurs et oublie les
+   secrets.
 
-Les parcours de sélection/partage de service, approbation d'invité, navigateur
-isolé, chat de session, retour d'entrée, transfert de contrôle et révocation ne
-constituent pas un parcours complet qualifié. Les modèles de session et composants
-de contrôle présents dans le dépôt ne suffisent pas à attester leur fonctionnement
-avec un navigateur réel sur le LAN.
+Au premier partage, Windows demande l'accès réseau : autorisez-le pour les
+**réseaux privés** uniquement.
 
-Le partage ne devra être annoncé qu'après qualification du Browser Worker, du
-pipeline média, des permissions A/B/C, de TLS sur la plateforme cible et d'un test
-physique avec au moins deux machines. Voir `docs/reports/FINAL_COMPLETION_AUDIT.md`.
+## Côté invité
+
+1. Basculez sur « Espace invité ». Dans **Sessions du réseau**, écoutez les
+   annonces ou saisissez l'adresse et le port de l'hôte.
+2. **Rejoindre** : votre nom et le code d'invitation.
+3. Une fois admis, la **Vue partagée** s'ouvre : FLUX RÉEL, TLS 1.3, mode et droits
+   s'affichent tels que l'hôte les décide. En mode B, « Demander le contrôle ».
+4. Cliquez dans la page pour la piloter : le clavier lui est alors envoyé. Cliquez
+   hors de la vue pour le récupérer. Le presse-papier n'est pas partagé.
+
+## Si cela ne marche pas
+
+| Symptôme | Cause probable |
+|---|---|
+| « Moteur navigateur indisponible » | runtime WebView2 absent sur l'hôte |
+| « TLS 1.3 indisponible » | DLL OpenSSL du paquet manquantes : réinstallez le paquet complet |
+| Invité : « hôte injoignable sur le port média (pare-feu ?) » | pare-feu Windows de l'hôte, ou réseau « public » |
+| Aucune session annoncée | multicast bloqué par le réseau : saisie manuelle de l'adresse et du port |
+| Page blanche ou bloquée | une ressource vient d'une origine non autorisée : ajoutez-la (compteurs « bloqués » dans Session active) |
+
+Le chat (onglet Messagerie) fonctionne pendant une session. Les signalements
+d'anomalie ne sont pas encore reliés au réseau (voir l'écran Signalements).

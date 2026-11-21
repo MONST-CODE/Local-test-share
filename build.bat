@@ -59,11 +59,11 @@ set "CORE_SOURCES=engine/core/random.cpp engine/core/digest.cpp engine/core/mac.
 set "MODEL_SOURCES=engine/session/session.cpp engine/messaging/messaging.cpp engine/protocol/envelope.cpp engine/resource_manager/resource.cpp"
 set "NET_SOURCES=engine/net/wire.cpp engine/net/discovery.cpp engine/net/host_server.cpp engine/net/guest_client.cpp engine/net/proxy.cpp engine/net/transport.cpp engine/net/transport_tls.cpp"
 rem Moteur navigateur reel (fabrique WebView2 + repli gere) : poste de commande et tests.
-set "BROWSER_SOURCES=engine/browser/webview2_backend.cpp engine/browser/egress_guard.cpp engine/media/jpeg_decoder.cpp"
+set "BROWSER_SOURCES=engine/browser/webview2_backend.cpp engine/browser/egress_guard.cpp engine/media/jpeg_decoder.cpp engine/share/media_wire.cpp engine/share/share_host.cpp engine/share/share_guest.cpp"
 rem Design system DevLink : themes.cpp porte les palettes DevDark/DevLight.
 set "UI_SOURCES=app/desktop_ui/design_system/themes.cpp app/desktop_ui/design_system/typography.cpp app/desktop_ui/design_system/window_icon_data.cpp"
 set "IMGUI_SOURCES=imgui.cpp imgui_draw.cpp imgui_tables.cpp imgui_widgets.cpp backends/imgui_impl_sdl3.cpp backends/imgui_impl_sdlrenderer3.cpp"
-set "HEADERS=engine/browser/cdp_json.hpp engine/browser/egress_guard.hpp engine/media/jpeg_decoder.hpp engine/browser/browser.hpp engine/browser/remote_frame.hpp engine/media/frame_queue.hpp engine/browser/url_origin.hpp engine/browser/webview2_backend.hpp engine/core/clock.hpp engine/core/digest.hpp engine/core/format.hpp engine/core/mac.hpp engine/core/random.hpp engine/core/result.hpp engine/core/secrets.hpp engine/core/text.hpp engine/core/types.hpp engine/diagnostics/audit.hpp engine/discovery/monitor.hpp engine/discovery/process_tree.hpp engine/discovery/terminal_classifier.hpp engine/messaging/messaging.hpp engine/net/chat.hpp engine/net/discovery.hpp engine/net/guest_client.hpp engine/net/host_server.hpp engine/net/proxy.hpp engine/net/transport.hpp engine/net/wire.hpp engine/platform/connection_pool.hpp engine/platform/native.hpp engine/platform/platform.hpp engine/platform/socket.hpp engine/port_allocator/port_allocator.hpp engine/protocol/envelope.hpp engine/resource_manager/resource.hpp engine/service_registry/registry.hpp engine/session/session.hpp engine/platform/windows/windows_platform.hpp engine/platform/windows/winsock.hpp"
+set "HEADERS=engine/share/view_mapping.hpp engine/share/share_policy.hpp engine/share/media_wire.hpp engine/share/share_host.hpp engine/share/share_guest.hpp engine/browser/cdp_json.hpp engine/browser/egress_guard.hpp engine/media/jpeg_decoder.hpp engine/browser/browser.hpp engine/browser/remote_frame.hpp engine/media/frame_queue.hpp engine/browser/url_origin.hpp engine/browser/webview2_backend.hpp engine/core/clock.hpp engine/core/digest.hpp engine/core/format.hpp engine/core/mac.hpp engine/core/random.hpp engine/core/result.hpp engine/core/secrets.hpp engine/core/text.hpp engine/core/types.hpp engine/diagnostics/audit.hpp engine/discovery/monitor.hpp engine/discovery/process_tree.hpp engine/discovery/terminal_classifier.hpp engine/messaging/messaging.hpp engine/net/chat.hpp engine/net/discovery.hpp engine/net/guest_client.hpp engine/net/host_server.hpp engine/net/proxy.hpp engine/net/transport.hpp engine/net/wire.hpp engine/platform/connection_pool.hpp engine/platform/native.hpp engine/platform/platform.hpp engine/platform/socket.hpp engine/port_allocator/port_allocator.hpp engine/protocol/envelope.hpp engine/resource_manager/resource.hpp engine/service_registry/registry.hpp engine/session/session.hpp engine/platform/windows/windows_platform.hpp engine/platform/windows/winsock.hpp"
 rem En-tetes du poste de commande : ils incluent <imgui.h>, donc leur sonde
 rem d'independance recoit les memes chemins -isystem que sa compilation reelle.
 set "UI_HEADERS=app/desktop_ui/design_system/tokens.hpp app/desktop_ui/design_system/themes.hpp app/desktop_ui/design_system/typography.hpp app/desktop_ui/design_system/icons.hpp app/desktop_ui/design_system/components.hpp app/desktop_ui/design_system/layout.hpp app/desktop_ui/design_system/window_icon_data.hpp"
@@ -842,6 +842,12 @@ call :link devlink-platform-tests CONSOLE || exit /b
 call :cpp tests/integration/browser_pipeline_tests.cpp || exit /b
 set "LINK_OBJECTS=%CORE_OBJECTS% %MODEL_OBJECTS% %NET_OBJECTS% %BROWSER_OBJECTS% "%OBJECT%""
 call :link devlink-browser-tests CONSOLE || exit /b
+call :cpp tests/integration/share_pipeline_tests.cpp || exit /b
+set "LINK_OBJECTS=%CORE_OBJECTS% %MODEL_OBJECTS% %NET_OBJECTS% %BROWSER_OBJECTS% "%OBJECT%""
+call :link devlink-share-tests CONSOLE || exit /b
+call :cpp tests/integration/desktop_e2e_tests.cpp || exit /b
+set "LINK_OBJECTS=%CORE_OBJECTS% %MODEL_OBJECTS% %NET_OBJECTS% %BROWSER_OBJECTS% "%OBJECT%""
+call :link devlink-desktop-e2e-tests CONSOLE || exit /b
 set "HEADER_COUNT=0"
 for %%H in (%HEADERS%) do (call :header_one "%%H" || exit /b)
 echo PASS %HEADER_COUNT% independent native headers
@@ -894,6 +900,18 @@ if "%CASE_NAME%"=="browser" if "%TEST_RC%"=="77" (
   if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows::SKIP browser - real browser qualification incomplete
   exit /b 0
 )
+if "%CASE_NAME%"=="share" if "%TEST_RC%"=="77" (
+  set /a SKIP+=1 >nul
+  echo SKIP share: WebView2 runtime unavailable. NOT counted as passed.
+  if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows::SKIP share - real browser qualification incomplete
+  exit /b 0
+)
+if "%CASE_NAME%"=="desktop-e2e" if "%TEST_RC%"=="77" (
+  set /a SKIP+=1 >nul
+  echo SKIP desktop-e2e: WebView2 runtime unavailable. NOT counted as passed.
+  if "%GITHUB_ACTIONS%"=="true" echo ::notice title=DevLink Windows::SKIP desktop-e2e - real browser qualification incomplete
+  exit /b 0
+)
 if not "%TEST_RC%"=="%EXPECTED%" (
   echo FAIL %CASE_NAME% expected=%EXPECTED% actual=%TEST_RC% command=%TEST_COMMAND%
   if "%TEST_RC%"=="0" exit /b 1
@@ -921,6 +939,10 @@ set "TEST_COMMAND="%BIN%\devlink-platform-tests.exe" --ipv6"
 call :expect ipv6 0 "0 failures" || exit /b
 set "TEST_COMMAND="%BIN%\devlink-browser-tests.exe""
 call :expect browser 0 "0 failures" || exit /b
+set "TEST_COMMAND="%BIN%\devlink-share-tests.exe""
+call :expect share 0 "0 failures" || exit /b
+set "TEST_COMMAND="%BIN%\devlink-desktop-e2e-tests.exe""
+if "%CORE_ONLY%"=="0" (call :expect desktop-e2e 0 "0 failures" || exit /b)
 set "TEST_COMMAND="%BIN%\devlink-monitor.exe" --help"
 call :expect cli-help 0 "no probes, no server, no sharing" || exit /b
 set "TEST_COMMAND="%BIN%\devlink-monitor.exe" --version"
@@ -1049,7 +1071,7 @@ call :run "%TAR%" -a -cf "%ARCHIVE%" -C "%STAGE%" DevLink
 if errorlevel 1 exit /b
 call :run "%SystemRoot%\System32\certutil.exe" -hashfile "%ARCHIVE%" SHA256
 if errorlevel 1 exit /b
-rem Etape 8 (mandat) : publication ATOMIQUE vers releases/ — ecriture .partial,
+rem Etape 8 (mandat) : publication ATOMIQUE vers releases/ ??? ecriture .partial,
 rem integrite et SHA-256 verifiees AVANT le renommage, jamais d'ecrasement muet.
 rem Memes garanties que publish_release de build.sh (Linux).
 set "PUBLISHED=%ROOT%\releases\DevLink-%PRODUCT_VERSION%-windows-ucrt64-x64.zip"
