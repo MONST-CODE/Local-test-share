@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PLPT's authoritative Linux build. No generated project, build engine or helper runtime.
+# DevLink's authoritative Linux build. No generated project, build engine or helper runtime.
 set -Eeuo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 cd -- "$ROOT"
@@ -37,7 +37,7 @@ LOCK=0
 cleanup() { local rc=$?; if (( LOCK )); then rmdir "$OUT/.build-lock" 2>/dev/null || true; fi; exit "$rc"; }
 trap cleanup EXIT
 say() { printf '%s\n' "$*" | tee -a "$LOG"; }
-notice() { if [[ ${GITHUB_ACTIONS:-} == true ]]; then printf '::notice title=PLPT Linux::%s\n' "$*"; fi; }
+notice() { if [[ ${GITHUB_ACTIONS:-} == true ]]; then printf '::notice title=DevLink Linux::%s\n' "$*"; fi; }
 fail() { say "FAILURE: $*"; exit 1; }
 command_text() { printf '%q ' "$@"; }
 # Preserve BOTH compiler/test status and logging failures; never let tee mask an error.
@@ -56,8 +56,8 @@ run() {
 }
 error() {
     local rc=$?; say "FAILURE exit=$rc operation=$ACTION (see $LOG)"
-    if [[ ${GITHUB_ACTIONS:-} == true && ${PLPT_EXPECT_FAILURE:-} != 1 ]]; then
-        echo "::error title=PLPT Linux build::Operation $ACTION failed, exit $rc. See preserved log."
+    if [[ ${GITHUB_ACTIONS:-} == true && ${DEVLINK_EXPECT_FAILURE:-${PLPT_EXPECT_FAILURE:-}} != 1 ]]; then
+        echo "::error title=DevLink Linux build::Operation $ACTION failed, exit $rc. See preserved log."
         local details
         details=$(grep -E 'error:|undefined reference|Command exit|FAILURE|FAIL ' "$LOG" | tail -4 || true)
         notice "failure context: ${details//$'\n'/%0A}"
@@ -67,7 +67,7 @@ error() {
 trap error ERR
 mkdir "$OUT/.build-lock" 2>/dev/null || fail "another build owns $OUT/.build-lock; remove only after verifying no build is running"
 LOCK=1
-say "PLPT direct Linux operation=$ACTION mode=$MODE; log=$LOG"
+say "DevLink direct Linux operation=$ACTION mode=$MODE; log=$LOG"
 plain_directory() {
     local path=$1
     [[ $path == "$OUT/"* && $path != "$OUT/" ]] || fail "refusing unsafe output path: $path"
@@ -104,9 +104,21 @@ fetch_one() {
     verify "$file.part" "$hash"; run mv -- "$file.part" "$file"
 }
 CXX=; CC=
+# Version publique unique (mandat §16) : relue depuis engine/core/product.hpp pour
+# que l'archive, le staging et les rapports ne puissent pas diverger du --version.
+product_version() {
+    local version
+    version=$(sed -n 's/^inline constexpr std::string_view kProductVersion = "\([^"]*\)";$/\1/p' "$ROOT/engine/core/product.hpp")
+    [[ -n $version ]] || fail 'kProductVersion introuvable dans engine/core/product.hpp'
+    printf '%s' "$version"
+}
 toolchain() {
-    CXX=$(command -v -- "${PLPT_CXX:-clang++}") || fail 'clang++ missing; install LLVM or set PLPT_CXX to its executable'
-    CC=$(command -v -- "${PLPT_CC:-$(dirname "$CXX")/clang}") || fail 'matching clang C compiler missing (SDL C sources)'
+    # Knobs developpeur : DEVLINK_* sont les noms publics ; PLPT_* restent honores
+    # une release le temps de la migration (un avertissement le signale).
+    if [[ -z ${DEVLINK_CXX:-} && -n ${PLPT_CXX:-} ]]; then say 'PLPT_CXX est deprecie : utiliser DEVLINK_CXX'; fi
+    if [[ -z ${DEVLINK_CC:-} && -n ${PLPT_CC:-} ]]; then say 'PLPT_CC est deprecie : utiliser DEVLINK_CC'; fi
+    CXX=$(command -v -- "${DEVLINK_CXX:-${PLPT_CXX:-clang++}}") || fail 'clang++ missing; install LLVM or set DEVLINK_CXX to its executable'
+    CC=$(command -v -- "${DEVLINK_CC:-${PLPT_CC:-$(dirname "$CXX")/clang}}") || fail 'matching clang C compiler missing (SDL C sources)'
     [[ -x $CXX && -x $CC ]] || fail 'selected compiler is not executable'
     local version target cversion
     version=$("$CXX" --version); target=$("$CXX" -dumpmachine); cversion=$("$CC" --version)
@@ -139,9 +151,9 @@ toolchain() {
         local metadata; metadata=$(cat "$info"); notice "native environment: ${metadata//$'\n'/%0A}"
     fi
 }
-# Explicit PLPT targets. The CLI monitor stays model-free; the desktop control
+# Explicit DevLink targets. The CLI monitor stays model-free; the desktop control
 # post and the tests link the session models and the real LAN networking.
-CORE_SOURCES=(engine/core/random.cpp engine/core/digest.cpp engine/core/secrets.cpp
+CORE_SOURCES=(engine/core/random.cpp engine/core/digest.cpp engine/core/mac.cpp engine/core/secrets.cpp
     engine/core/format.cpp engine/diagnostics/audit.cpp
     engine/discovery/process_tree.cpp engine/discovery/terminal_classifier.cpp
     engine/discovery/monitor.cpp engine/service_registry/registry.cpp
@@ -150,15 +162,33 @@ CORE_SOURCES=(engine/core/random.cpp engine/core/digest.cpp engine/core/secrets.
 MODEL_SOURCES=(engine/session/session.cpp engine/messaging/messaging.cpp
     engine/protocol/envelope.cpp engine/resource_manager/resource.cpp)
 # Real networking: control plane (host/guest), discovery, data plane (proxy).
+# Transport versionné (mandat §24, ADR-016) : TCP clair qui se déclare clair et
+# TLS 1.3 PSK avec authentification mutuelle. Depuis le basculement (étape 5)
+# il est EN PRODUCTION : l'hôte et l'invité l'utilisent pour le canal de
+# contrôle, donc il suit le régime des autres sources réseau.
 NET_SOURCES=(engine/net/wire.cpp engine/net/discovery.cpp engine/net/host_server.cpp
-    engine/net/guest_client.cpp engine/net/proxy.cpp)
+    engine/net/guest_client.cpp engine/net/proxy.cpp
+    engine/net/transport.cpp engine/net/transport_tls.cpp)
+# Moteur navigateur reel : la fabrique selectionne WebView2 quand il existe et
+# gere le repli. Lie au poste de commande et aux tests, jamais au moniteur CLI.
+BROWSER_SOURCES=(engine/browser/webview2_backend.cpp)
+# Design system DevLink : themes.cpp porte les palettes DevDark/DevLight et
+# l'application du style ImGui. Sans cette unite, ThemeManager ne se lie pas.
+UI_SOURCES=(app/desktop_ui/design_system/themes.cpp
+    app/desktop_ui/design_system/typography.cpp
+    app/desktop_ui/design_system/window_icon_data.cpp)
 IMGUI_SOURCES=(imgui.cpp imgui_draw.cpp imgui_tables.cpp imgui_widgets.cpp
     backends/imgui_impl_sdl3.cpp backends/imgui_impl_sdlrenderer3.cpp)
 HEADERS=(
     engine/browser/browser.hpp
+    engine/browser/remote_frame.hpp
+    engine/media/frame_queue.hpp
+    engine/browser/url_origin.hpp
+    engine/browser/webview2_backend.hpp
     engine/core/clock.hpp
     engine/core/digest.hpp
     engine/core/format.hpp
+    engine/core/mac.hpp
     engine/core/random.hpp
     engine/core/result.hpp
     engine/core/secrets.hpp
@@ -174,6 +204,7 @@ HEADERS=(
     engine/net/guest_client.hpp
     engine/net/host_server.hpp
     engine/net/proxy.hpp
+    engine/net/transport.hpp
     engine/net/wire.hpp
     engine/platform/connection_pool.hpp
     engine/platform/native.hpp
@@ -185,6 +216,16 @@ HEADERS=(
     engine/service_registry/registry.hpp
     engine/session/session.hpp
     engine/platform/linux/linux_platform.hpp)
+# En-tetes du poste de commande : ils incluent <imgui.h>, donc leur sonde
+# d'independance recoit les memes chemins -isystem que sa compilation reelle.
+UI_HEADERS=(
+    app/desktop_ui/design_system/tokens.hpp
+    app/desktop_ui/design_system/themes.hpp
+    app/desktop_ui/design_system/typography.hpp
+    app/desktop_ui/design_system/icons.hpp
+    app/desktop_ui/design_system/components.hpp
+    app/desktop_ui/design_system/layout.hpp
+    app/desktop_ui/design_system/window_icon_data.hpp)
 # SDL has no official Linux binary development archive for 3.4.20. These are
 # explicit sources of our small POSIX + X11/software (or explicit dummy) profile.
 # No configure script, glob-generated target, or upstream build generator is used.
@@ -357,14 +398,15 @@ CONFIG
 }
 DIR=; BIN=; SDL_ROOT=; IMGUI_ROOT=; CXXFLAGS=(); MODEFLAGS=(); SAN=(); VERBOSE_FLAG=(); EXTRA_CXX=(); EXTRA_LINK=()
 COMMON_OBJECTS=(); MODEL_OBJECTS=(); GUI_OBJECTS=(); SDL_OBJECTS=()
+NET_OBJECTS=(); BROWSER_OBJECTS=(); UI_OBJECTS=()
 configure_flags() {
     MODEFLAGS=(-O0 -g); SAN=()
     if [[ $MODE == release ]]; then MODEFLAGS=(-O2 -DNDEBUG); fi
     if [[ $MODE == asan ]]; then SAN=(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all); fi
     VERBOSE_FLAG=(); if (( VERBOSE )); then VERBOSE_FLAG=(-v); fi
     # Optional developer flags are split as arguments, NEVER eval'ed as shell code.
-    read -r -a EXTRA_CXX <<< "${PLPT_EXTRA_CXXFLAGS:-}"
-    read -r -a EXTRA_LINK <<< "${PLPT_EXTRA_LDFLAGS:-}"
+    read -r -a EXTRA_CXX <<< "${DEVLINK_EXTRA_CXXFLAGS:-${PLPT_EXTRA_CXXFLAGS:-}}"
+    read -r -a EXTRA_LINK <<< "${DEVLINK_EXTRA_LDFLAGS:-${PLPT_EXTRA_LDFLAGS:-}}"
     CXXFLAGS=(-std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I "$ROOT" "${MODEFLAGS[@]}" "${SAN[@]}" "${EXTRA_CXX[@]}")
 }
 compile_cpp() {
@@ -409,6 +451,7 @@ build_project() {
     toolchain; dependencies; configure_flags
     say "Compilation started: $MODE, clean deterministic objects (no cache)"
     COMMON_OBJECTS=(); MODEL_OBJECTS=(); NET_OBJECTS=(); GUI_OBJECTS=()
+    BROWSER_OBJECTS=(); UI_OBJECTS=()
     for source in "${CORE_SOURCES[@]}"; do
         object="$DIR/objects/${source//\//_}.o"; compile_cpp "$source" "$object"; COMMON_OBJECTS+=("$object")
     done
@@ -420,33 +463,56 @@ build_project() {
             case $source in engine/net/*) NET_OBJECTS+=("$object");; *) MODEL_OBJECTS+=("$object");; esac
         done
     fi
+    # Moteur navigateur : necessaire au poste de commande et aux tests unitaires
+    # qui exercent la selection de backend et l'isolation des profils.
+    if (( ! CORE_ONLY )) || (( tests )); then
+        for source in "${BROWSER_SOURCES[@]}"; do
+            object="$DIR/objects/${source//\//_}.o"; compile_cpp "$source" "$object"
+            BROWSER_OBJECTS+=("$object")
+        done
+    fi
     compile_cpp app/host_shell/main.cpp "$DIR/objects/cli.o"
-    link_cpp "$BIN/plpt-monitor" "${COMMON_OBJECTS[@]}" "$DIR/objects/cli.o"
+    link_cpp "$BIN/devlink-monitor" "${COMMON_OBJECTS[@]}" "$DIR/objects/cli.o"
     compile_cpp app/demo_service/main.cpp "$DIR/objects/demo.o"
-    link_cpp "$BIN/plpt-demo-service" "${COMMON_OBJECTS[@]}" "$DIR/objects/demo.o"
+    link_cpp "$BIN/devlink-demo-service" "${COMMON_OBJECTS[@]}" "$DIR/objects/demo.o"
     if (( ! CORE_ONLY )); then
         build_sdl
         for source in "${IMGUI_SOURCES[@]}"; do
             object="$DIR/objects/imgui_${source//\//_}.o"
-            # Vendor warning policy differs from PLPT; errors remain visible.
+            # Vendor warning policy differs from DevLink; errors remain visible.
             mkdir -p "$(dirname "$object")"; say "Compilation ImGui: $source"
             run "$CXX" "${VERBOSE_FLAG[@]}" -std=c++20 "${MODEFLAGS[@]}" "${SAN[@]}" -I "$IMGUI_ROOT" -I "$IMGUI_ROOT/backends" -I "$SDL_ROOT/include" -MMD -MP -MF "$object.d" -c "$IMGUI_ROOT/$source" -o "$object"
             [[ -f $object ]] || fail "missing ImGui object $object"; GUI_OBJECTS+=("$object")
         done
+        for source in "${UI_SOURCES[@]}"; do
+            object="$DIR/objects/${source//\//_}.o"
+            compile_cpp "$source" "$object" -isystem "$IMGUI_ROOT" -isystem "$IMGUI_ROOT/backends" -isystem "$SDL_ROOT/include"
+            UI_OBJECTS+=("$object")
+        done
         compile_cpp app/desktop_ui/main.cpp "$DIR/objects/desktop.o" -isystem "$IMGUI_ROOT" -isystem "$IMGUI_ROOT/backends" -isystem "$SDL_ROOT/include"
-        link_cpp "$BIN/plpt-desktop" "${COMMON_OBJECTS[@]}" "${MODEL_OBJECTS[@]}" "${NET_OBJECTS[@]}" "${GUI_OBJECTS[@]}" "$DIR/objects/desktop.o" "$BIN/libSDL3.so.0" '-Wl,-rpath,$ORIGIN'
+        link_cpp "$BIN/devlink-desktop" "${COMMON_OBJECTS[@]}" "${MODEL_OBJECTS[@]}" "${NET_OBJECTS[@]}" "${BROWSER_OBJECTS[@]}" "${GUI_OBJECTS[@]}" "${UI_OBJECTS[@]}" "$DIR/objects/desktop.o" "$BIN/libSDL3.so.0" '-Wl,-rpath,$ORIGIN'
     fi
     if (( tests )); then
         compile_cpp tests/unit/test_main.cpp "$DIR/objects/unit.o"
-        link_cpp "$BIN/plpt-unit-tests" "${COMMON_OBJECTS[@]}" "${MODEL_OBJECTS[@]}" "${NET_OBJECTS[@]}" "$DIR/objects/unit.o"
+        link_cpp "$BIN/devlink-unit-tests" "${COMMON_OBJECTS[@]}" "${MODEL_OBJECTS[@]}" "${NET_OBJECTS[@]}" "${BROWSER_OBJECTS[@]}" "$DIR/objects/unit.o"
         compile_cpp tests/integration/platform_tests.cpp "$DIR/objects/platform.o"
-        link_cpp "$BIN/plpt-platform-tests" "${COMMON_OBJECTS[@]}" "${MODEL_OBJECTS[@]}" "${NET_OBJECTS[@]}" "$DIR/objects/platform.o"
+        link_cpp "$BIN/devlink-platform-tests" "${COMMON_OBJECTS[@]}" "${MODEL_OBJECTS[@]}" "${NET_OBJECTS[@]}" "${BROWSER_OBJECTS[@]}" "$DIR/objects/platform.o"
         for source in "${HEADERS[@]}"; do
             printf '#include "%s"\n' "$source" > "$DIR/header-probe.cpp"
             say "Independent header: $source"
             run "$CXX" "${VERBOSE_FLAG[@]}" "${CXXFLAGS[@]}" -fsyntax-only "$DIR/header-probe.cpp"
         done
         say "PASS ${#HEADERS[@]} independent native headers"; notice "PASS ${#HEADERS[@]} independent native headers"
+        # Les en-tetes d'interface ne sont sondes que si ImGui est reellement
+        # extrait : en profil core-only, le poste de commande n'est pas construit.
+        if (( ! CORE_ONLY )); then
+            for source in "${UI_HEADERS[@]}"; do
+                printf '#include "%s"\n' "$source" > "$DIR/ui-header-probe.cpp"
+                say "Independent UI header: $source"
+                run "$CXX" "${VERBOSE_FLAG[@]}" "${CXXFLAGS[@]}" -isystem "$IMGUI_ROOT" -isystem "$IMGUI_ROOT/backends" -isystem "$SDL_ROOT/include" -fsyntax-only "$DIR/ui-header-probe.cpp"
+            done
+            say "PASS ${#UI_HEADERS[@]} independent UI headers"; notice "PASS ${#UI_HEADERS[@]} independent UI headers"
+        fi
     fi
     say "BUILD SUCCESS mode=$MODE elapsed_seconds=$((SECONDS-started)) (compilation including validation/extraction; tests not included)"
     notice "BUILD SUCCESS mode=$MODE elapsed_seconds=$((SECONDS-started)) headless=$HEADLESS core_only=$CORE_ONLY"
@@ -476,25 +542,26 @@ expect() {
 tests() {
     PASS=0; SKIP=0
     printf 'Native Linux tests mode=%s\n' "$MODE" > "$DIR/test-summary.txt"
-    expect unit 0 '0 failures' "$BIN/plpt-unit-tests"
-    expect platform 0 '0 failures' "$BIN/plpt-platform-tests"
-    expect ipv6 0 '0 failures' "$BIN/plpt-platform-tests" --ipv6
-    expect cli-help 0 'no probes, no server, no sharing' "$BIN/plpt-monitor" --help
-    expect cli-version 0 'no sharing' "$BIN/plpt-monitor" --version
-    expect cli-unknown 2 'Usage:' "$BIN/plpt-monitor" --not-a-plpt-option
-    expect cli-extra 2 'Usage:' "$BIN/plpt-monitor" --version extra
-    expect cli-ambiguous 2 'Usage:' "$BIN/plpt-monitor" --help --version
+    expect unit 0 '0 failures' "$BIN/devlink-unit-tests"
+    expect platform 0 '0 failures' "$BIN/devlink-platform-tests"
+    expect ipv6 0 '0 failures' "$BIN/devlink-platform-tests" --ipv6
+    expect demo-service 0 'SAME_HOST_INTEGRATION PASS' python3 tests/integration/demo_service_test.py "$BIN/devlink-demo-service"
+    expect cli-help 0 'no probes, no server, no sharing' "$BIN/devlink-monitor" --help
+    expect cli-version 0 'no sharing' "$BIN/devlink-monitor" --version
+    expect cli-unknown 2 'Usage:' "$BIN/devlink-monitor" --not-a-devlink-option
+    expect cli-extra 2 'Usage:' "$BIN/devlink-monitor" --version extra
+    expect cli-ambiguous 2 'Usage:' "$BIN/devlink-monitor" --help --version
     if (( ! CORE_ONLY )); then
-        expect ui-smoke 0 'desktop-smoke:' env SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software "$BIN/plpt-desktop" --smoke-test --screenshot "$DIR/desktop.bmp"
-        expect ui-unknown 2 'Usage:' "$BIN/plpt-desktop" --not-a-plpt-option
-        expect ui-missing-argument 2 'Usage:' "$BIN/plpt-desktop" --smoke-test --screenshot
-        expect ui-capture-requires-smoke 2 --smoke-test "$BIN/plpt-desktop" --screenshot never-created.bmp
-        expect ui-driver-error 1 SDL_Init: env SDL_VIDEODRIVER=plpt-invalid-video-driver "$BIN/plpt-desktop" --smoke-test
-        expect ui-file-error 1 SDL_IOFromFile: env SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software "$BIN/plpt-desktop" --smoke-test --screenshot "$BIN/plpt-desktop/not-a-directory.bmp"
-        expect ui-disk-full 1 'SDL_(SaveBMP_IO|CloseIO):' env SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software "$BIN/plpt-desktop" --smoke-test --screenshot /dev/full
+        expect ui-smoke 0 'desktop-smoke:' env SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software "$BIN/devlink-desktop" --smoke-test --screenshot "$DIR/desktop.bmp"
+        expect ui-unknown 2 'Usage:' "$BIN/devlink-desktop" --not-a-devlink-option
+        expect ui-missing-argument 2 'Usage:' "$BIN/devlink-desktop" --smoke-test --screenshot
+        expect ui-capture-requires-smoke 2 --smoke-test "$BIN/devlink-desktop" --screenshot never-created.bmp
+        expect ui-driver-error 1 SDL_Init: env SDL_VIDEODRIVER=devlink-invalid-video-driver "$BIN/devlink-desktop" --smoke-test
+        expect ui-file-error 1 SDL_IOFromFile: env SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software "$BIN/devlink-desktop" --smoke-test --screenshot "$BIN/devlink-desktop/not-a-directory.bmp"
+        expect ui-disk-full 1 'SDL_(SaveBMP_IO|CloseIO):' env SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software "$BIN/devlink-desktop" --smoke-test --screenshot /dev/full
         if (( NATIVE_UI )); then
             (( ! HEADLESS )) || fail '--native-ui cannot qualify a --headless build'
-            expect ui-native-x11 0 'video=x11 renderer=software' env SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software "$BIN/plpt-desktop" --smoke-test --screenshot "$DIR/desktop-native.bmp"
+            expect ui-native-x11 0 'video=x11 renderer=software' env SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software "$BIN/devlink-desktop" --smoke-test --screenshot "$DIR/desktop-native.bmp"
         else say 'NOT RUN: native X11 window launch (use --native-ui with DISPLAY; dummy is not native display validation)'; fi
     fi
     say "TEST SUMMARY passed=$PASS skipped=$SKIP mode=$MODE"
@@ -507,54 +574,106 @@ fuzz() {
     toolchain; configure_flags
     compile_cpp engine/protocol/envelope.cpp "$DIR/objects/envelope.o" -fsanitize=fuzzer-no-link
     compile_cpp tests/fuzz/envelope_fuzz.cpp "$DIR/objects/fuzz.o" -fsanitize=fuzzer-no-link
-    link_cpp "$BIN/plpt-fuzz-envelope" -fsanitize=fuzzer "$DIR/objects/envelope.o" "$DIR/objects/fuzz.o"
+    link_cpp "$BIN/devlink-fuzz-envelope" -fsanitize=fuzzer "$DIR/objects/envelope.o" "$DIR/objects/fuzz.o"
     run cp tests/fuzz/corpus/hello tests/fuzz/corpus/chat "$DIR/corpus/"
-    run "$BIN/plpt-fuzz-envelope" -runs=20000 -seed=20261113 -max_len=4096 -timeout=2 "-artifact_prefix=$DIR/" "$DIR/corpus"
+    run "$BIN/devlink-fuzz-envelope" -runs=20000 -seed=20261113 -max_len=4096 -timeout=2 "-artifact_prefix=$DIR/" "$DIR/corpus"
     notice 'PASS native libFuzzer + ASan/UBSan: 20000 executions'
 }
+# Publication d'une archive vers releases/ (mandat §8, etape 8) :
+# - ecriture vers <archive>.partial, JAMAIS directement au nom final ;
+# - integrite lue de bout en bout AVANT publication (listing de l'archive) ;
+# - SHA-256 calculee puis publiee dans <archive>.sha256 (verifiable par
+#   « cd releases && sha256sum -c <archive>.sha256 ») ;
+# - renommage atomique : un lecteur ne voit jamais une archive tronquee ;
+# - une archive deja publiee dont l'empreinte differe n'est JAMAIS ecrasee
+#   silencieusement : echec explicite avec les deux empreintes ;
+# - la cible doit se trouver SOUS releases/, refuse ailleurs.
+publish_release() {
+    local source="$1" target="$2"
+    [[ -f $source && ! -L $source ]] || fail "publish_release: archive source absente : $source"
+    [[ $target == "$ROOT"/releases/* ]] || fail "publish_release: cible hors de releases/ : $target"
+    mkdir -p -- "$(dirname -- "$target")"
+    local partial="$target.partial" sidecar="$target.sha256" sidecar_partial="$target.sha256.partial"
+    rm -f -- "$partial" "$sidecar_partial"
+    if ! run cp -- "$source" "$partial"; then rm -f -- "$partial"; fail "publish_release: copie impossible vers $partial"; fi
+    case "$target" in
+        *.tar.gz) if ! run tar -tzf "$partial" > /dev/null; then rm -f -- "$partial"; fail "publish_release: archive illisible (tar) : $(basename -- "$target")"; fi;;
+        *.zip)    if ! run unzip -tq "$partial" > /dev/null; then rm -f -- "$partial"; fail "publish_release: archive illisible (zip) : $(basename -- "$target")"; fi;;
+        *) rm -f -- "$partial"; fail "publish_release: format d'archive non reconnu : $target";;
+    esac
+    local hash; hash=$(sha256sum "$partial"); hash=${hash%% *}
+    printf '%s  %s\n' "$hash" "$(basename -- "$target")" > "$sidecar_partial"
+    if [[ -e $target ]]; then
+        local existing; existing=$(sha256sum "$target"); existing=${existing%% *}
+        if [[ $existing != "$hash" ]]; then
+            rm -f -- "$partial" "$sidecar_partial"
+            fail "publish_release: $(basename -- "$target") existe deja avec une empreinte differente — aucun ecrasement silencieux (existant=$existing nouveau=$hash)"
+        fi
+        rm -f -- "$partial"
+        run mv -- "$sidecar_partial" "$sidecar"
+        say "RELEASE INCHANGEE : $target (empreinte identique, deja publiee)"
+        return 0
+    fi
+    run mv -- "$partial" "$target"        # renommage atomique, meme systeme de fichiers
+    run mv -- "$sidecar_partial" "$sidecar"
+    if ! (cd -- "$(dirname -- "$target")" && run sha256sum -c -- "$(basename -- "$sidecar")"); then
+        fail "publish_release: verification de l'empreinte publiee en echec : $target"
+    fi
+    [[ ! -e $partial && ! -e $sidecar_partial ]] || fail "publish_release: fichiers partiels restants apres publication"
+    say "RELEASE PUBLIEE : $target"
+    notice "PACKAGE SHA256 $hash $(basename -- "$target")"
+}
+
 package() {
     (( ! HEADLESS && ! CORE_ONLY )) || fail 'package requires the full native desktop, not a headless/core-only profile'
     fresh "$OUT/packages"
     MODE=release; DIR="$OUT/release"; build_project 1; tests
-    local stage="$OUT/packages/stage" archive="$OUT/packages/PLPT-0.1.0-preview-linux-x64.tar.gz"
-    fresh "$stage"; mkdir -p "$stage/PLPT/bin" "$stage/PLPT/docs/reports" "$stage/PLPT/licenses"
-    run cp packaging/README.md "$stage/PLPT/README.md"
-    run cp docs/reports/BUILD_DEPENDENCIES.md "$stage/PLPT/docs/reports/"
-    run cp "$BIN/plpt-monitor" "$BIN/plpt-desktop" "$BIN/plpt-demo-service" "$BIN/libSDL3.so.0" "$stage/PLPT/bin/"
-    run cp docs/BUILD.md docs/SECURITY.md docs/QUICKSTART.md "$stage/PLPT/docs/"
-    run cp third_party/DEPENDENCIES.md "$stage/PLPT/docs/"
-    run cp third_party/licenses/SDL3.txt third_party/licenses/ImGui.txt third_party/licenses/Bundled-notices.txt "$stage/PLPT/licenses/"
-    run tar -czf "$archive" -C "$stage" PLPT
-    run sha256sum "$archive"
-    local package_hash; package_hash=$(sha256sum "$archive"); notice "PACKAGE SHA256 $package_hash"
-    local check="$OUT/packages/check"; fresh "$check"; run tar -xzf "$archive" -C "$check"
-    run cmp "$BIN/plpt-monitor" "$check/PLPT/bin/plpt-monitor"
-    run cmp "$BIN/plpt-desktop" "$check/PLPT/bin/plpt-desktop"
-    run cmp "$BIN/libSDL3.so.0" "$check/PLPT/bin/libSDL3.so.0"
-    run cmp packaging/README.md "$check/PLPT/README.md"
-    run cmp docs/reports/BUILD_DEPENDENCIES.md "$check/PLPT/docs/reports/BUILD_DEPENDENCIES.md"
+    local version stage archive
+    version=$(product_version)
+    stage="$OUT/packages/stage"; archive="$OUT/packages/DevLink-$version-linux-x64.tar.gz"
+    fresh "$stage"; mkdir -p "$stage/DevLink/bin" "$stage/DevLink/docs/reports" "$stage/DevLink/licenses"
+    run cp packaging/README.md "$stage/DevLink/README.md"
+    run cp docs/reports/BUILD_DEPENDENCIES.md "$stage/DevLink/docs/reports/"
+    run cp "$BIN/devlink-monitor" "$BIN/devlink-desktop" "$BIN/devlink-demo-service" "$BIN/libSDL3.so.0" "$stage/DevLink/bin/"
+    run cp docs/BUILD.md docs/SECURITY.md docs/QUICKSTART.md "$stage/DevLink/docs/"
+    run cp third_party/DEPENDENCIES.md "$stage/DevLink/docs/"
+    run cp third_party/licenses/SDL3.txt third_party/licenses/ImGui.txt third_party/licenses/Bundled-notices.txt "$stage/DevLink/licenses/"
+    run tar -czf "$archive" -C "$stage" DevLink
+    # Etape 8 (mandat) : publication ATOMIQUE vers releases/ — ecriture .partial,
+    # integrite et SHA-256 verifiees AVANT le renommage, jamais d'ecrasement muet.
+    local published="$ROOT/releases/DevLink-$version-linux-x64.tar.gz"
+    publish_release "$archive" "$published"
+    local check="$OUT/packages/check"; fresh "$check"
+    # L'extraction de preuve porte sur l'archive PUBLIEE : c'est celle-la qu'un
+    # tiers telecharge, pas l'etape intermediaire sous out/.
+    run tar -xzf "$published" -C "$check"
+    run cmp "$BIN/devlink-monitor" "$check/DevLink/bin/devlink-monitor"
+    run cmp "$BIN/devlink-desktop" "$check/DevLink/bin/devlink-desktop"
+    run cmp "$BIN/libSDL3.so.0" "$check/DevLink/bin/libSDL3.so.0"
+    run cmp packaging/README.md "$check/DevLink/README.md"
+    run cmp docs/reports/BUILD_DEPENDENCIES.md "$check/DevLink/docs/reports/BUILD_DEPENDENCIES.md"
     local license
-    for license in SDL3.txt ImGui.txt Bundled-notices.txt; do run cmp "third_party/licenses/$license" "$check/PLPT/licenses/$license"; done
-    run "$check/PLPT/bin/plpt-monitor" --version
-    run env SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software "$check/PLPT/bin/plpt-desktop" --smoke-test
-    run ldd "$check/PLPT/bin/plpt-desktop" > "$OUT/packages/runtime-dependencies.txt"
+    for license in SDL3.txt ImGui.txt Bundled-notices.txt; do run cmp "third_party/licenses/$license" "$check/DevLink/licenses/$license"; done
+    run "$check/DevLink/bin/devlink-monitor" --version
+    run env SDL_VIDEODRIVER=x11 SDL_RENDER_DRIVER=software "$check/DevLink/bin/devlink-desktop" --smoke-test
+    run ldd "$check/DevLink/bin/devlink-desktop" > "$OUT/packages/runtime-dependencies.txt"
     cat "$OUT/packages/runtime-dependencies.txt"
     local runtime_info; runtime_info=$(cat "$OUT/packages/runtime-dependencies.txt")
     notice "runtime dependencies: ${runtime_info//$'\n'/%0A}"
-    say "PACKAGE SUCCESS $archive (development archive, host glibc/libstdc++/X11 required)"; notice 'PASS native Release package extracted and executed'
+    say "PACKAGE SUCCESS $published (empreinte publiee : $published.sha256 ; development archive, host glibc/libstdc++/X11 required)"; notice 'PASS native Release package extracted and executed'
 }
 selftest() {
     # Exercise this very script as a child, after releasing our lock. No helper build engine.
     rmdir "$OUT/.build-lock"; LOCK=0
     local rc=0
-    PLPT_EXPECT_FAILURE=1 PLPT_CXX=/does/not/exist "$ROOT/build.sh" doctor --core-only > "$OUT/logs/selftest-missing-compiler.log" 2>&1 || rc=$?
+    DEVLINK_EXPECT_FAILURE=1 DEVLINK_CXX=/does/not/exist "$ROOT/build.sh" doctor --core-only > "$OUT/logs/selftest-missing-compiler.log" 2>&1 || rc=$?
     (( rc != 0 )) || fail 'missing compiler falsely succeeded'
     rc=0
-    PLPT_EXPECT_FAILURE=1 PLPT_EXTRA_CXXFLAGS=-fplpt-deliberate-invalid-option "$ROOT/build.sh" debug --core-only > "$OUT/logs/selftest-compile-failure.log" 2>&1 || rc=$?
-    (( rc != 0 )) && [[ ! -e $OUT/debug/BUILD_SUCCEEDED && ! -e $OUT/debug/bin/plpt-monitor ]] || fail 'failed compile left a stale successful build'
+    DEVLINK_EXPECT_FAILURE=1 DEVLINK_EXTRA_CXXFLAGS=-fdevlink-deliberate-invalid-option "$ROOT/build.sh" debug --core-only > "$OUT/logs/selftest-compile-failure.log" 2>&1 || rc=$?
+    (( rc != 0 )) && [[ ! -e $OUT/debug/BUILD_SUCCEEDED && ! -e $OUT/debug/bin/devlink-monitor ]] || fail 'failed compile left a stale successful build'
     rc=0
-    PLPT_EXPECT_FAILURE=1 PLPT_EXTRA_LDFLAGS=-Wl,--plpt-deliberate-invalid-option "$ROOT/build.sh" debug --core-only > "$OUT/logs/selftest-link-failure.log" 2>&1 || rc=$?
-    (( rc != 0 )) && [[ ! -e $OUT/debug/BUILD_SUCCEEDED && ! -e $OUT/debug/bin/plpt-monitor ]] || fail 'failed link left a stale successful build'
+    DEVLINK_EXPECT_FAILURE=1 DEVLINK_EXTRA_LDFLAGS=-Wl,--devlink-deliberate-invalid-option "$ROOT/build.sh" debug --core-only > "$OUT/logs/selftest-link-failure.log" 2>&1 || rc=$?
+    (( rc != 0 )) && [[ ! -e $OUT/debug/BUILD_SUCCEEDED && ! -e $OUT/debug/bin/devlink-monitor ]] || fail 'failed link left a stale successful build'
     # Exercise the same hash verifier without ever modifying the verified originals.
     DIR="$OUT/tests/negative"; fresh "$DIR"
     printf 'corrupt archive for negative test\n' > "$DIR/corrupt.tar.gz"
@@ -562,10 +681,81 @@ selftest() {
     (verify "$DIR/corrupt.tar.gz" "$IMGUI_SHA") > "$OUT/logs/selftest-hash-failure.log" 2>&1 || rc=$?
     (( rc != 0 )) && grep -q 'SHA-256 mismatch' "$OUT/logs/selftest-hash-failure.log" || fail 'bad archive was not rejected'
     rc=0
-    expect intentional-exit 0 'should never pass' "$OUT/doctor/probe" --fail || rc=$?
-    (( rc == 23 )) || fail "test exit code was not preserved (expected 23, got $rc)"
-    say 'SELFTEST PASS: missing compiler, compilation, linking and archive hash failures propagate; no stale successful output'
-    notice 'SELFTEST PASS: compiler/compile/link/hash failure propagation'
+    "$OUT/doctor/probe" --fail > "$DIR/intentional-exit.log" 2>&1 || rc=$?
+    (( rc == 23 )) || fail "probe exit code was not preserved (expected 23, got $rc)"
+    grep -q 'intentional test failure: exit 23' "$DIR/intentional-exit.log" || fail 'intentional failure probe output was not preserved'
+    say 'PASS intentional-exit-propagation: exit=23 preserved by the probe'
+    # L'icône de marque est un vrai ICO multi-tailles : contrôle positif…
+    expect brand-ico 0 'all required Windows sizes present' "$OUT/doctor/probe" --ico "$ROOT/assets/branding/devlink.ico" --expect-entries 7
+    # …et négatif : un fichier renommé .ico doit être rejeté, jamais accepté.
+    printf 'ceci n est pas une icone\n' > "$DIR/fake.ico"
+    expect renamed-ico 1 'ICO validation failed' "$OUT/doctor/probe" --ico "$DIR/fake.ico" --expect-entries 7
+    # Les lecteurs PE sont testes sur des fixtures synthetiques cote Linux : le
+    # parseur x86-64 et ses controles negatifs sont exercables sans linker Windows.
+    command -v python3 >/dev/null || fail 'selftest PE: python3 est requis pour fabriquer les fixtures deterministes'
+    run python3 "$ROOT/tests/build/synthetic_pe.py" --out-dir "$DIR/synthetic-pe"
+    expect pe-icons-synthetic 0 'PASS RT_GROUP_ICON' "$OUT/doctor/probe" --pe-icons "$DIR/synthetic-pe/icons-good.exe" --expect-icons 7
+    expect pe-manifest-synthetic 0 'PASS resource #1 version=0.2.0.0' "$OUT/doctor/probe" --manifest "$DIR/synthetic-pe/icons-good.exe" --expect-version 0.2.0.0
+    expect pe-manifest-only-synthetic 0 'PASS resource #1 version=0.2.0.0' "$OUT/doctor/probe" --manifest "$DIR/synthetic-pe/manifest-only.exe" --expect-version 0.2.0.0
+    expect pe-icons-bad-group 1 'PE icon validation failed' "$OUT/doctor/probe" --pe-icons "$DIR/synthetic-pe/icons-bad-group.exe" --expect-icons 7
+    expect pe-manifest-missing 1 'PE manifest validation failed' "$OUT/doctor/probe" --manifest "$DIR/synthetic-pe/no-manifest.exe" --expect-version 0.2.0.0
+    expect pe-manifest-wrong-version 1 'PE manifest validation failed' "$OUT/doctor/probe" --manifest "$DIR/synthetic-pe/wrong-version.exe" --expect-version 0.2.0.0
+    # Transport TLS : bibliothèque volontairement introuvable => la fabrique doit
+    # le dire (Unsupported) et les cas TLS se déclarer SKIP, jamais PASS cachés.
+    local tls_platform_bin="$OUT/tests/${MODE:-debug}/bin/devlink-platform-tests"
+    [[ -x $tls_platform_bin ]] || fail "selftest TLS: $tls_platform_bin absent; execute './build.sh test ${MODE:-debug}' first"
+    expect tls-unavailable-proof 0 'tls-unavailable-proof' env DEVLINK_TLS_LIBRARY_PATH=/does/not/exist/libssl.so "$tls_platform_bin"
+    # Le même enregistrement doit aussi prouver le REFUS de démarrer un partage
+    # reel sans runtime TLS : aucune degradation silencieuse en clair (ADR-016).
+    grep -Eq '\[PASS\] host_refuses_session_without_tls_runtime' "$DIR/tls-unavailable-proof.log" \
+        || fail 'selftest TLS: refus de session sans runtime non prouve'
+    grep -Eq 'host-refusal-proof: ' "$DIR/tls-unavailable-proof.log" \
+        || fail 'selftest TLS: raison du refus absente de la sortie'
+    grep -Eq 'host-cleared-proof: .*clair' "$DIR/tls-unavailable-proof.log" \
+        || fail 'selftest TLS: chemin clair assume non etiquette'
+    say 'PASS tls-host-refusal-proof'
+    notice 'PASS tls-host-refusal-proof'
+    # Publication releases/ (mandat §8, etape 8) : ecriture .partial puis
+    # renommage atomique, SHA-256 publiee et revérifiable, aucun ecrasement
+    # silencieux, aucune archive illisible acceptee. Preuve sur une archive
+    # synthetique : la mecanique est la MEME fonction que le package reel.
+    local rel="$ROOT/releases"
+    fresh "$DIR/release-proof"; printf 'archive de preuve DevLink\n' > "$DIR/release-proof/payload.txt"
+    run tar -czf "$DIR/release-proof/fixture.tar.gz" -C "$DIR/release-proof" payload.txt
+    publish_release "$DIR/release-proof/fixture.tar.gz" "$rel/DevLink-selftest-fixture.tar.gz"
+    [[ -f $rel/DevLink-selftest-fixture.tar.gz ]] || fail 'release proof: archive publiee absente'
+    [[ ! -e $rel/DevLink-selftest-fixture.tar.gz.partial ]] || fail 'release proof: fichier .partial reste apres publication'
+    [[ -f $rel/DevLink-selftest-fixture.tar.gz.sha256 ]] || fail 'release proof: empreinte SHA-256 non publiee'
+    (cd -- "$rel" && run sha256sum -c -- DevLink-selftest-fixture.tar.gz.sha256) || fail 'release proof: empreinte publiee invérifiable'
+    # Negatif : un contenu DIFFERENT sous le meme nom est refuse et l'original
+    # reste intact (controle : son empreinte publiee verifie toujours).
+    printf 'archive de preuve modifiee\n' > "$DIR/release-proof/payload.txt"
+    run tar -czf "$DIR/release-proof/changed.tar.gz" -C "$DIR/release-proof" payload.txt
+    rc=0; ( publish_release "$DIR/release-proof/changed.tar.gz" "$rel/DevLink-selftest-fixture.tar.gz" ) || rc=$?
+    (( rc != 0 )) || fail 'release proof: ecrasement silencieux accepte (pire defaut possible)'
+    (cd -- "$rel" && run sha256sum -c -- DevLink-selftest-fixture.tar.gz.sha256) || fail 'release proof: original altere par une tentative refusee'
+    # Negatif : une archive illisible n'entre JAMAIS dans releases/, sans residu.
+    printf 'ceci n est pas une archive\n' > "$DIR/release-proof/broken.tar.gz"
+    rc=0; ( publish_release "$DIR/release-proof/broken.tar.gz" "$rel/DevLink-selftest-broken.tar.gz" ) || rc=$?
+    (( rc != 0 )) || fail 'release proof: archive illisible publiee'
+    [[ ! -e $rel/DevLink-selftest-broken.tar.gz && ! -e $rel/DevLink-selftest-broken.tar.gz.sha256 ]] \
+        || fail 'release proof: residus de publication refusee dans releases/'
+    [[ -z $(find "$rel" -name '*.partial' -print -quit) ]] || fail 'release proof: fichier .partial abandonne dans releases/'
+    say 'PASS release-publish-proof'
+    notice 'PASS release-publish-proof'
+    # clean ne touche JAMAIS releases/ : preuve NON VIDE — quelque chose est bien
+    # nettoye sous out/ (sinon la preservation serait demontree par rien), puis
+    # les artefacts publies survivent au nettoyage.
+    [[ -e $OUT/tests/negative ]] || fail 'clean proof: fixture de nettoyage absante, preuve impossible'
+    DEVLINK_EXPECT_FAILURE=0 "$ROOT/build.sh" clean > "$OUT/logs/selftest-clean.log" 2>&1 || fail 'clean proof: ./build.sh clean a echoue'
+    [[ ! -e $OUT/tests/negative ]] || fail 'clean proof: clean na rien nettoye — preuve de preservation vide'
+    [[ -f $rel/DevLink-selftest-fixture.tar.gz && -f $rel/DevLink-selftest-fixture.tar.gz.sha256 ]] \
+        || fail 'clean proof: releases/ touche par clean (artefacts detruits)'
+    rm -f -- "$rel"/DevLink-selftest-fixture.tar.gz "$rel"/DevLink-selftest-fixture.tar.gz.sha256
+    say 'PASS clean-preserves-releases-proof'
+    notice 'PASS clean-preserves-releases-proof'
+    say 'SELFTEST PASS: toolchain, compile/link, ICO/PE resources, archive hash and release publishing checks; clean never touches releases/; no stale successful output'
+    notice 'SELFTEST PASS: compiler/compile/link/hash/release-publish failure propagation'
 }
 case "$ACTION" in
     deps) plain_directory "$DEPS"; mkdir -p "$DEPS"; if (( FETCH )); then
@@ -579,6 +769,6 @@ case "$ACTION" in
     fuzz) fuzz;;
     package) package;;
     selftest) selftest;;
-    clean) for name in debug release tests packages doctor; do plain_directory "$OUT/$name"; if [[ -e $OUT/$name ]]; then run rm -rf -- "$OUT/$name"; fi; done; say 'CLEAN SUCCESS: compiled outputs removed; verified archives and logs retained';;
+    clean) for name in debug release tests packages doctor; do plain_directory "$OUT/$name"; if [[ -e $OUT/$name ]]; then run rm -rf -- "$OUT/$name"; fi; done; say 'CLEAN SUCCESS: compiled outputs removed; releases/ untouched; logs and dependencies retained';;
 esac
 say "SUCCESS operation=$ACTION log=$LOG"

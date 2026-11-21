@@ -1,0 +1,124 @@
+{
+  "manifest_type": "release_qualification_manifest",
+  "schema_version": 1,
+  "status": "NOT_FINALIZED",
+  "created_date_utc": "2026-11-13",
+  "exact_creation_time_utc": null,
+  "time_provenance_note": "Session-authoritative date is 2026-11-13 UTC, while raw sandbox execution timestamps in attached logs are 2026-11-19 UTC (the latest final evidence records its end time explicitly). Raw timestamps are preserved verbatim; this mismatch is not reconciled or certified. exact_creation_time_utc remains null.",
+  "release_artifact": null,
+  "release_artifact_status": "NOT_BUILT_OR_NOT_QUALIFIED",
+  "release_attestation": false,
+  "subject": {
+    "repository": "MONST-CODE/Local-test-share",
+    "branch": "arena/125b0385-local-test-share",
+    "base_commit": "1e12c08b2137808b65a50564b35f29a8dfac4971",
+    "checked_out_commit": "1a70c6600c5253433badd9ce446087242c62de5d",
+    "working_tree": "MODIFIED_STAGED_UNSTAGED_AND_UNTRACKED",
+    "stash_backup": "stash@{0}: preserve-worktree-before-fast-forward-to-active-remote-branch",
+    "working_tree_patch_sha256_excluding_manifest": "4b244388866dcf536b748a364e58a958e68d1a8f059703e9b0bf648a534e8d78",
+    "working_tree_patch_scope": "git diff HEAD --binary excluding docs/reports/RELEASE_MANIFEST.json; untracked files are not part of this digest"
+  },
+  "release_gates": {
+    "F01_official_toolchain": "PARTIAL: LLVM Clang 23.1.5 official doctor and build.sh debug/release tests pass on Linux using locally provisioned pinned npm packages; not native runner/Windows qualification",
+    "F02_official_debug_release_builds": "PARTIAL: official Clang Debug and Release headless tests pass on modified worktree; native UI/package/Windows gates open",
+    "F03_project_tests": "PARTIAL: Clang Debug/Release 39 unit cases / 21193 checks, platform 20/760, IPv6 2/41; 15 steps pass, 0 skipped; selftest passes. Windows/sanitizers/fuzz/native UI open",
+    "F04_F09_webview2_capture_media_guest_display_and_mode_A": "NOT_IMPLEMENTED_OR_NOT_VERIFIED",
+    "F10_F14_control_TLS_modes_rollback_revocation": "PARTIAL",
+    "F15_physical_two_machine_LAN": "BLOCKED_BY_ENVIRONMENT",
+    "F16_windows_UCRT64": "BLOCKED_BY_ENVIRONMENT",
+    "F17_physical_multi_monitor_DPI": "BLOCKED_BY_ENVIRONMENT",
+    "F18_extracted_package_execution": "NOT_VERIFIED",
+    "F19_PE_branding": "PARTIAL",
+    "F20_documentation": "PARTIAL: audit, network/security documentation updated; final synchronization and review on committed SHA remain"
+  },
+  "evidence": [
+    {
+      "path": "docs/reports/REAL_LAN_QUALIFICATION.md",
+      "sha256": "929002096965327370acb6f620aaf63634251a977fa821980bd0acce1b34c9bd",
+      "interpretation": "evidence/report only; subject limitations are recorded in FINAL_COMPLETION_AUDIT.md"
+    },
+    {
+      "path": "docs/reports/WINDOWS_UCRT64_QUALIFICATION.md",
+      "sha256": "54e925bd144b8a806739c6cf867a855c897c368b35ba938a0d4a8269d1efb5b6",
+      "interpretation": "evidence/report only; subject limitations are recorded in FINAL_COMPLETION_AUDIT.md"
+    },
+    {
+      "path": "docs/reports/evidence/continuation-synced-gcc-test.log",
+      "sha256": "a3909e4ac64d0eec4c97a9215fa6bef46d6a37ebe1356167a41824721ff443d8",
+      "interpretation": "evidence/report only; subject limitations are recorded in FINAL_COMPLETION_AUDIT.md"
+    },
+    {
+      "path": "docs/reports/evidence/continuation-synced-gcc-selftest.log",
+      "sha256": "7443329bf082b66e1353e0dbdc965fe721f7ee9cf832426d812d07cca8f28dcc",
+      "interpretation": "evidence/report only; subject limitations are recorded in FINAL_COMPLETION_AUDIT.md"
+    },
+    {
+      "path": "docs/reports/evidence/continuation-synced-official-doctor-blocker.log",
+      "sha256": "c5844232966d1e6fb3ca9b45ccd8e5a0e80b9deeffbf028068a95dab116c501b",
+      "interpretation": "evidence/report only; subject limitations are recorded in FINAL_COMPLETION_AUDIT.md"
+    },
+    {
+      "path": "docs/reports/evidence/continuation-synthetic-cli-regression.log",
+      "sha256": "6aee4988e09f4d0c33ad1be3a663a8330ae398d53fc7de651eee6ad62081d37a",
+      "interpretation": "evidence/report only; subject limitations are recorded in FINAL_COMPLETION_AUDIT.md"
+    },
+    {
+      "path": "docs/reports/evidence/dpi-multi-scale.txt",
+      "sha256": "277a19a2b1a4715d735421979e632a9c6f3967df752adea7deb1fd1b9b662650",
+      "interpretation": "evidence/report only; subject limitations are recorded in FINAL_COMPLETION_AUDIT.md"
+    },
+    {
+      "path": "docs/reports/evidence/continuation-official-clang-doctor-clean-resources.log",
+      "sha256": "e97df2ef09e3a610a706c03cb6fed2e4b8b4d77b59705299a0e778fcc974d4fb",
+      "interpretation": "Official build.sh doctor --core-only, exit 0; LLVM Clang 23.1.5 with correct upstream resource headers; no GCC include injection. Modified, uncommitted worktree; raw time retained."
+    },
+    {
+      "path": "docs/reports/evidence/continuation-official-clang-test-debug-final.log",
+      "sha256": "066c6e50780a6b6d5a00caee4435506b8461066b41dad1376c9a0c316c07ecb0",
+      "interpretation": "Official build.sh test debug --headless, exit 0; 39 unit cases / 21193 checks, platform 20/760, IPv6 2/41, 15 pass / 0 skip. Modified, uncommitted worktree."
+    },
+    {
+      "path": "docs/reports/evidence/continuation-official-clang-test-release-final.log",
+      "sha256": "38f5febca8d830b7f134107d47c1bd06c44a76c53a205858f55d0a9eaec7d5a5",
+      "interpretation": "Official build.sh test release --headless, exit 0; 39 unit cases / 21193 checks, platform 20/760, IPv6 2/41, 15 pass / 0 skip. Modified, uncommitted worktree."
+    },
+    {
+      "path": "docs/reports/evidence/continuation-official-clang-selftest-final.log",
+      "sha256": "47ef5224cad597478f545b36783208379771c3c8a4af8a48387cc20aff44e6e0",
+      "interpretation": "Official build.sh selftest, exit 0. Modified, uncommitted worktree; fixture/release-publishing selftests only, not product release qualification."
+    },
+    {
+      "path": "docs/reports/evidence/continuation-clang-provisioning.txt",
+      "sha256": "6c667f7db836f0c8bc271fc72cd2b013193b104aeba9c6b0c3aa5d7130e2f217",
+      "interpretation": "Local toolchain provenance and npm integrity/SHA-256 receipt; downloaded archives remain ignored under .cache."
+    },
+    {
+      "path": "docs/reports/FINAL_COMPLETION_AUDIT.md",
+      "sha256": "0bd1338c2a086002a03909ad91b053579261811a32043f505a88e659c5297c4a",
+      "interpretation": "Current NOT_FINALIZED audit and requirement matrix; evidence/report, not release attestation."
+    },
+    {
+      "path": "docs/NETWORK.md",
+      "sha256": "b7f147a5b43be85f41aeddc979a6b02f6ae2ede7180ccc01b0a8ce10ccee3b4d",
+      "interpretation": "Updated codec/file-queue description; explicitly states there is no supported media stream or transport integration."
+    },
+    {
+      "path": "docs/SECURITY.md",
+      "sha256": "90d2efcdc973ee92a2e30535a6e93242032af0c4ece76037f8b98a141ab8acff",
+      "interpretation": "Updated media security status; lists missing transport/backpressure/adversarial decode qualification."
+    }
+  ],
+  "qualification_summary": {
+    "gcc_exploratory_tests": "PASS: unit 38 cases / 21139 checks; platform 20 / 760; IPv6 2 / 41; 15 steps passed, 0 skipped",
+    "gcc_exploratory_selftest": "PASS after restoring synthetic PE fixture CLI compatibility",
+    "official_doctor": "PASS exit 0: Linux Clang 23.1.5, clean wrappers and pinned Clang resource headers; locally provisioned, not CI/native Windows qualification",
+    "physical_LAN": "NOT_RUN",
+    "Windows_UCRT64": "NOT_RUN",
+    "WebView2_real_browser_media_pipeline": "NOT_IMPLEMENTED",
+    "overall": "NOT_FINALIZED",
+    "official_clang_debug_release": "PASS exit 0 each: unit 39 cases / 21193 checks; platform 20 / 760; IPv6 2 / 41; 15 steps passed, 0 skipped",
+    "official_clang_selftest": "PASS exit 0; does not qualify a releasable DevLink package",
+    "native_UI_X11": "NOT_RUN: no X11 development headers, DISPLAY, or Xvfb in environment",
+    "clang_libfuzzer": "NOT_RUN: compiler-rt fuzz runtime unavailable"
+  }
+}

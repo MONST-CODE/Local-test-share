@@ -1,57 +1,63 @@
-# PLPT 0.1.0-preview — installation portable et utilisation
+# DevLink 0.2.0-preview — portée et démarrage local
 
-## Ce que contient cette version
+## Fonctionnalités disponibles et limites
 
-Un **moniteur local**, CLI et interface native. Il observe les ports/processus du
-compte courant, ne connecte aucun invité et ne démarre aucun partage. WebView2,
-invitations, transport chiffré, cinq testeurs et nettoyage des profils sont absents.
+Sous **Windows 10/11 x64**, DevLink partage réellement une application web locale :
+l'hôte l'exécute dans un navigateur WebView2 isolé, chaque invité reçoit ses images
+par un canal TLS 1.3 qui lui est propre et la pilote selon le mode A/B/C, que l'hôte
+fait respecter (ADR-018). Le parcours est décrit dans [`USER_GUIDE.md`](USER_GUIDE.md).
 
-## Construire et installer — Windows x64
+Limites exactes : qualifié sur **une machine** (vrais exécutables hôte et invité).
+Le test sur deux ordinateurs d'un même LAN n'est **pas encore exécuté**
+([`reports/REAL_LAN_QUALIFICATION.md`](reports/REAL_LAN_QUALIFICATION.md)). Pas
+d'invité Linux pour l'instant. Le proxy HTTP ne fait pas partie du partage. Ne
+l'exposez pas à un réseau non fiable.
 
-Les prérequis de compilation ne concernent que le développeur : MSYS2 UCRT64 et
-son `clang++.exe` exclusif, voir [BUILD.md](BUILD.md). Aucun SDK/Visual Studio requis. Après `build.bat deps --fetch`, exécuter `build.bat package`.
-Le script recompile Release, teste puis crée :
+## Préparer une build
 
-```text
-out\windows\packages\PLPT-0.1.0-preview-windows-ucrt64-x64.zip
+Les commandes officielles et prérequis sont dans [`BUILD.md`](BUILD.md).
+
+Linux x64 (toolchain officielle clang++ >=18) :
+
+```sh
+./build.sh help
+./build.sh deps --fetch
+./build.sh doctor --verbose
+./build.sh debug
+./build.sh test debug --headless
 ```
 
-1. Extraire l'archive dans un dossier appartenant à votre compte, par exemple
-   `%LOCALAPPDATA%\Programs\PLPT-Preview`. Aucun droit administrateur requis.
-2. Conserver **tout** le dossier `PLPT`, notamment les DLL à côté des EXE et les
-   licences. Ne pas déplacer seulement `plpt-desktop.exe`.
-3. Ouvrir `PLPT\bin\plpt-desktop.exe`, ou lancer `plpt-monitor.exe --help` depuis
-   un terminal. Ne pas désactiver SmartScreen/antivirus si le binaire est bloqué.
-4. Pour retirer la preview : fermer ses processus puis supprimer **ce dossier
-   d'extraction uniquement**. Aucun service, règle de pare-feu ou désinstalleur ajouté.
+Le profil headless vérifie le rendu dummy seulement. Il ne prouve pas l'ouverture
+d'une fenêtre X11/Wayland. Dans l'environnement de continuation, Clang++ et les
+headers X11 n'étaient pas présents ; les anciennes mesures GCC sont des résultats
+exploratoires, pas une validation officielle actuelle.
 
-Ce ZIP de développement (profil UCRT64, DLL GNU/Mingw vérifiées et livrées) n'est pas signé. Aucun installateur NSIS/MSI n'est livré
-par la migration. L'exécution CI n'est pas une qualification SmartScreen, poste
-propre, installation/désinstallation complète, DPI/IME ou approbation de redistribution du runtime GNU/SDL.
+Windows x64 : utiliser un terminal Windows natif avec la toolchain MSYS2 UCRT64
+Clang++ prescrite dans `BUILD.md`, puis `build.bat help` et les commandes indiquées
+par ce script. La build Windows, WebView2, TLS Windows et le package natif doivent
+être testés sur Windows ; ils ne sont pas validés par les commandes Linux.
 
-## Linux
+## Inspecter les services
 
-`./build.sh package --native-ui` produit
-`out/linux/packages/PLPT-0.1.0-preview-linux-x64.tar.gz`. Extraire, conserver la
-bibliothèque SDL dans `PLPT/bin`, puis lancer `PLPT/bin/plpt-desktop` sous X11.
-Le runtime glibc/libstdc++/X11 du système reste nécessaire ; ce n'est pas un binaire
-universel pour toute distribution. Le profil dummy sandbox n'est pas distribuable.
+L'outil `devlink-monitor` sert au diagnostic local et à la découverte informative.
+Un processus/port détecté n'est jamais automatiquement autorisé, publié ou partagé.
+Utilisez `devlink-monitor --help` pour les options réellement disponibles dans la
+build locale. Ne lancez pas l'application en administrateur pour contourner une
+limite de visibilité sans en comprendre la cause.
 
-## Utiliser le moniteur
+## État des preuves
 
-- « Détection locale » affiche les sockets et leur attribution probable.
-- Filtrer par adresse, port ou nom ; cliquer une ligne pour l'inspecter.
-- « Sélection locale » et « Marquer protégé » sont des états locaux en mémoire.
-- « Actualiser » relit les tables ; une erreur reste visible et invalide la sélection.
-- Un PID inconnu n'est pas une raison de lancer systématiquement en administrateur.
+- Les suites et le selftest GCC exploratoires sont rapportés dans
+  `docs/reports/evidence/2026-11-18-continuation-audit.txt` ; ils ne remplacent pas
+  Clang++ officiel.
+- Les captures DPI logicielles sont dans `docs/reports/evidence/dpi-captures/` ;
+  elles ne prouvent pas le DPI physique multi-moniteurs.
+- Navigateur réel, partage et bout en bout sur les vrais exécutables : suites
+  `devlink-browser-tests`, `devlink-share-tests`, `devlink-desktop-e2e-tests` de
+  `build.bat test` (Windows natif). La capture de la fenêtre invitée est dans
+  `docs/reports/evidence/2026-11-21-desktop-e2e-guest-window.png`.
+- Aucun test LAN physique à deux machines n'est revendiqué.
 
-Pas de Docker, Node, Python ou navigateur supplémentaire pour **utiliser le moniteur**.
-Aucune promesse d'absence d'écriture système/cache/dump, ni d'effacement physique.
-
-## Documentation
-
-L'archive contient BUILD, SECURITY, QUICKSTART, l'inventaire de dépendances et les
-notices. Les rapports et preuves complets restent dans le dépôt :
-https://github.com/MONST-CODE/Local-test-share . La licence PLPT reste à décider par
-son propriétaire avant diffusion ; les conditions de redistribution des runtimes
-s'appliquent indépendamment des licences de notre code.
+Voir [`SECURITY.md`](SECURITY.md), [`NETWORK.md`](NETWORK.md) et le rapport
+[`reports/FINAL_COMPLETION_AUDIT.md`](reports/FINAL_COMPLETION_AUDIT.md) avant toute
+évaluation de portée.

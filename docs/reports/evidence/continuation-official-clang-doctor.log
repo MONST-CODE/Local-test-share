@@ -1,0 +1,36 @@
+raw_environment_start_utc=2026-11-19T19:29:54Z
+raw_environment_end_utc=2026-11-19T19:29:54Z
+authoritative_session_date=2026-11-13; raw execution clock is retained unchanged
+commit=1a70c6600c5253433badd9ce446087242c62de5d
+branch=arena/125b0385-local-test-share
+os=Linux 6.1.158+ x86_64
+compiler_package=llvm-runtime-clang-linux-x64@23.1.6-1 (registry.npmjs.org); actual clang reports 23.1.5
+command=DEVLINK_CXX=.cache/toolchain-provision/llvm/bin/clang++ DEVLINK_CC=.cache/toolchain-provision/llvm/bin/clang ./build.sh doctor --core-only
+exit_code=1
+DevLink direct Linux operation=doctor mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261119T192954Z-doctor-debug-34587.log
+CXX=/home/user/Local-test-share/.cache/toolchain-provision/llvm/bin/clang++
+CC=/home/user/Local-test-share/.cache/toolchain-provision/llvm/bin/clang
+clang version 23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/Local-test-share/.cache/toolchain-provision/llvm/bin
+Configuration file: /home/user/Local-test-share/.cache/toolchain-provision/llvm/etc/clang/clang++.cfg
+native linker: /usr/bin/ld
+clang version 23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/Local-test-share/.cache/toolchain-provision/llvm/bin
+Configuration file: /home/user/Local-test-share/.cache/toolchain-provision/llvm/etc/clang/clang++.cfg
+In file included from tests/build/toolchain_probe.cpp:2:
+In file included from /usr/lib/gcc/x86_64-linux-gnu/12/../../../../include/c++/12/atomic:41:
+In file included from /usr/lib/gcc/x86_64-linux-gnu/12/../../../../include/c++/12/bits/atomic_base.h:41:
+In file included from /usr/lib/gcc/x86_64-linux-gnu/12/../../../../include/c++/12/bits/atomic_wait.h:38:
+In file included from /usr/lib/gcc/x86_64-linux-gnu/12/../../../../include/x86_64-linux-gnu/c++/12/bits/gthr.h:148:
+In file included from /usr/lib/gcc/x86_64-linux-gnu/12/../../../../include/x86_64-linux-gnu/c++/12/bits/gthr-default.h:35:
+In file included from /usr/include/pthread.h:22:
+/usr/include/sched.h:29:10: fatal error: 'stddef.h' file not found
+   29 | #include <stddef.h>
+      |          ^~~~~~~~~~
+1 error generated.
+Command exit 1: /home/user/Local-test-share/.cache/toolchain-provision/llvm/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -pthread tests/build/toolchain_probe.cpp -o /home/user/Local-test-share/out/linux/doctor/probe 
+FAILURE exit=1 operation=doctor (see /home/user/Local-test-share/out/linux/logs/20261119T192954Z-doctor-debug-34587.log)

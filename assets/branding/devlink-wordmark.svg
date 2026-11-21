@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DevLink — wordmark « DevLink » (mandat §14 : le mot est un wordmark à part
+  entière, jamais une partie illisible de l'icône).
+
+  Lettres construites en tracés vectoriels géométriques (aucune police, aucune
+  dépendance de rendu) : capitales 120 u, hauteur d'x 76 u, graisse 18 u,
+  terminaisons et jointures arrondies — cohérent avec les 18 u du D du symbole.
+  Couleur : texte principal DevDark (#F5E9DC). Sur fond clair, utiliser
+  #453329 (rôle texte principal DevLight).
+
+  Interdits : déformer (étirement non uniforme), changer la graisse au hasard,
+  ajouter un contour, une ombre ou un dégradé, remplacer par une police système.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="734" height="240" viewBox="0 0 734 240">
+  <g fill="none" stroke="#F5E9DC" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 34 180 L 34 60 C 96 60 122 84 122 120 C 122 156 96 180 34 180"/>
+    <path d="M 150 146 L 228 146 C 228 116 210 104 190 104 C 166 104 148 122 148 144 C 148 168 168 182 192 180 C 210 178 222 170 228 160"/>
+    <path d="M 264 108 L 302 180 L 340 108"/>
+    <path d="M 372 60 L 372 180 L 446 180"/>
+    <path d="M 478 112 L 478 180"/>
+    <path d="M 510 180 L 510 110"/>
+    <path d="M 510 134 C 514 114 528 104 546 104 C 568 104 580 120 580 142 L 580 180"/>
+    <path d="M 612 60 L 612 180"/>
+    <path d="M 686 106 L 624 146"/>
+    <path d="M 636 138 L 700 180"/>
+  </g>
+  <circle cx="478" cy="80" r="11" fill="#F5E9DC"/>
+</svg>

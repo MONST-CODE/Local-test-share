@@ -11,7 +11,7 @@ Ce document recense les problèmes de configuration et de réseau fréquents lor
 1. **Isolation des clients Wi-Fi** : De nombreux routeurs d'entreprise ou box Wi-Fi activent l'isolation AP (Access Point Isolation), ce qui bloque les paquets multicast/broadcast entre deux ordinateurs sans fil.
    - *Solution* : Utilisez la **connexion manuelle** dans l'Espace Invité en saisissant directement l'adresse IP de l'hôte (affichée dans le tableau de bord de l'hôte) et le port de contrôle.
 2. **Pare-feu Windows bloquant les paquets UDP** :
-   - *Solution* : Vérifiez que Windows Defender Firewall autorise `plpt-desktop.exe` sur les réseaux privés.
+   - *Solution* : Vérifiez que Windows Defender Firewall autorise `devlink-desktop.exe` sur les réseaux privés.
 3. **Multiples interfaces réseau (VPN, Docker, VirtualBox, WSL)** :
    - Si un VPN (ex. WireGuard, OpenVPN, Tailscale) ou un switch virtuel est actif, l'adresse de diffusion peut emprunter une interface virtuelle.
    - *Solution* : Vérifiez dans l'onglet Diagnostics quelle interface est utilisée et privilégiez la connexion par IP directe.
@@ -40,9 +40,9 @@ Ce document recense les problèmes de configuration et de réseau fréquents lor
 **Cause :** Le service local amont (par ex. Next.js, Flask ou Vite) s'est arrêté ou n'est plus en écoute sur le port configuré.
 - *Solution* : Vérifiez dans votre terminal si votre serveur de développement local fonctionne toujours (ex. `npm run dev` ou `docker ps`).
 
-### Symptôme : Les requêtes API ou assets externes sont bloqués dans le navigateur de test.
-**Cause :** La politique de sécurité DevLink applique une allowlist stricte et bloque toute navigation vers des domaines non autorisés ou des fichiers système (`file://`).
-- *Solution* : Dans la configuration du partage, assurez-vous d'avoir déclaré toutes les origines nécessaires au fonctionnement de l'application.
+### Symptôme : L'interface affiche « moteur navigateur indisponible ».
+**Cause :** Le backend WebView2, la capture réelle et l'injection d'entrées ne sont pas implémentés. La validation d'origine HTTP(S) est une primitive isolée ; elle ne filtre pas encore les navigations d'un navigateur opérationnel.
+- *Solution* : Il n'existe pas de configuration utilisateur permettant de débloquer le partage réel dans cette préversion. N'utilisez pas le mode de démonstration synthétique comme substitut ; suivre les étapes de qualification dans `docs/reports/FINAL_COMPLETION_AUDIT.md`.
 
 ---
 

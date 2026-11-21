@@ -216,7 +216,7 @@ void GuestClient::run(std::stop_token token) {
         }
         poll_once(std::chrono::milliseconds(100));
         while (outbox_sent_ < outbox_.size()) {
-            auto sent = socket_.send({outbox_.data() + outbox_sent_, outbox_.size() - outbox_sent_});
+            auto sent = write_some_guest({outbox_.data() + outbox_sent_, outbox_.size() - outbox_sent_});
             if (!sent) break; // WouldBlock : le reste part au prochain tour.
             if (sent.value() == 0) break;
             outbox_sent_ += sent.value();
@@ -234,7 +234,7 @@ void GuestClient::run(std::stop_token token) {
         flush(std::chrono::milliseconds(200));
         running_.store(false);
     }
-    socket_.close();
+    close_guest_transport();
     publish();
 }
 
@@ -248,9 +248,12 @@ Result<void> GuestClient::connect_and_authenticate() {
     (void)socket_.set_nonblocking(true);
     GuestHello hello;
     hello.guest_name = config_.guest_name;
-    hello.invite_code = config_.invite_code.text; // seule occurrence en clair : sur le fil, jamais dans les journaux.
     hello.client = config_.client;
-    hello.resume_secret = config_.resume_secret; // vide à la première connexion.
+    // ADR-017 : le code d'invitation et le secret de reprise ne sont JAMAIS
+    // transmis. L'hôte envoie un nonce, l'invité prouve la connaissance du
+    // secret par HMAC-SHA256 ; un observateur du fil n'apprend rien.
+    hello.invite_code.clear();
+    hello.resume_secret.clear();
     const auto payload = encode(hello);
     // Hello : session et participant inconnus, séquence nulle — c'est la seule
     // trame du protocole qui le permet.
@@ -260,7 +263,7 @@ Result<void> GuestClient::connect_and_authenticate() {
         set_phase(GuestPhase::Disconnected, "demande d'authentification non transmise", written.error().code);
         return Result<void>::failure(written.error());
     }
-    set_phase(GuestPhase::Authenticating, "code d'invitation transmis, vérification par l'hôte");
+    set_phase(GuestPhase::Authenticating, "demande transmise : défi d'authentification attendu");
     const auto deadline = clock_.now_monotonic_ms() + config_.approval_timeout_ms;
     std::array<std::uint8_t, 8192> buffer{};
     while (clock_.now_monotonic_ms() < deadline) {
@@ -275,7 +278,7 @@ Result<void> GuestClient::connect_and_authenticate() {
                 if (command.kind == CommandKind::Leave) { running_.store(false); return Result<void>::failure({ErrorCode::Cancelled, "départ avant admission", "guest"}); }
             }
         }
-        std::vector<PollEntry> entries{PollEntry{socket_.native(), true, false, false, false, false},
+        std::vector<PollEntry> entries{PollEntry{static_cast<NativeSocket>(guest_descriptor()), true, false, false, false, false},
             PollEntry{wakeup_.native(), true, false, false, false, false}};
         auto waited = poll_sockets(entries, std::chrono::milliseconds(100));
         if (!waited) return Result<void>::failure(waited.error());
@@ -285,21 +288,43 @@ Result<void> GuestClient::connect_and_authenticate() {
             set_phase(GuestPhase::Disconnected, "connexion interrompue pendant l'authentification", ErrorCode::Disconnected);
             return Result<void>::failure({ErrorCode::Disconnected, "connexion interrompue", "guest"});
         }
-        auto received = socket_.receive(buffer);
-        if (!received) {
-            if (received.error().code == ErrorCode::WouldBlock) continue;
-            set_phase(GuestPhase::Disconnected, received.error().message, received.error().code);
-            return Result<void>::failure(received.error());
+        // Drainage (ADR-016) : après l'upgrade, un segment TCP peut porter
+        // plusieurs enregistrements TLS déjà déchiffrés et conservés dans le
+        // canal ; poll() ne les signalera plus. On lit donc jusqu'à WouldBlock,
+        // sinon Auth serait traité sans SessionState ni ServiceList.
+        std::size_t drained = 0;
+        bool closed_by_peer = false;
+        bool feed_failed = false;
+        bool has_fatal = false;
+        Error fatal{ErrorCode::Ok, std::string(), "guest"};
+        for (std::size_t round = 0; round < kMaxReceivePerPoll; ++round) {
+            auto received = read_some_guest(buffer);
+            if (!received) {
+                if (received.error().code == ErrorCode::WouldBlock) break;
+                has_fatal = true;
+                fatal = received.error();
+                break;
+            }
+            if (received.value() == 0) { closed_by_peer = true; break; }
+            drained += received.value();
+            last_activity_ms_ = clock_.now_monotonic_ms();
+            if (auto fed = assembler_.feed({buffer.data(), received.value()}); !fed) {
+                has_fatal = true;
+                feed_failed = true;
+                fatal = fed.error();
+                break;
+            }
         }
-        if (received.value() == 0) {
+        if (has_fatal) {
+            set_phase(feed_failed ? GuestPhase::Refused : GuestPhase::Disconnected,
+                feed_failed ? "flux de contrôle invalide : " + fatal.message : fatal.message, fatal.code);
+            return Result<void>::failure(fatal);
+        }
+        if (closed_by_peer) {
             set_phase(GuestPhase::Disconnected, "l'hôte a fermé la connexion pendant l'authentification", ErrorCode::Disconnected);
             return Result<void>::failure({ErrorCode::Disconnected, "connexion fermée par l'hôte", "guest"});
         }
-        last_activity_ms_ = clock_.now_monotonic_ms();
-        if (auto fed = assembler_.feed({buffer.data(), received.value()}); !fed) {
-            set_phase(GuestPhase::Refused, "flux de contrôle invalide : " + fed.error().message, fed.error().code);
-            return Result<void>::failure(fed.error());
-        }
+        if (drained == 0) continue;
         bool progress = true;
         while (progress) {
             auto frame_data = assembler_.next();
@@ -314,6 +339,66 @@ Result<void> GuestClient::connect_and_authenticate() {
             }
             state_.counters.frames_received++;
             const auto& envelope = frame_data.value();
+            if (envelope.type == model::MessageType::AuthChallenge) {
+                if (!challenge_nonce_.empty()) {
+                    set_phase(GuestPhase::Refused, "second défi reçu : protocole incohérent", ErrorCode::ProtocolViolation);
+                    return Result<void>::failure({ErrorCode::ProtocolViolation, "défi dupliqué", "guest"});
+                }
+                auto challenge = decode_auth_challenge(envelope.payload);
+                if (!challenge) {
+                    set_phase(GuestPhase::Refused, "défi d'authentification invalide : " + challenge.error().message,
+                        challenge.error().code);
+                    return Result<void>::failure(challenge.error());
+                }
+                challenge_nonce_ = challenge.value().nonce;
+                state_.session_id = envelope.session.value;   // nécessaire aux trames suivantes.
+                AuthProof proof;
+                if (auto code = decode_invite_code(config_.invite_code.text); code) {
+                    auto invite = compute_auth_proof(std::span<const std::uint8_t>(code.value()),
+                        challenge_nonce_, state_.session_id, AuthProofKind::InviteCode);
+                    if (!invite) record_warning(invite.error());
+                    else proof.invite_proof = invite.value();
+                }
+                if (!config_.resume_secret.empty()) {
+                    const std::vector<std::uint8_t> secret(config_.resume_secret.begin(), config_.resume_secret.end());
+                    auto resume = compute_auth_proof(secret, challenge_nonce_, state_.session_id,
+                        AuthProofKind::ResumeSecret);
+                    if (!resume) record_warning(resume.error());
+                    else proof.resume_proof = resume.value();
+                }
+                auto encoded_proof = encode_auth_proof(proof);
+                if (!encoded_proof) {
+                    set_phase(GuestPhase::Refused, "aucun secret à prouver : " + encoded_proof.error().message,
+                        encoded_proof.error().code);
+                    return Result<void>::failure(encoded_proof.error());
+                }
+                if (!queue_frame(model::MessageType::AuthProof, encoded_proof.value())) {
+                    set_phase(GuestPhase::Refused, "preuve d'authentification non transmise", ErrorCode::Internal);
+                    return Result<void>::failure({ErrorCode::Internal, "émission de la preuve impossible", "guest"});
+                }
+                flush(std::chrono::milliseconds(config_.connect_timeout_ms));
+                set_phase(GuestPhase::Authenticating,
+                    "preuve d'authentification transmise : aucun secret envoyé sur le fil");
+                continue;
+            }
+            if (envelope.type == model::MessageType::TlsUpgrade) {
+                // Dernière trame claire de l'hôte : poignée de main TLS 1.3 ICI.
+                if (secure_) {
+                    set_phase(GuestPhase::Refused, "notice d'upgrade reçue après upgrade : protocole incohérent",
+                        ErrorCode::ProtocolViolation);
+                    return Result<void>::failure({ErrorCode::ProtocolViolation, "upgrade dupliqué", "guest"});
+                }
+                auto notice = decode_tls_upgrade(envelope.payload);
+                if (!notice) {
+                    set_phase(GuestPhase::Refused, "notice d'upgrade invalide : " + notice.error().message,
+                        notice.error().code);
+                    return Result<void>::failure(notice.error());
+                }
+                if (!upgrade_client(notice.value())) {
+                    return Result<void>::failure({ErrorCode::Unauthorized, "upgrade TLS 1.3 impossible", "guest"});
+                }
+                continue;
+            }
             if (envelope.type == model::MessageType::Auth) {
                 auto auth = decode_host_auth(envelope.payload);
                 if (!auth) { set_phase(GuestPhase::Refused, auth.error().message, auth.error().code); return Result<void>::failure(auth.error()); }
@@ -330,6 +415,19 @@ Result<void> GuestClient::connect_and_authenticate() {
                 if (!reply.accepted) {
                     set_phase(GuestPhase::Refused, reply.reason_text.empty() ? std::string("demande refusée par l'hôte") : reply.reason_text, reply.reason);
                     return Result<void>::failure({reply.reason == ErrorCode::Ok ? ErrorCode::Unauthorized : reply.reason, reply.reason_text, "guest"});
+                }
+                // ADR-016 / mandat 1355 : une admission SANS upgrade TLS est
+                // refusée par défaut ; le mode clair n'existe que si les DEUX
+                // côtés l'assument explicitement, et il est alors étiqueté.
+                if (!secure_ && config_.tls_required) {
+                    set_phase(GuestPhase::Refused,
+                        "hôte sans upgrade TLS 1.3 : admission en clair refusée (tls_required)",
+                        ErrorCode::Unauthorized);
+                    return Result<void>::failure({ErrorCode::Unauthorized, "hôte non chiffré refusé", "guest"});
+                }
+                if (!secure_) {
+                    state_.transport = "tcp clair assumé (hôtes et invités tls_required=false)";
+                    record_event("session EN CLAIR : l'hôte n'a pas proposé d'upgrade TLS 1.3");
                 }
                 const auto previous_place = state_.self;
                 state_.self = reply.participant;
@@ -394,7 +492,7 @@ void GuestClient::drain_buffered_frames() {
 }
 
 void GuestClient::poll_once(std::chrono::milliseconds timeout) {
-    std::vector<PollEntry> entries{PollEntry{socket_.native(), true, false, false, false, false},
+    std::vector<PollEntry> entries{PollEntry{static_cast<NativeSocket>(guest_descriptor()), true, false, false, false, false},
         PollEntry{wakeup_.native(), true, false, false, false, false}};
     auto waited = poll_sockets(entries, timeout);
     if (!waited) { record_warning(waited.error()); return; }
@@ -407,7 +505,7 @@ void GuestClient::poll_once(std::chrono::milliseconds timeout) {
     if (!entries[0].readable) return;
     std::array<std::uint8_t, 8192> buffer{};
     for (std::size_t round = 0; round < kMaxReceivePerPoll; ++round) {
-        auto received = socket_.receive(buffer);
+        auto received = read_some_guest(buffer);
         if (!received) {
             if (received.error().code != ErrorCode::WouldBlock) {
                 set_phase(GuestPhase::Disconnected, received.error().message, received.error().code);
@@ -467,6 +565,7 @@ void GuestClient::handle_frame(const model::Envelope& envelope) {
             record.self = peer.self;
             record.connected_ms = peer.connected_ms;
             record.latency_ms = peer.latency_ms;
+            record.transport = peer.transport;
             if (record.self && state_.self.value == 0) state_.self = record.id;
             state_.peers.push_back(std::move(record));
         }
@@ -489,6 +588,24 @@ void GuestClient::handle_frame(const model::Envelope& envelope) {
             state_.services.push_back(std::move(record));
         }
         record_event("services publiés par l'hôte : " + std::to_string(state_.services.size()));
+        return;
+    }
+    case model::MessageType::MediaOffer: {
+        // Only meaningful on an encrypted control channel: a clear channel never
+        // carries a media key (the host does not send one), and one received
+        // anyway is refused rather than used.
+        if (!secure_) { record_warning({ErrorCode::PermissionDenied, "offre média reçue en clair : refusée", "guest"}); return; }
+        auto offer = decode_media_offer(envelope.payload);
+        if (!offer) { record_warning(offer.error()); return; }
+        {
+            std::lock_guard<std::mutex> guard(mutex_);
+            media_offer_ = offer.value();
+        }
+        state_.media_offered = true;
+        state_.media_mode = offer.value().mode;
+        ++state_.media_offer_revision;
+        ++revision_;
+        record_event("canal média offert par l'hôte (port " + std::to_string(offer.value().port) + ")");
         return;
     }
     case model::MessageType::Chat: {
@@ -559,14 +676,91 @@ bool GuestClient::queue_frame(model::MessageType type, std::span<const std::uint
     return true;
 }
 
+TransportDescriptor GuestClient::guest_descriptor() const {
+    return secure_ ? channel_->descriptor() : static_cast<TransportDescriptor>(socket_.native());
+}
+
+Result<std::size_t> GuestClient::read_some_guest(std::span<std::uint8_t> buffer) {
+    return secure_ ? channel_->receive(buffer) : socket_.receive(buffer);
+}
+
+Result<std::size_t> GuestClient::write_some_guest(std::span<const std::uint8_t> data) {
+    return secure_ ? channel_->send(data) : socket_.send(data);
+}
+
+void GuestClient::close_guest_transport() {
+    if (secure_ && channel_) channel_->close();
+    channel_.reset();
+    secure_ = false;
+    socket_.close();
+}
+
+bool GuestClient::upgrade_client(const TlsUpgradeNotice& notice) {
+    // La notice doit rejouer le nonce du défi vérifié : sinon un attaquant
+    // pourrait faire dériver un secret sur un contexte différent (ADR-017).
+    if (challenge_nonce_.empty() || notice.nonce != challenge_nonce_) {
+        set_phase(GuestPhase::Refused, "notice d'upgrade hors du défi vérifié : refus", ErrorCode::ProtocolViolation);
+        return false;
+    }
+    std::vector<std::uint8_t> secret;
+    if (notice.secret_kind == AuthProofKind::ResumeSecret) {
+        secret.assign(config_.resume_secret.begin(), config_.resume_secret.end());
+    } else if (auto code = decode_invite_code(config_.invite_code.text); code) {
+        secret.assign(code.value().begin(), code.value().end());
+    }
+    if (secret.empty()) {
+        set_phase(GuestPhase::Refused, "secret de transport introuvable pour la nature annoncée", ErrorCode::Unauthorized);
+        return false;
+    }
+    auto derived = derive_transport_secret(secret, notice.nonce, state_.session_id, notice.identity);
+    if (!derived) {
+        set_phase(GuestPhase::Refused, "dérivation du secret de transport impossible : " + derived.error().message,
+            derived.error().code);
+        return false;
+    }
+    auto factory = make_tls13_factory();
+    if (!factory) { record_warning(factory.error()); return false; }
+    if (!factory.value()->available()) {
+        record_event("upgrade TLS impossible : " + std::string(factory.value()->unavailability_reason()));
+        return false;
+    }
+    // Vidage de l'outbox AVANT de céder le descripteur (borne 1 s).
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+    while (outbox_sent_ < outbox_.size()) {
+        auto sent = write_some_guest({outbox_.data() + outbox_sent_, outbox_.size() - outbox_sent_});
+        if (sent) { outbox_sent_ += sent.value(); continue; }
+        if (sent.error().code != ErrorCode::WouldBlock) return false;
+        if (std::chrono::steady_clock::now() >= deadline) return false;
+        PollEntry entry{static_cast<NativeSocket>(guest_descriptor()), false, true, false, false, false};
+        if (auto waited = poll_sockets(std::span<PollEntry>(&entry, 1), std::chrono::milliseconds(50)); !waited)
+            return false;
+    }
+    outbox_.clear();
+    outbox_sent_ = 0;
+    const TransportDescriptor fd = static_cast<TransportDescriptor>(socket_.release());
+    auto channel = factory.value()->wrap_client(fd,
+        TransportCredentials{notice.identity, derived.value()}, config_.tls_handshake_timeout_ms);
+    if (!channel) {
+        set_phase(GuestPhase::Refused, "upgrade TLS 1.3 refusé par la poignée de main : " + channel.error().message,
+            channel.error().code);
+        return false;
+    }
+    channel_ = std::move(channel.value());
+    secure_ = true;
+    const auto info = channel_->info();
+    state_.transport = info.protocol + " " + info.cipher + " (hôte authentifié)";
+    record_event("transport basculé : " + state_.transport);
+    return true;
+}
+
 void GuestClient::flush(std::chrono::milliseconds budget) {
     const auto deadline = std::chrono::steady_clock::now() + budget;
     while (outbox_sent_ < outbox_.size() && std::chrono::steady_clock::now() < deadline) {
-        std::vector<PollEntry> entries{PollEntry{socket_.native(), false, true, false, false, false}};
+        std::vector<PollEntry> entries{PollEntry{static_cast<NativeSocket>(guest_descriptor()), false, true, false, false, false}};
         auto waited = poll_sockets(entries, std::chrono::milliseconds(50));
         if (!waited) return;
         if (!entries[0].writable) continue;
-        auto sent = socket_.send({outbox_.data() + outbox_sent_, outbox_.size() - outbox_sent_});
+        auto sent = write_some_guest({outbox_.data() + outbox_sent_, outbox_.size() - outbox_sent_});
         if (!sent) return;
         outbox_sent_ += sent.value();
     }
@@ -575,6 +769,11 @@ void GuestClient::flush(std::chrono::milliseconds budget) {
 std::string GuestClient::resume_secret() const {
     std::lock_guard<std::mutex> guard(mutex_);
     return resume_secret_;
+}
+
+std::optional<MediaOffer> GuestClient::media_offer() const {
+    std::lock_guard<std::mutex> guard(mutex_);
+    return media_offer_;
 }
 
 void GuestClient::publish() {

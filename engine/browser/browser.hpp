@@ -6,16 +6,20 @@
 // - Capture de frames et injection d'événements.
 // - Nettoyage complet des profils temporaires à la destruction (§37).
 #include <algorithm>
+#include <chrono>
+#include <charconv>
 #include <cstdint>
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "../core/types.hpp"
 #include "../core/result.hpp"
+#include "url_origin.hpp"
 
 namespace plpt {
 
@@ -28,19 +32,11 @@ struct BrowserPolicy {
     bool allow_external_protocols = false;
 
     bool is_origin_allowed(std::string_view target) const {
-        if (target.empty()) return false;
-        // Interdiction absolue des protocoles locaux et dangereux (§28)
-        if (target.starts_with("file:") || target.starts_with("javascript:") ||
-            target.starts_with("data:") || target.starts_with("shell:") ||
-            target.starts_with("cmd:") || target.starts_with("powershell:")) {
-            return false;
-        }
-        if (allowed_origins.empty()) return false;
-        for (const auto& allowed : allowed_origins) {
-            if (allowed == "*") return true;
-            if (target.starts_with(allowed)) return true;
-        }
-        return false;
+        // Compare canonical HTTP(S) origins, not string prefixes. In particular,
+        // `http://allowed.example.attacker/` must not match `http://allowed.example`.
+        // Wildcards, userinfo, non-HTTP schemes, malformed authorities and
+        // non-canonical IP literals fail closed.
+        return browser::url_origin::is_allowed(target, allowed_origins);
     }
 };
 
@@ -49,6 +45,34 @@ struct BrowserContextInfo {
     ParticipantId owner{};
     std::string profile_id;
     std::string current_origin;
+};
+
+// A frame really produced by the browser compositor of one context. `data` is
+// the complete JPEG bitstream (media::FrameCodec::Jpeg); width/height are read
+// from the JPEG itself, never assumed. Immutable once published.
+struct CapturedFrame {
+    std::uint64_t sequence = 0;      // strictly increasing per context, starts at 1
+    std::uint64_t captured_ns = 0;   // steady clock, when the compositor delivered it
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    std::vector<std::uint8_t> data;
+};
+
+// Honest per-context counters for the UI, diagnostics and qualification.
+struct BrowserContextStats {
+    bool navigated = false;              // last navigation completed successfully
+    int last_http_status = 0;
+    std::uint64_t frames = 0;            // compositor frames received
+    std::uint64_t frame_bytes = 0;
+    std::uint64_t blocked_navigations = 0;
+    std::uint64_t blocked_requests = 0;  // sub-resources refused by the allowlist
+    std::uint64_t blocked_popups = 0;
+    std::uint64_t blocked_downloads = 0;
+    std::uint64_t denied_permissions = 0;
+    std::uint64_t inputs = 0;
+    std::uint32_t viewport_width = 0;
+    std::uint32_t viewport_height = 0;
+    std::string current_url;             // host-side only, never sent to guests
 };
 
 class IRemoteBrowserBackend {
@@ -60,6 +84,31 @@ public:
     // Capture : retourne une frame brute (l'encodage est dans capture_encode/).
     virtual Result<std::vector<std::uint8_t>> capture_frame(ContextId ctx) = 0;
     virtual Result<void> inject_input(ContextId ctx, const std::vector<std::uint8_t>& event) = 0;
+
+    // Real frame pipeline (ADR-018). Waits up to `timeout` for a frame whose
+    // sequence is greater than `after_sequence` and returns the LATEST one:
+    // intermediate frames are skipped on purpose, latency never accumulates.
+    // Backends without a real compositor fail closed.
+    virtual Result<std::shared_ptr<const CapturedFrame>> wait_frame(ContextId, std::uint64_t /*after_sequence*/,
+        std::chrono::milliseconds /*timeout*/) {
+        return Result<std::shared_ptr<const CapturedFrame>>::failure(
+            Error{ErrorCode::Unsupported, "ce backend ne produit pas de frames réelles", "browser"});
+    }
+    // HOST-SIDE diagnostics/qualification only (reads DOM state to prove that an
+    // injected event really changed the page). Never reachable from a guest.
+    virtual Result<std::string> evaluate_for_diagnostics(ContextId, const std::string& /*script*/) {
+        return Result<std::string>::failure(
+            Error{ErrorCode::Unsupported, "évaluation indisponible sur ce backend", "browser"});
+    }
+    virtual Result<BrowserContextStats> context_stats(ContextId) {
+        return Result<BrowserContextStats>::failure(
+            Error{ErrorCode::Unsupported, "statistiques indisponibles sur ce backend", "browser"});
+    }
+    // True only for a backend that runs a real browser engine.
+    virtual bool real_engine() const { return false; }
+    // Releases every context AND the engine itself (browser processes,
+    // temporary profiles). Idempotent; the backend may be reused afterwards.
+    virtual void shutdown_engine() {}
 };
 
 // Backend nul : échoue explicitement. Utilisé pour prouver que le coeur ne
@@ -82,20 +131,20 @@ public:
     }
 };
 
-// Backend géré : isole chaque contexte d'invité dans un répertoire de profil dédié,
-// applique la politique d'allowlist stricte, génère des frames de composition
-// et garantit la purge complète des données de session à la fermeture (§27, §28, §37).
-class ManagedBrowserBackend final : public IRemoteBrowserBackend {
+// Backend de démonstration uniquement : les pixels sont synthétiques et aucune
+// entrée n'est transmise à un navigateur. Il ne doit jamais servir de preuve de
+// partage ni être sélectionné implicitement comme backend de production.
+class DemoBrowserBackend final : public IRemoteBrowserBackend {
 public:
-    explicit ManagedBrowserBackend(std::string base_temp_dir = "")
+    explicit DemoBrowserBackend(std::string base_temp_dir = "")
         : base_temp_dir_(base_temp_dir.empty() ? default_temp_dir() : std::move(base_temp_dir)) {}
 
-    ~ManagedBrowserBackend() override {
+    ~DemoBrowserBackend() override {
         cleanup_all();
     }
 
-    ManagedBrowserBackend(const ManagedBrowserBackend&) = delete;
-    ManagedBrowserBackend& operator=(const ManagedBrowserBackend&) = delete;
+    DemoBrowserBackend(const DemoBrowserBackend&) = delete;
+    DemoBrowserBackend& operator=(const DemoBrowserBackend&) = delete;
 
     Result<BrowserContextInfo> create_context(ParticipantId owner, const BrowserPolicy& policy) override {
         if (owner.value == 0) {

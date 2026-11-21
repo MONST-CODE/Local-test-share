@@ -1,0 +1,123 @@
+raw_environment_start_utc=2026-11-19T19:31:55Z
+raw_environment_end_utc=2026-11-19T19:32:26Z
+duration_seconds=31
+authoritative_session_date=2026-11-13; raw execution clock retained
+commit=1a70c6600c5253433badd9ce446087242c62de5d
+branch=arena/125b0385-local-test-share
+os=Linux 6.1.158+ x86_64
+compiler=LLVM clang/clang++ 23.1.5 from llvm-runtime-clang-linux-x64@23.1.6-1; temporary wrapper adds GCC 12 builtin headers absent from npm package; Linux ABI uses system libstdc++/glibc
+command=DEVLINK_CXX=.cache/toolchain-provision/bin/clang++ DEVLINK_CC=.cache/toolchain-provision/bin/clang ./build.sh test debug --headless
+exit_code=1
+DevLink direct Linux operation=test mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261119T193155Z-test-debug-35305.log
+CXX=/home/user/Local-test-share/.cache/toolchain-provision/bin/clang++
+CC=/home/user/Local-test-share/.cache/toolchain-provision/bin/clang
+clang version 23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/Local-test-share/.cache/toolchain-provision/llvm/bin
+Configuration file: /home/user/Local-test-share/.cache/toolchain-provision/llvm/etc/clang/clang++.cfg
+native linker: /usr/bin/ld
+clang version 23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/Local-test-share/.cache/toolchain-provision/llvm/bin
+Configuration file: /home/user/Local-test-share/.cache/toolchain-provision/llvm/etc/clang/clang++.cfg
+toolchain-probe: native Linux x64, clang=23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117), C++=202002, pointer=8
+libstdc++ headers: 20220819
+SHA256 OK e6a9c4e75de8fe719f922dddc208627f77754a502909f457a1355981f20c21e0 /home/user/Local-test-share/out/linux/dependencies/SDL-f00dc919ca35b9756316e86c4777392de442f9b2.tar.gz
+SHA256 OK b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 /home/user/Local-test-share/out/linux/dependencies/imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859.tar.gz
+Compilation started: debug, clean deterministic objects (no cache)
+Compilation: engine/core/random.cpp
+Compilation: engine/core/digest.cpp
+Compilation: engine/core/mac.cpp
+Compilation: engine/core/secrets.cpp
+Compilation: engine/core/format.cpp
+Compilation: engine/diagnostics/audit.cpp
+Compilation: engine/discovery/process_tree.cpp
+Compilation: engine/discovery/terminal_classifier.cpp
+Compilation: engine/discovery/monitor.cpp
+Compilation: engine/service_registry/registry.cpp
+Compilation: engine/port_allocator/port_allocator.cpp
+Compilation: engine/platform/socket.cpp
+Compilation: engine/platform/linux/linux_platform.cpp
+Compilation: engine/session/session.cpp
+Compilation: engine/messaging/messaging.cpp
+Compilation: engine/protocol/envelope.cpp
+Compilation: engine/resource_manager/resource.cpp
+Compilation: engine/net/wire.cpp
+Compilation: engine/net/discovery.cpp
+Compilation: engine/net/host_server.cpp
+Compilation: engine/net/guest_client.cpp
+Compilation: engine/net/proxy.cpp
+Compilation: engine/net/transport.cpp
+Compilation: engine/net/transport_tls.cpp
+Compilation: engine/browser/webview2_backend.cpp
+Compilation: app/host_shell/main.cpp
+Linking: /home/user/Local-test-share/out/linux/tests/debug/bin/devlink-monitor
+Compilation: app/demo_service/main.cpp
+Linking: /home/user/Local-test-share/out/linux/tests/debug/bin/devlink-demo-service
+Compilation SDL C: src/SDL.c
+In file included from /home/user/Local-test-share/out/linux/tests/debug/vendor/sdl/src/SDL.c:21:
+In file included from /home/user/Local-test-share/out/linux/tests/debug/vendor/sdl/src/SDL_internal.h:250:
+In file included from /home/user/Local-test-share/out/linux/tests/debug/vendor/sdl/include/SDL3/SDL_intrin.h:365:
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:79:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+   79 |   return (__m64) __builtin_ia32_vec_init_v2si (__i, 0);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:161:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  161 |   return (__m64) __builtin_ia32_packsswb ((__v4hi)__m1, (__v4hi)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:176:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  176 |   return (__m64) __builtin_ia32_packssdw ((__v2si)__m1, (__v2si)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:191:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  191 |   return (__m64) __builtin_ia32_packuswb ((__v4hi)__m1, (__v4hi)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:205:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  205 |   return (__m64) __builtin_ia32_punpckhbw ((__v8qi)__m1, (__v8qi)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:219:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  219 |   return (__m64) __builtin_ia32_punpckhwd ((__v4hi)__m1, (__v4hi)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:233:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  233 |   return (__m64) __builtin_ia32_punpckhdq ((__v2si)__m1, (__v2si)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:247:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  247 |   return (__m64) __builtin_ia32_punpcklbw ((__v8qi)__m1, (__v8qi)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:261:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  261 |   return (__m64) __builtin_ia32_punpcklwd ((__v4hi)__m1, (__v4hi)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:275:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  275 |   return (__m64) __builtin_ia32_punpckldq ((__v2si)__m1, (__v2si)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:288:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  288 |   return (__m64) __builtin_ia32_paddb ((__v8qi)__m1, (__v8qi)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:301:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  301 |   return (__m64) __builtin_ia32_paddw ((__v4hi)__m1, (__v4hi)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:314:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  314 |   return (__m64) __builtin_ia32_paddd ((__v2si)__m1, (__v2si)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:337:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  337 |   return (__m64) __builtin_ia32_paddq ((__v1di)__m1, (__v1di)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:349:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  349 |   return (__m64) __builtin_ia32_paddsb ((__v8qi)__m1, (__v8qi)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:363:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  363 |   return (__m64) __builtin_ia32_paddsw ((__v4hi)__m1, (__v4hi)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:377:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  377 |   return (__m64) __builtin_ia32_paddusb ((__v8qi)__m1, (__v8qi)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:391:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  391 |   return (__m64) __builtin_ia32_paddusw ((__v4hi)__m1, (__v4hi)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/gcc/x86_64-linux-gnu/12/include/mmintrin.h:404:10: error: invalid conversion between vector type '__m64' (vector of 2 'int' values) and integer type 'int' of different size
+  404 |   return (__m64) __builtin_ia32_psubb ((__v8qi)__m1, (__v8qi)__m2);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+Command exit 1: /home/user/Local-test-share/.cache/toolchain-provision/bin/clang -std=c11 -D_GNU_SOURCE -fPIC -pthread -I /home/user/Local-test-share/out/linux/tests/debug/config -I /home/user/Local-test-share/out/linux/tests/debug/vendor/sdl/include -I /home/user/Local-test-share/out/linux/tests/debug/vendor/sdl/src -O0 -g -MMD -MP -MF /home/user/Local-test-share/out/linux/tests/debug/objects/sdl/src_SDL.c.o.d -c /home/user/Local-test-share/out/linux/tests/debug/vendor/sdl/src/SDL.c -o /home/user/Local-test-share/out/linux/tests/debug/objects/sdl/src_SDL.c.o 
+FAILURE exit=1 operation=test (see /home/user/Local-test-share/out/linux/logs/20261119T193155Z-test-debug-35305.log)

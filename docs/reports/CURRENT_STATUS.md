@@ -1,4 +1,6 @@
-# État courant du moteur — chiffres et statuts datés
+# État courant du moteur — chiffres historiques, non autoritatifs pour la branche active
+
+> Ce rapport décrit un état antérieur (`arena/1a188065-local-test-share`, base `7374734`) et n'est pas l'état courant de la branche `arena/125b0385-local-test-share`. Depuis, l'architecture a évolué : le transport TLS 1.3/défi-réponse est intégré au plan de contrôle, et le backend WebView2 est explicitement fail-closed mais toujours non opérationnel. Pour l'état à auditer, utiliser `docs/reports/FINAL_COMPLETION_AUDIT.md`; les chiffres ci-dessous restent des preuves historiques uniquement.
 
 Date : **2026-11-14**. Branche de travail : `arena/1a188065-local-test-share`,
 base `main` `7374734` (fusion de la PR #4) plus la fusion du commit propriétaire

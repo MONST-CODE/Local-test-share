@@ -1,161 +1,90 @@
-# Sécurité — garanties limitées à l'incrément livré
+# Sécurité DevLink — état réel et risques résiduels
 
-**Cette preview ne partage aucune application.** Le transport authentifié,
-WebView2, la politique de navigation et la suppression des profils ne sont pas
-implémentés. Ne pas l'exposer comme une version LAN utilisable par des invités.
+> **Cette branche n'est pas une release de partage d'applications.** Le vrai
+> Browser Worker WebView2, la capture, le streaming des pixels, l'injection
+> d'interactions et l'allowlist appliquée au navigateur ne sont pas opérationnels.
+> Le fail-closed doit rester activé : ne pas ouvrir une session de partage réelle
+> en production.
 
-## Frontières actuelles
+## Ce qui existe dans le code
 
-- Les adaptateurs observent le système local sous le compte courant. Aucune élévation,
-  injection, commande shell, collecte d'environnement, `.env` ou historique de terminal.
-- La sélection d'un listener TCP est un état local ; elle ne publie rien et ne
-  configure pas le pare-feu. Il n'existe aucun bouton d'invitation opérationnel.
-- Les exécutables n'utilisent pas `DynamicPortAllocator`. Ses sockets sont ouverts
-  seulement dans les tests/prototypes explicitement lancés.
-- Les modèles session/chat/protocole ne sont pas liés au moniteur distribué.
-- Une origine probable, une IP, un PID ou une annonce mDNS ne sera jamais une identité.
+- Génération de secrets via les primitives OS existantes et messages de contrôle
+  bornés/validés.
+- Hôte/invité avec défi-réponse, admission et révocation dans le moteur ; les
+  parcours réseau ont des tests loopback.
+- Transport TLS 1.3 PSK utilisant OpenSSL chargé à l'exécution sur Linux. La
+  politique par défaut interdit les versions TLS inférieures ; un mauvais secret
+  ou l'absence du runtime doit échouer sans repli silencieux.
+- Le backend WebView2 est explicitement indisponible. Le backend géré synthétique
+  est réservé aux tests et démos identifiés ; il ne doit pas être décrit comme un
+  navigateur réel.
+- Le proxy applicatif existe, mais son transport de données n'est pas établi comme
+  chiffré de bout en bout.
 
-## Ce qui est vérifié vs requis avant partage
+## Limites de qualification
 
-| Menace | Contrôle présent | Porte restante |
+Les preuves d'intégration TLS consignées sont des tests loopback Linux. Elles ne
+constituent ni un audit indépendant, ni un test sur deux machines physiques, ni une
+qualification Windows. Le code TLS Windows est indisponible dans l'état courant.
+La disponibilité d'OpenSSL sous Linux ne démontre pas la disponibilité de WebView2,
+qui est propre à Windows.
+
+La matrice de l'audit doit distinguer les composants :
+
+| Domaine | État honnête | Limite principale |
 |---|---|---|
-| PID recyclé / table partielle | Création avant/après, sélection invalidée, états Gone/Unavailable ; tests | Churn natif Windows avec Next/Vite/Docker/WSL |
-| Usurpation de port | Socket conservé, exclusivité OS, handle RAII ; tests loopback natifs Linux **et Winsock x64** | Pare-feu, compte standard, churn applicatif et pile QUIC réelle |
-| Observateur envoie une entrée | Refus dans `model::Session`, contexte et contrôleur exclusif | Relier chaque message authentifié au moteur, tests de paquets forgés |
-| DM divulgué dans le canal général | Contrôles acteur/destinataire, réponses privées, quotas ; tests | Routage réseau authentifié, reprise, modération |
-| Message énorme ou invalide | Codec borné avant allocation ; UTF-8 et quotas dans le modèle ; fuzz smoke | Parser incrémental QUIC, backpressure, fuzz long et charge |
-| Invitation volée/rejouée | **Aucun système d'invitation livré** ; ancien FNV retiré | CSPRNG, empreinte fournisseur audité, fingerprint hôte, expiration, usages, quotas |
-| Écoute LAN / faux mDNS | Aucun canal PLPT ni annonce dans cette preview | QUIC/TLS, identité hôte, invitation validée, refus 0-RTT sensible |
-| SSRF / accès aux fichiers depuis la page | Aucun navigateur exécuté ; ce n'est pas un filtre testé | Origines strictes, redirections, sous-ressources, WS, service workers, protocoles externes |
-| Suppression d'un dossier non possédé | Backend de stockage **indisponible**, donc aucune suppression | Leases, ACL, reparse points, fin des processus, test crash |
-| Fuite par logs applicatifs | Audit typé sans texte libre, borné, désactivé par défaut ; pas d'INI/log ImGui | Audit OS/driver/profil/dumps sur les vraies machines |
+| TLS 1.3 PSK côté Linux | `IMPLEMENTED_BUT_NOT_VERIFIED` pour livraison courante | rapports loopback présents, build de référence non rejoué ici |
+| TLS Windows/UCRT64 | `BLOCKED` | machine/runtime Windows absent et backend non câblé |
+| Authentification et défi-réponse | `PARTIALLY_IMPLEMENTED` | tests locaux présents, pas d'E2E physique ni revue indépendante |
+| Proxy de service | `PARTIALLY_IMPLEMENTED` | données HTTP/proxy non qualifiées chiffrées de bout en bout |
+| Browser Worker et politique d'origine | `NOT_IMPLEMENTED` | pas de contrôleur WebView2 réel ni interception des navigations |
+| Frames et interactions | `NOT_IMPLEMENTED` | aucun pipeline réel, aucun format wire média validé |
+| Modes A/B/C sur réseau | `PARTIALLY_IMPLEMENTED` | modèles/tests locaux ne démontrent pas l'application E2E des capacités |
 
-## Cryptographie et invitations
+## Modèle de menace visé
 
-Pas d'algorithme maison, de secret « haché » en FNV, de pseudo-TLS ou de jeton
-comparé dans un simple transport en mémoire. BCryptGenRandom / getrandom sont
-les seules primitives d'entropie utilisées, sans fallback faible. Un appel RNG
-réussi n'est pas une validation du handshake, qui n'existe pas encore.
+L'invité ne doit jamais recevoir par défaut un shell, le bureau, le système de
+fichiers, le dépôt source, les fichiers `.env`, les ports locaux arbitraires, Docker
+ou une console d'administration. La découverte d'un port n'est jamais une
+autorisation. Le produit final devra authentifier chaque connexion, limiter les
+capacités à une session/participant, appliquer les permissions côté moteur et
+révoquer ces capacités immédiatement.
 
-Le choix QUIC/TLS doit être un ADR séparé : version, licence, canal de correction,
-API d'identité et de certificats, disponibilité Windows/Linux, ownership du socket.
-Les opérations rejouables (consommation d'invitation, rôle, contrôle) doivent attendre
-l'authentification finale ; pas de traitement sensible en 0-RTT. La découverte
-mDNS future reste strictement non authentifiante.
+Ces objectifs ne doivent pas être confondus avec des garanties actuellement
+fournies par le pipeline navigateur, qui manque encore.
 
-## Autorisation future
+## Risques techniques à traiter avant le partage réel
 
-L'identité d'une connexion vient du transport authentifié, **pas du champ
-participant_id fourni par l'invité**. L'orchestrateur doit vérifier, dans cet ordre :
+1. **TLS/identité :** auditer la dérivation PSK, le lien preuve/session, les
+   nonces, expirations, rejeu, rotation et effacement. La revue actuelle est
+   interne uniquement ; le PSK ne fournit pas de confidentialité persistante
+   contre la compromission ultérieure du secret.
+2. **Windows :** brancher une pile TLS maintenue et tester identité, versions,
+   échecs et absence de clair sous UCRT64 ; aucun badge « sécurisé » avant cela.
+3. **Proxy :** établir le chiffrement du canal de données, restreindre destinations,
+   ports, redirections et origines ; tester SSRF/rebinding et la révocation.
+4. **WebView2 :** filtrer URL normalisée (schéma/hôte/port), redirections,
+   sous-ressources, fenêtres, téléchargements, `file:`, protocoles externes et
+   permissions. Pas d'accès système aux entrées invité.
+5. **Média :** un codec payload v1 big-endian borné et une file raw-frame limitée
+   existent (`remote_frame.hpp`, `engine/media/frame_queue.hpp`), mais ils ne sont
+   pas raccordés au transport TLS, à WebView2, au décodage compressé ou au rendu.
+   Il reste à tester le pipeline end-to-end, le backpressure réseau et le décodage
+   contre des entrées adversariales.
+6. **Modes et capacités :** vérifier côté serveur toute entrée, bail exclusif du
+   mode collaboratif et refus absolu des événements pour le mode observation.
+7. **Cycle de vie :** tests de démarrage partiel, panne, révocation, crash, arrêt,
+   destruction de callbacks/profils et absence de processus navigateur orphelins.
 
-1. état de connexion et exclusion de données précoces ;
-2. session, expiration, révocation ;
-3. type, limites et version négociée ;
-4. identité enveloppe = identité liée à la connexion ;
-5. séquence / canal / capacité ;
-6. contexte autorisé et verrou de contrôle ;
-7. quota et file bornée ;
-8. seulement ensuite : effet dans le Browser Worker ou la messagerie.
+## Consignes d'utilisation
 
-Le codec livré effectue une partie de l'étape 3, pas ces huit étapes. Aucun accès
-à une méthode C++ interne ne doit devenir automatiquement une commande réseau.
+- Ne pas exposer cette branche à un réseau non fiable.
+- Ne pas utiliser le backend synthétique comme preuve de partage.
+- Ne pas modifier le code pour contourner les gardes TLS/WebView2.
+- Ne pas journaliser les codes d'invitation, secrets TLS, cookies, jetons de capacité
+  ou contenu utilisateur.
+- Ne pas considérer un test `SKIP`, GCC exploratoire, boucle locale ou capture DPI
+  à facteur injecté comme une qualification physique.
 
-## Politique navigateur à démontrer au Lot E
-
-L'allowlist devra couvrir schéma, hôte normalisé, port et origines confirmées, pas
-une comparaison de préfixe de chaîne. Tester `file:`, `ftp:`, protocoles externes,
-popups, iframes, redirections, sous-ressources, WS/HMR, service workers, permissions,
-clipboard, drag/drop et téléchargements. DNS rebinding, metadata cloud et interfaces
-admin locales doivent être considérés. Tester la capacité réelle de WebView2 à
-intercepter **tous** ces chemins ; une navigation top-level filtrée ne suffit pas.
-
-Garder le sandbox du moteur Web et ses mises à jour. Ne pas capturer le bureau
-complet. Ne pas utiliser un mécanisme d'injection système de clavier/souris pour
-contourner les difficultés d'entrée dans la WebView. Le prototype doit échouer
-explicitement lorsqu'une garantie n'est pas démontrable.
-
-## Persistance et nettoyage
-
-La preview n'a ni profil navigateur ni fichier de chat. Cela ne permet **pas**
-d'affirmer « aucune donnée écrite » : l'OS, SDL/drivers, le terminal, des dumps ou
-le swap peuvent laisser des traces. La capture `--screenshot` de smoke test écrit
-un BMP uniquement à la demande explicite du développeur. Les fixtures de tests
-écrivent leurs propres fichiers temporaires ; elles ne sont pas une implémentation
-de stockage de session.
-
-La libération de collections C++ ne garantit pas l'écrasement physique de leurs
-allocations. SSD, journaling et pagefile rendent l'effacement absolu non garanti.
-Un besoin strict RAM-only/chiffrement temporaire exige un prototype et un ADR.
-
-La migration livre des **archives portables**, pas un installateur NSIS/MSI.
-Elles n'ajoutent ni service, auto-démarrage, règle de pare-feu ou demande d'élévation.
-Extraction et exécution du ZIP ont été testées sur Windows natif en CI. Pour retirer
-la preview : fermer ses processus puis supprimer uniquement son dossier d'extraction.
-Le poste client standard, l'installation/désinstallation complète, la signature et
-SmartScreen **restent à qualifier** ; le manifeste asInvoker n'est pas une preuve
-que tous les tests CI ont tourné sous un compte non privilégié.
-
-## Incrément de stabilisation (2026-11-14)
-
-Garanties ajoutées, chacune adossée à un test réel et non à une intention :
-
-- **La capacité ne franchit pas la frontière.** Le jeton d'un service partagé est
-  vérifié par le proxy puis retiré de la requête transmise au service local :
-  paramètre d'URL, cookie, en-tête `X-PLPT-Token` et paramètre homonyme du `Referer`.
-  Le test LAN fait renvoyer à l'amont l'en-tête qu'il a réellement reçu et vérifie
-  l'absence du jeton dans les quatre modes d'autorisation. Le dépôt d'un cookie de
-  session (`HttpOnly`, `SameSite=Strict`, sans `Max-Age`) permet aux sous-ressources
-  de passer sans répéter le jeton dans les URL ; un échec de dépôt est compté et
-  averti, jamais masqué.
-- **Le cookie n'est jamais déposé dans une réponse qui ne peut pas le porter.** Les
-  réponses informationnelles (`100 Continue`, `103 Early Hints`, tout `1xx` sauf
-  `101`) sont transmises **telles quelles** et l'interception continue jusqu'à la
-  réponse pertinente : un `Set-Cookie` posé sur un `1xx` serait ignoré du navigateur
-  et donnerait l'illusion d'une capacité accordée. Le cookie n'est inséré que dans
-  une `2xx`–`5xx`, et son insertion est vérifiée octet par octet par le test
-  `lan_proxy_informational_and_upgrade_responses`.
-- **Un upgrade n'est jamais modifié.** Sur `101 Switching Protocols` — la réponse
-  d'un WebSocket — le proxy transmet sans toucher un octet : ajouter un en-tête à une
-  réponse `101` casserait la poignée de main et falsifierait le canal. Le renoncement
-  au cookie est compté (`grants_skipped`) et averti (`ProtocolViolation`), il n'est
-  pas silencieux. Même traitement pour une réponse amont illisible, et pour un
-  en-tête de réponse incomplet à la fermeture de l'amont : les octets réels sont
-  transmis à l'invité plutôt que perdus, et l'échec du dépôt est compté
-  (`grants_failed`).
-- **La saturation d'un service partagé est dite, pas absorbée.** Le pool de
-  connexions distingue les connexions **actives** des tâches **en attente** avec une
-  capacité totale unique (`workers + queue_capacity`) ; au-delà la soumission est
-  refusée, l'appelant reste propriétaire de la socket et répond `503`. Aucune file
-  infinie, aucun thread détaché, tous les ouvriers joints à l'arrêt. Une connexion
-  muette ne peut pas occuper un ouvrier indéfiniment : les délais de socket sont
-  bornés (`10 s` pour une requête, `120 s` d'inactivité WebSocket).
-- **L'identité ne repose plus sur le nom.** La reprise d'une place exige un secret
-  aléatoire de 16 octets émis par l'hôte sur le canal authentifié, comparé à temps
-  constant, consommé puis rotaté, supprimé par la révocation. Un homonyme et un
-  secret forgé obtiennent une autre place — vérifié sur TCP réel. Un pair annonçant
-  une révision de protocole inférieure à 1.2 est refusé explicitement, sans repli.
-- **Départ volontaire et coupure ne sont plus confondus.** Un `Bye` libère le siège
-  immédiatement ; une coupure le réserve pendant le délai de grâce. Sans cela, la
-  capacité d'accueil se consommait définitivement au fil des départs.
-- **L'exposition réseau est déterminée, pas subie.** Plus aucun composant réseau
-  n'écoute sur toutes les interfaces par défaut : l'adresse est choisie par
-  énumération réelle des interfaces (adresse privée LAN, routable de préférence),
-  avec repli sur la boucle locale signalé par un avertissement. `0.0.0.0`/`::`
-  exige un choix explicite, qui est alors publié et journalisé. L'adresse réellement
-  liée est celle qui est affichée.
-- **Aucun thread orphelin dans le service de démonstration.** Le pool d'ouvriers est
-  fixe et joint à l'arrêt ; le `detach()` et le retrait qui testait `joinable()`
-  (toujours vrai) ont disparu. Observation réelle : 9 threads stables après 85
-  requêtes dont 30 parallèles, arrêt en 100 ms après `SIGTERM`.
-
-Limites inchangées et toujours déclarées : pas de TLS ni de QUIC (canal de contrôle
-et proxy en clair sur le LAN), pas de preuve d'identité de l'hôte par clé publique,
-pas de rendu distant, découverte multicast non qualifiée entre deux machines, aucun
-secret n'est protégé contre un observateur passif du réseau local.
-
-## Critères de refus de release
-
-Une V1 ne peut être annoncée avant les critères du maître §23, les tests natifs
-Windows, l'audit des frontières navigateur/transport, le nettoyage normal/après
-crash et les mesures avec cinq véritables clients. Les résultats de tests de ce
-dépôt n'équivalent pas à un audit de sécurité indépendant.
+Une revue interne n'est pas un audit de sécurité indépendant. Une évaluation de
+sécurité externe reste nécessaire avant tout usage sensible ou diffusion générale.

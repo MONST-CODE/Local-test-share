@@ -1,103 +1,91 @@
-# DevLink — Plateforme Locale de Partage et de Test d'Applications
+# DevLink — poste desktop local (préversion de développement)
 
-**C++20 · Clang++ · Windows x64 · SDL3 + Dear ImGui · Architecture Native**
+**C++20 · SDL3 · Dear ImGui · Windows x64 / Linux x64 selon toolchain disponible**
 
-DevLink est une plateforme desktop native de partage temporaire, sécurisé et collaboratif d'applications locales. Elle permet à un développeur de partager une application exécutée sur son propre ordinateur avec plusieurs autres personnes sur le réseau local, sans déployer son application sur un hébergeur, sans transmettre son dépôt Git, sans exposer son système de fichiers ni dépendre d'un tiers de tunnel externe.
+> **État : le partage réel fonctionne sous Windows et il est qualifié sur une seule
+> machine. Le test LAN sur deux machines physiques n'a pas encore été exécuté.**
+> L'hôte exécute l'application dans un vrai navigateur (WebView2), envoie ses images
+> par un canal TLS 1.3 propre à chaque invité, et l'invité pilote la page (souris,
+> clavier, texte Unicode) selon le mode A/B/C, que l'hôte fait respecter. Preuve :
+> `devlink-desktop-e2e-tests` lance les vrais exécutables hôte et invité ; le clic et
+> la saisie faits dans la fenêtre invitée modifient le DOM de l'hôte (ADR-018). Tant
+> que `docs/reports/REAL_LAN_QUALIFICATION.md` n'est pas exécuté sur deux machines,
+> cette branche n'est pas une release LAN qualifiée.
 
----
+DevLink réunit un poste desktop et un moteur local en cours de reconstruction pour
+observer des services, contrôler des sessions et, à terme, partager temporairement
+une application web locale. L'objectif est de ne pas transférer le dépôt source et
+ne pas exposer le bureau ou le système de fichiers de l'hôte. Les objectifs produit
+ne sont pas à confondre avec les fonctions qualifiées dans l'état actuel.
 
-## Fonctionnalités Principales
+## État fonctionnel vérifiable
 
-- **Découverte Native de Services** :
-  - Détection automatique des listeners TCP (IPv4 et IPv6) et des endpoints UDP liés.
-  - Association des ports aux PIDs et reconstruction de l'arbre de processus (PPID).
-  - Déduction des terminaux d'origine (PowerShell, CMD, Windows Terminal, IDE) avec indice de confiance explicite.
-  - Aucune exposition automatique de service : sélection et autorisation strictement explicites par l'hôte.
+- **Moniteur local :** observation des processus/services et de leurs ports, avec
+  sélection explicite. La découverte ne constitue pas une autorisation de partage.
+- **Poste desktop :** interface SDL3/ImGui, design system, ressources de marque et
+  commandes reliées aux composants moteur disponibles. Le smoke test headless ne
+  constitue pas une qualification de fenêtre native sur Windows ou Linux.
+- **Plan de contrôle :** hôte/invité, admission, défi-réponse et TLS 1.3 PSK
+  (OpenSSL 3 UCRT64 épinglé sous Windows, chargé depuis le dossier de l'application).
+  Le démarrage d'un partage est refusé si TLS est indisponible, sans repli en clair.
+- **Navigateur réel (Windows) :** WebView2 hors écran, un profil InPrivate par
+  contexte, allowlist d'origines appliquée aux navigations, redirections,
+  sous-ressources, fenêtres et téléchargements. Le navigateur ne sort que par une
+  garde réseau SOCKS5 qui n'ouvre que les `hôte:port` choisis : pas d'autre port
+  local, pas de base de données, pas de Docker.
+- **Partage :** images JPEG du compositeur, canal média TLS 1.3 PSK séparé et propre
+  à chaque invité (clé émise sur le contrôle chiffré), décodage WIC, texture SDL3,
+  retour souris/molette/clavier/texte. Le mode A donne des profils navigateur
+  indépendants (le backend de l'application reste commun). Le mode B donne un
+  contrôle exclusif transférable. En mode C, les entrées sont refusées côté hôte.
+- **Proxy HTTP :** le module existe encore, mais il **ne fait plus partie du
+  partage** : il donnerait aux invités les ressources web du projet (ADR-013/018).
 
-- **Plan de Contrôle Réseau Sécurisé** :
-  - Allocation dynamique d'endpoints réseau (`bind(port=0)` sous le compte utilisateur courant).
-  - Annonce et écoute de découverte LAN (Multicast UDP `239.255.77.88` / port 47788).
-  - Codes d'invitation cryptographiques aléatoires (haute entropie, format base32 Crockford, temps constant).
-  - Authentification mutuelle et file d'attente d'approbation manuelle pour chaque invité.
-  - Capacité d'accueil paramétrable (scénario de référence à 5 invités indépendants).
+## Plateformes et limites
 
-- **Plan de Données et Proxy d'Application** :
-  - Pont TCP sécurisé avec contrôle d'accès strict par jeton de capacité (32 caractères hexadécimaux).
-  - Transmission transparente des protocoles HTTP/1.1, SSE et WebSockets (RFC 6455).
-  - Sondage actif de l'amont local et isolation des flux.
+- **Windows x64 / MSYS2 UCRT64 / Clang++ :** chaîne de référence définie par
+  `build.bat`; pas de qualification native disponible dans l'environnement de
+  continuation courant. TLS WebView2, icônes PE et fenêtre native doivent y être
+  revalidés.
+- **Linux x64 :** build distinct défini par `build.sh`. Les résultats GCC utilisés
+  pour le diagnostic sont exploratoires et ne remplacent pas Clang++ >=18. La
+  disponibilité d'un vrai navigateur de partage Linux n'est pas fournie.
+- **DPI :** captures SDL logiciel aux facteurs typographiques 100/125/150/200 %
+  disponibles sous `docs/reports/evidence/dpi-captures/`. Elles ne prouvent pas une
+  transition entre moniteurs physiques.
+- **LAN multi-machine :** pas encore exécuté. Le protocole reproductible (avec les
+  commandes `devlink-desktop --host` / `--join`) se trouve dans
+  `docs/reports/REAL_LAN_QUALIFICATION.md`. Les tests en boucle locale ne prouvent
+  pas la connectivité physique.
+- **Invité Linux :** non disponible (décodeur JPEG portable à intégrer). Hôte et
+  invité : Windows 10/11 x64.
 
-- **Rendu Distant & Isolation des Invités** :
-  - Moteur d'isolation de navigation (`IRemoteBrowserBackend` et `ManagedBrowserBackend`).
-  - Profils de navigateur indépendants par testeur (cookies, cache et stockage local séparés).
-  - Allowlist stricte d'origines (interdiction absolue de `file://`, scripts système et protocoles externes).
-  - Nettoyage automatique et purge immédiate des répertoires temporaires lors de la fermeture de session.
+## Construire et tester
 
-- **Hub Collaboratif Intégré** :
-  - Messagerie instantanée de session (canal général et messages privés chiffrés sur le canal de contrôle).
-  - Statut de présence et mesure de latence réseau réelle en millisecondes.
-  - Système de signalement d'anomalies (Feedback) avec gravité (Informatif, Mineur, Majeur, Bloquant) et route concernée.
+Consulter [`docs/BUILD.md`](docs/BUILD.md) avant le build. Les commandes officielles
+sont les scripts versionnés ; elles ne téléchargent les dépendances que sur demande.
 
-- **Interface Graphique Native** :
-  - Développée avec SDL3 et Dear ImGui, rendu matériel accéléré.
-  - Espace Hôte : Tableau de bord, Centre de Découverte, Configuration de Partage, Supervision de Session, Chat, Feedback, Diagnostics.
-  - Espace Invité : Découverte automatique des sessions, Connexion, Application Partagée, Chat et Formulaire de Signalement.
-
----
-
-## Règles de Sécurité Non Négociables
-
-1. **Aucun shell ou terminal invité** sur l'ordinateur hôte.
-2. **Aucun accès au bureau** ou partage d'écran généraliste.
-3. **Aucun accès au disque dur** ni transmission du code source / fichiers `.env`.
-4. **Aucun accès direct** aux bases de données locales (PostgreSQL, Docker Engine, Supabase Studio non exposés).
-5. **Moindre privilège** : fonctionne exclusivement sous le compte utilisateur sans élévation administrateur.
-6. **Éphémérité** : révocation immédiate et nettoyage des ressources à la fermeture.
-
----
-
-## Compilation et Qualification (Windows x64)
-
-Prérequis : **MSYS2 UCRT64** avec Clang++ (`C:\msys64\ucrt64\bin\clang++.exe`), SDL3 3.4.20 et binutils natifs.
-
-```bat
-:: Vérification de l'environnement
-.\build.bat doctor --verbose
-
-:: Téléchargement et vérification des dépendances épinglées (ImGui / SDL3)
-.\build.bat deps --fetch
-
-:: Compilation du projet en mode Debug
-.\build.bat debug
-
-:: Exécution de la suite complète de tests (31 cas unitaires, 7 cas système, UI smoke tests)
-.\build.bat test
-
-:: Lancement de l'application desktop DevLink
-.\out\windows\debug\bin\plpt-desktop.exe
-
-:: Compilation et packaging de la version de production
-.\build.bat release
-.\build.bat package
+```sh
+./build.sh help
+./build.sh deps --fetch
+./build.sh doctor --verbose
+./build.sh test debug --headless
+./build.sh selftest
 ```
 
-Le livrable final est généré sous forme d'archive autonome dans `out\windows\packages\`.
+Build officiel Linux bloqué si Clang++ >=18 n'est pas installé. `--headless` est
+un profil de test, pas une build desktop native distribuable. Pour Windows, utiliser
+`build.bat help` dans un terminal Windows x64 puis suivre `docs/BUILD.md` ; les
+commandes Windows ne sont pas qualifiées en exécutant un build croisé Linux.
 
----
+## Branding et preuves
 
-## Structure du Dépôt
+Le maître SVG et ses exports sont sous `assets/branding/`. Les limites et mesures
+sont consignées dans `docs/reports/evidence/`; les rapports anciens restent datés
+et ne remplacent pas une exécution courante. Voir aussi :
 
-- `app/` :
-  - `desktop_ui/` : Interface graphique native DevLink (SDL3 / ImGui).
-  - `host_shell/` : Moniteur CLI d'inspection locale.
-  - `demo_service/` : Service HTTP/WebSocket local pour la qualification de bout en bout.
-- `engine/` :
-  - `core/` : Types forts, Result, digests SHA-256, secrets, horloge.
-  - `discovery/` : Arbre de processus, observateur de sockets, classificateur de terminaux.
-  - `service_registry/` : Registre des services et modélisation des états de partage.
-  - `port_allocator/` : Allocation dynamique de ports OS sans TOCTOU.
-  - `net/` : Wire protocol, discovery multicast, HostServer, GuestClient, ServiceProxy.
-  - `browser/` : Moteur d'isolation de profil, allowlist et capture (`IRemoteBrowserBackend`).
-  - `messaging/` : Modèles de chat, quotas et remontée d'anomalies.
-  - `platform/` : Adaptateurs système Windows et Linux.
-- `docs/` : Documentation d'architecture, réseau, protocole, sécurité et guides d'utilisation.
-- `tests/` : Suites de tests unitaires, d'intégration, de conformité plateforme et de robustesse.
+- [`docs/SECURITY.md`](docs/SECURITY.md) — garanties et risques résiduels ;
+- [`docs/NETWORK.md`](docs/NETWORK.md) — transport et frontières réseau ;
+- [`docs/QUICKSTART.md`](docs/QUICKSTART.md) — portée réelle de cette préversion ;
+- [`docs/reports/FINAL_COMPLETION_AUDIT.md`](docs/reports/FINAL_COMPLETION_AUDIT.md) —
+  audit de clôture et critères encore bloquants.

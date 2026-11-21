@@ -3,6 +3,7 @@
 // Composants d'interface standardisés DevLink (§5.2).
 #include <imgui.h>
 #include <string_view>
+#include "icons.hpp"
 #include "themes.hpp"
 #include "typography.hpp"
 
@@ -26,18 +27,57 @@ inline void card_end() {
     ImGui::PopStyleColor(2);
 }
 
-// Badge de statut (ex: ONLINE, ACTIF, EN ATTENTE, ERREUR)
+// Badge de statut (ex: EN LIGNE, ACTIVE, EN ATTENTE, ERREUR).
+// Sûr en C++ : le libellé est un std::string_view qui n'est JAMAIS passé à une
+// API attendant une chaîne terminée par zéro. ImGui::CalcTextSize et
+// ImDrawList::AddText acceptent une plage [begin, end) explicite, donc aucune
+// copie, aucune allocation par frame et aucune lecture hors limites.
+// Ce n'est pas un ImGui::Button : un badge n'est pas interactif et n'a donc pas
+// besoin d'identifiant d'item (pas de collision d'ID entre deux badges homonymes).
 inline void status_pill(std::string_view label, const ImVec4& color) {
     const auto& s = theme_spacing();
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(color.x, color.y, color.z, 0.20f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(color.x, color.y, color.z, 0.30f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(color.x, color.y, color.z, 0.40f));
-    ImGui::PushStyleColor(ImGuiCol_Text, color);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, s.radius_badge);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 3.0f));
-    ImGui::Button(label.data());
-    ImGui::PopStyleVar(2);
-    ImGui::PopStyleColor(4);
+    const float pad_x = 10.0f;
+    const float pad_y = 3.0f;
+    const char* begin = label.data();
+    const char* end = label.data() + label.size();
+    const ImVec2 text_size = ImGui::CalcTextSize(begin, end);
+    const ImVec2 box_size{text_size.x + pad_x * 2.0f, text_size.y + pad_y * 2.0f};
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    // Réservation réelle de l'espace dans le layout : le badge occupe sa place.
+    ImGui::Dummy(box_size);
+    const ImVec4 background{color.x, color.y, color.z, 0.18f};
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    draw->AddRectFilled(origin, ImVec2{origin.x + box_size.x, origin.y + box_size.y},
+        ImGui::ColorConvertFloat4ToU32(background), s.radius_badge);
+    draw->AddText(ImVec2{origin.x + pad_x, origin.y + pad_y},
+        ImGui::ColorConvertFloat4ToU32(color), begin, end);
+}
+
+// Badge de statut AVEC glyphe vectoriel : le sens est porté à la fois par la
+// couleur, le texte et le dessin (accessibilité : aucun sens couleur seule).
+inline void status_pill(icons::Icon glyph, std::string_view label, const ImVec4& color) {
+    const auto& s = theme_spacing();
+    const float pad_x = 10.0f;
+    const float pad_y = 3.0f;
+    const float glyph_size = 13.0f;
+    const float gap = 6.0f;
+    const char* begin = label.data();
+    const char* end = label.data() + label.size();
+    const ImVec2 text_size = ImGui::CalcTextSize(begin, end);
+    const ImVec2 box_size{text_size.x + glyph_size + gap + pad_x * 2.0f,
+        (text_size.y > glyph_size ? text_size.y : glyph_size) + pad_y * 2.0f};
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(box_size);
+    const ImVec4 background{color.x, color.y, color.z, 0.18f};
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    draw->AddRectFilled(origin, ImVec2{origin.x + box_size.x, origin.y + box_size.y},
+        ImGui::ColorConvertFloat4ToU32(background), s.radius_badge);
+    const ImU32 solid = ImGui::ColorConvertFloat4ToU32(color);
+    icons::draw_at(glyph,
+        ImVec2{origin.x + pad_x, origin.y + (box_size.y - glyph_size) * 0.5f},
+        glyph_size, solid);
+    draw->AddText(ImVec2{origin.x + pad_x + glyph_size + gap, origin.y + pad_y},
+        solid, begin, end);
 }
 
 // Carte statistique avec titre, nombre et sous-titre explicatif
@@ -45,9 +85,10 @@ inline void metric_card(const char* id, const char* title, std::size_t count, co
     const auto& c = theme_colors();
     if (card_begin(id, ImVec2(width, 110.0f))) {
         text_muted(title);
-        ImGui::SetWindowFontScale(1.4f);
+        // Vraie taille de police (hiérarchie typographique), jamais un scale.
+        ImGui::PushFont(current_fonts().section_title);
         ImGui::TextColored(c.accent_light, "%zu", count);
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
         text_disabled_label(caption);
     }
     card_end();
@@ -103,7 +144,6 @@ inline bool button_danger(const char* label, const ImVec2& size = ImVec2(0, 0)) 
 
 // Gestion des états vides (Empty State §6.3)
 inline void empty_state(const char* title, const char* description, const char* action_label = nullptr, bool* out_action = nullptr) {
-    const auto& c = theme_colors();
     ImGui::Spacing();
     ImGui::Spacing();
     ImGui::Indent(20.0f);

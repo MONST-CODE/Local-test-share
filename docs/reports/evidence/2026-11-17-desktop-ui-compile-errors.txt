@@ -1,0 +1,30 @@
+# Preuve — compilation de app/desktop_ui/main.cpp au commit 1e12c08
+# Date UTC : 2026-11-17T16:38:42Z
+# Compilateur : g++ (Debian 12.2.0-14+deb12u1) 12.2.0
+# Commande :
+#   g++ -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -fsyntax-only -I. \
+#     -I<sdl3 pinned f00dc919>/include -I<imgui pinned c1aaac65> -I<imgui>/backends app/desktop_ui/main.cpp
+# Dépendances épinglées extraites par ./build.sh deps --fetch (SHA256 vérifiées)
+
+app/desktop_ui/main.cpp:179:61: error: 'class std::shared_ptr<const plpt::net::HostSnapshot>' has no member named 'participants'
+app/desktop_ui/main.cpp:264:49: error: 'class plpt::Monitor' has no member named 'refresh_now'
+app/desktop_ui/main.cpp:289:52: error: 'const struct plpt::ServiceCandidate' has no member named 'process_name'
+app/desktop_ui/main.cpp:294:37: error: 'const struct plpt::ServiceCandidate' has no member named 'process_name'
+app/desktop_ui/main.cpp:374:23: error: 'PortAllocator' is not a member of 'plpt'; did you mean 'DynamicPortAllocator'?
+app/desktop_ui/main.cpp:375:33: error: 'allocator' was not declared in this scope; did you mean 'std::allocator'?
+app/desktop_ui/main.cpp:375:83: error: 'V4' is not a member of 'plpt::IpFamily'
+app/desktop_ui/main.cpp:378:89: error: 'V4' is not a member of 'plpt::IpFamily'
+app/desktop_ui/main.cpp:394:28: error: 'HostServerConfig' is not a member of 'plpt::net'; did you mean 'HostServer'?
+app/desktop_ui/main.cpp:395:17: error: 'srv_cfg' was not declared in this scope
+app/desktop_ui/main.cpp:401:47: error: no matching function for call to 'plpt::net::HostServer::start()'
+app/desktop_ui/main.cpp:404:28: error: 'AnnouncerConfig' is not a member of 'plpt::net'
+app/desktop_ui/main.cpp:405:17: error: 'ann_cfg' was not declared in this scope
+app/desktop_ui/main.cpp:410:45: error: no matching function for call to 'plpt::net::Announcer::start()'
+app/desktop_ui/main.cpp:492:22: error: 'class std::shared_ptr<const plpt::net::HostSnapshot>' has no member named 'participants'
+app/desktop_ui/main.cpp:495:52: error: 'class std::shared_ptr<const plpt::net::HostSnapshot>' has no member named 'participants'
+app/desktop_ui/main.cpp:536:28: error: 'GuestClientConfig' is not a member of 'plpt::net'; did you mean 'GuestConfig'?
+app/desktop_ui/main.cpp:537:17: error: 'cfg' was not declared in this scope
+app/desktop_ui/main.cpp:549:72: error: 'plpt::Result<void> plpt::net::GuestClient::connect_and_authenticate()' is private within this context
+app/desktop_ui/main.cpp:569:57: error: 'class plpt::net::GuestClient' has no member named 'disconnect'
+app/desktop_ui/main.cpp:697:35: error: 'const struct plpt::Error' has no member named 'c_str'
+app/desktop_ui/main.cpp:801:39: error: operands to '?:' have different types 'std::shared_ptr<const plpt::MonitorView>' and 'plpt::MonitorView'

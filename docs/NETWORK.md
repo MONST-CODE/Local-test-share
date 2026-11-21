@@ -1,70 +1,85 @@
-# Architecture Réseau de DevLink
+# Architecture réseau de DevLink — état audité
 
-Ce document décrit le modèle réseau, les protocoles de transport, la découverte locale et les flux de communication de **DevLink**.
+Ce document sépare le code présent des fonctions qui restent à construire. La
+présence d'un modèle réseau, d'un test loopback ou d'un écran n'est pas une preuve
+d'un partage LAN complet.
 
----
+## 1. Services locaux et ports
 
-## 1. Deux Familles de Ports Distinctes
+Le moniteur observe les processus et ports existants. Une détection est informative
+seulement : elle n'autorise pas le partage. Le moteur utilise des sockets allouées
+par l'OS et des adresses de bind explicites selon sa configuration. L'interface,
+les règles de pare-feu, les interfaces multiples et le test multi-machine doivent
+être qualifiés sur la plateforme cible.
 
-Une distinction fondamentale régit l'architecture réseau de DevLink :
+## 2. Découverte
 
-1. **Ports Projet (Amont)** :
-   - Ce sont les serveurs exécutés localement par le développeur (Next.js sur 3000, Vite sur 5173, Flask sur 5000, Supabase, API, etc.).
-   - DevLink n'ouvre, ne modifie et ne redirige jamais directement ces ports. Il les observe passivement via les tables de l'OS.
-2. **Ports Internes DevLink (Aval)** :
-   - Ce sont les endpoints réservés par DevLink pour le plan de contrôle et le plan de données.
-   - Ils sont **toujours alloués dynamiquement** par le système d'exploitation via `bind(port=0)` sous le compte utilisateur courant.
+Le dépôt contient annonce/écoute LAN ainsi qu'un parcours de test local. Les
+annonces ne sont pas une authentification de l'hôte et ne doivent contenir aucun
+secret. Multicast/broadcast entre machines physiques, réseaux Wi-Fi isolés, pare-feu
+et IPv6 demeurent à qualifier ; un test loopback ne valide pas ces scénarios.
 
----
+## 3. Plan de contrôle hôte/invité
 
-## 2. Découverte Réseau Local (LAN)
+Le code courant utilise un échange de défi-réponse avant l'upgrade TLS :
 
-DevLink implémente un mécanisme de découverte LAN sans dépendre d'Internet, de registre central ou de serveur cloud tiers :
+1. Hello avec informations publiques, sans code d'invitation ni secret de reprise ;
+2. défi aléatoire de l'hôte ;
+3. preuve HMAC vérifiée par l'hôte ;
+4. notice d'upgrade contenant les paramètres publics nécessaires ;
+5. poignée TLS 1.3 PSK avec identité liée à la session ;
+6. admission/état/chat sur le canal TLS selon le cycle de session.
 
-- **Protocole** : UDP Multicast sur le groupe administré `239.255.77.88`, port `47788`.
-- **Mécanisme de repli** : Émission en broadcast IPv4 (`255.255.255.255`) et loopback local (`127.0.0.1`) pour les environnements de test sur machine unique.
-- **Sécurité de l'annonce** :
-  - L'annonce contient uniquement : `session_id`, `session_name`, `host_name`, `control_port`, nombre de participants, capacité max et état d'acceptation.
-  - **Le code d'invitation n'est JAMAIS diffusé sur le réseau**.
-  - Une annonce LAN ne constitue en aucun cas une preuve d'identité ni une autorisation d'accès.
+Le code de transport charge OpenSSL à l'exécution sous Linux et exige TLS 1.3. Le
+contrôle d'indisponibilité échoue fermé ; aucun fallback TCP clair n'est permis
+quand TLS est requis. Le transport TLS Windows n'est pas câblé/qualifié : ne pas
+annoncer le plan de contrôle chiffré comme disponible sur Windows. Les preuves
+loopback consignées dans `docs/reports/evidence/2026-11-18-etape5-basculement-tls13.txt`
+ne sont ni un test physique LAN ni un audit cryptographique indépendant.
 
----
+## 4. Proxy applicatif
 
-## 3. Plan de Contrôle (`HostServer` & `GuestClient`)
+`ServiceProxy` est un pont HTTP applicatif entre un invité et un endpoint local
+sélectionné, avec jeton de capacité, limites et gestion de réponses HTTP/1.x,
+`1xx` et WebSocket documentée dans les tests existants. Il ne capture pas une page
+WebView et ne fournit pas le partage d'images. Le trafic du proxy n'est pas établi
+comme chiffré de bout en bout dans l'état courant ; ne l'utilisez pas sur un réseau
+non fiable. La politique d'origine et le confinement des sous-ressources d'un vrai
+navigateur ne sont pas implémentés.
 
-Le plan de contrôle gère le cycle de vie de la session, l'authentification et la messagerie :
+## 5. Browser Worker, frames et interactions — non disponibles
 
-- **Transport** : TCP sécurisé avec trames bornées (`Envelope` de 56 octets d'en-tête + charge utile validée avant allocation).
-- **Poignée de main (Handshake)** :
-  1. L'invité transmet un message `GuestHello` contenant son nom, son identifiant de client et le code d'invitation présenté.
-  2. L'hôte compare le code en **temps constant** avec l'entropie OS générée (`invite_code_matches`).
-  3. Si le code est invalide, l'hôte refuse la connexion immédiatement (`HostAuth::accepted = false`) et incrémente le compteur de tentatives suspectes.
-  4. Si le code est valide et que l'hôte exige une approbation manuelle, l'invité entre dans l'état `AwaitingApproval`.
-  5. Dès que l'hôte clique sur "Autoriser", un message `HostAuth` d'admission est envoyé, suivi de l'état complet de la session (`SessionState`) et de la liste des services partagés (`ServiceList`).
-- **Supervision & Présence** :
-  - Envoi périodique de trames `Heartbeat` avec horodatage monotone et écho.
-  - La latence affichée correspond au temps d'aller-retour réel (RTT) mesuré par les sockets.
+`engine/browser/webview2_backend.cpp` échoue explicitement : création du contrôleur,
+navigation réelle, capture et injection WebView2 ne sont pas implémentées. Le backend
+géré génère du contenu synthétique et est réservé aux tests/démos explicites. Aucun
+invité ne reçoit actuellement un rendu navigateur réel.
 
----
+`engine/browser/remote_frame.hpp` fournit maintenant un codec de payload v1
+portable (big-endian) et borné pour les frames complètes RGBA8 et les événements
+input ; `engine/media/frame_queue.hpp` ajoute une file bornée avec abandon des frames
+complètes périmées. Ces composants ne sont pas connectés à un transport média/TLS,
+à WebView2 ou au renderer invité et ne constituent pas encore un flux réseau supporté.
 
-## 4. Plan de Données (`ServiceProxy`)
+Il n'existe pas de chaîne vérifiée :
 
-Le plan de données assure le relais applicatif entre les testeurs et l'application Web locale :
+`WebView2 → pixels → encodage → TLS → invité → décodage → texture SDL3`.
 
-- **Contrôle d'accès par jeton de capacité** :
-  - Le proxy écoute sur un port TCP dynamique dédié.
-  - Chaque connexion entrante doit présenter un jeton de 32 caractères hexadécimaux (`?plpt=<token>` ou cookie).
-  - Toute requête sans jeton ou avec un jeton invalide est immédiatement rejetée avec un statut HTTP 403.
-- **Pont bidirectionnel transparent** :
-  - Une fois autorisé, le flux est relayé de façon transparente entre l'invité et le service local amont.
-  - Prise en charge native des requêtes HTTP/1.1, Server-Sent Events (SSE) et WebSockets (RFC 6455 après poignée de main Upgrade).
-  - Gestion stricte de la contre-pression (backpressure) et tampons bornés à 256 Ko par flux.
+De même, les interactions ne sont pas injectées dans un navigateur réel. Les rôles
+et permissions du modèle de session ne prouvent pas encore un parcours A/B/C
+complet sur connexions réseau forgées.
 
----
+## 6. Tests et limites
 
-## 5. Rendu Distant & Flux Vidéo
-
-Pour les scénarios où le code et les assets Web ne doivent pas quitter la machine hôte :
-- Le navigateur de test s'exécute sur le PC de l'hôte dans un profil temporaire dédié.
-- Les frames de composition sont capturées hors écran et transmises sous forme de trames d'images au client invité.
-- L'invité envoie en retour des événements d'interaction (souris et clavier) sérialisés et filtrés.
+- Les suites loopback testent le protocole, le transport Linux et le proxy sans
+  remplacer une validation LAN multi-machine.
+- `DemoBrowserBackend` est explicitement synthétique, pas un navigateur ; la fabrique
+  dédiée `create_demo_browser_backend()` ne sert qu'au parcours `--demo-synthetic-browser`.
+- `BrowserPolicy` compare désormais les origines HTTP(S) canoniques exactement (sans
+  préfixe ni joker) et rejette userinfo/ports invalides/IP non canoniques. Ce
+  validateur unitaire ne filtre pas encore les navigations, redirections ou
+  sous-ressources d'un WebView2 réel, puisque ce backend n'existe pas.
+- L'absence d'IPv6, d'un runtime Windows, d'un second ordinateur ou d'un écran
+  physique doit rester `SKIP`, `BLOCKED` ou `IMPLEMENTED_BUT_NOT_VERIFIED`, jamais
+  être transformée en PASS.
+- Les statuts détaillés et les prochaines portes figurent dans
+  `docs/reports/FINAL_COMPLETION_AUDIT.md`.

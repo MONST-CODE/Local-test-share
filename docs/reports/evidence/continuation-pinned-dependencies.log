@@ -1,0 +1,12 @@
+DevLink direct Linux operation=deps mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261119T174651Z-deps-debug-1715.log
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100  273k    0  273k    0     0   277k      0 --:--:-- --:--:-- --:--:--  277k100 11.7M    0 11.7M    0     0  6080k      0 --:--:--  0:00:01 --:--:-- 6080k100 15.1M    0 15.1M    0     0  5983k      0 --:--:--  0:00:02 --:--:-- 5983k
+SHA256 OK e6a9c4e75de8fe719f922dddc208627f77754a502909f457a1355981f20c21e0 /home/user/Local-test-share/out/linux/dependencies/SDL-f00dc919ca35b9756316e86c4777392de442f9b2.tar.gz.part
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100   625    0   625    0     0   2099      0 --:--:-- --:--:-- --:--:--  2097100 2140k    0 2140k    0     0  3927k      0 --:--:-- --:--:-- --:--:-- 3926k
+SHA256 OK b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 /home/user/Local-test-share/out/linux/dependencies/imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859.tar.gz.part
+SHA256 OK e6a9c4e75de8fe719f922dddc208627f77754a502909f457a1355981f20c21e0 /home/user/Local-test-share/out/linux/dependencies/SDL-f00dc919ca35b9756316e86c4777392de442f9b2.tar.gz
+SHA256 OK b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 /home/user/Local-test-share/out/linux/dependencies/imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859.tar.gz
+SUCCESS operation=deps log=/home/user/Local-test-share/out/linux/logs/20261119T174651Z-deps-debug-1715.log

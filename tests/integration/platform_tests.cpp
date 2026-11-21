@@ -1,6 +1,7 @@
 #include <array>
 #include <fstream>
 #include <filesystem>
+#include <cstdlib>
 #include <string_view>
 #ifdef _WIN32
 #include "engine/platform/windows/winsock.hpp"
@@ -11,6 +12,7 @@
 #endif
 #include "tests/test_harness.hpp"
 #include "engine/core/random.hpp"
+#include <atomic>
 #include <mutex>
 #include "engine/platform/connection_pool.hpp"
 #include "engine/platform/native.hpp"
@@ -329,13 +331,21 @@ void lan_control_plane_host_and_guest() {
     config.auth_timeout_ms = 3000;
     config.approval_timeout_ms = 5000;
     config.invite_code = code;
+    // ADR-016 : le transport RÉEL dépend du runtime TLS présent dans cet
+    // environnement. Sans runtime, le clair est assumé des deux côtés et
+    // l'étiquette affichée est vérifiée — jamais un « sécurisé » fictif.
+    const bool tls = plpt::net::tls13_runtime_available();
+    config.tls_required = tls;
     HostServer host(clock);
     auto started = host.start(config); REQUIRE(started);
     CHECK(started.value() != 0);
+    if (tls) CHECK(started.value() != 0 && host.snapshot()->transport.rfind("TLS 1.3", 0) == 0);
+    else CHECK(host.snapshot()->transport.find("clair") != std::string::npos);
 
     // Code erroné : refus explicite, jamais d'admission silencieuse.
     {
         GuestConfig wrong;
+        wrong.tls_required = tls;
         wrong.address = IpAddress::loopback(IpFamily::Ipv4);
         wrong.control_port = started.value();
         wrong.guest_name = "intrus";
@@ -349,6 +359,7 @@ void lan_control_plane_host_and_guest() {
 
     // Code valide : attente d'autorisation, puis admission sur décision de l'hôte.
     GuestConfig alice_config;
+    alice_config.tls_required = tls;
     alice_config.address = IpAddress::loopback(IpFamily::Ipv4);
     alice_config.control_port = started.value();
     alice_config.guest_name = "Alice";
@@ -388,6 +399,17 @@ void lan_control_plane_host_and_guest() {
         CHECK_EQ(view->services[0].exposed_port, 43211);
         CHECK(view->services[0].url.find("plpt=") != std::string::npos);
         CHECK(view->services[0].url.find(token.value()) != std::string::npos);
+        // Le canal annoncé est celui réellement établi, des deux côtés.
+        if (tls) {
+            CHECK(view->transport.rfind("TLSv1.3", 0) == 0);
+            CHECK(view->transport.find("hôte authentifié") != std::string::npos);
+            const auto host_view = host.snapshot();
+            CHECK(host_view->transport.rfind("TLS 1.3", 0) == 0);
+            REQUIRE(host_view->participants.size() == 1);
+            CHECK(host_view->participants[0].transport.find("TLSv1.3") != std::string::npos);
+        } else {
+            CHECK(view->transport.find("clair") != std::string::npos);
+        }
     }
     CHECK(host.wait_for([](const HostSnapshot& snapshot) { return snapshot.participants.size() == 1; }, 5s));
 
@@ -430,7 +452,22 @@ void lan_control_plane_host_and_guest() {
     GuestClient third(clock);
     REQUIRE(third.start(third_config));
     REQUIRE(third.wait_for([](const GuestSnapshot& snapshot) { return snapshot.phase == GuestPhase::AwaitingApproval; }, 5s));
-    CHECK(host.approve(host.snapshot()->pending[0].request_id));
+    // Wait on the authority's published pending request before issuing approval;
+    // the guest-side phase alone is not a synchronization contract for host UI state.
+    REQUIRE(host.wait_for([](const HostSnapshot& snapshot) {
+        return std::any_of(snapshot.pending.begin(), snapshot.pending.end(),
+            [](const PendingJoin& join) { return join.guest_name == "Trop"; });
+    }, 5s));
+    const auto host_view = host.snapshot();
+    const auto third_request = std::find_if(host_view->pending.begin(), host_view->pending.end(),
+        [](const PendingJoin& join) { return join.guest_name == "Trop"; });
+    REQUIRE(third_request != host_view->pending.end());
+    CHECK(host.approve(third_request->request_id));
+    CHECK(host.wait_for([](const HostSnapshot& snapshot) {
+        return std::any_of(snapshot.events.begin(), snapshot.events.end(), [](const std::string& event) {
+            return event.find("admission refusée pour « Trop »") != std::string::npos;
+        });
+    }, 5s));
     CHECK(third.wait_for([](const GuestSnapshot& snapshot) { return snapshot.phase == GuestPhase::Refused; }, 5s));
     CHECK_EQ(third.snapshot()->status_text, std::string("capacité atteinte"));
 
@@ -740,10 +777,13 @@ void lan_resume_secret_binds_identity() {
     config.max_participants = 4;
     config.reconnect_grace_ms = 60000;
     config.invite_code = code.value();
+    const bool tls = plpt::net::tls13_runtime_available();
+    config.tls_required = tls;   // sans runtime : clair assumé et étiqueté
     auto port = host.start(config); REQUIRE(port);
 
     const auto base = [&] {
         GuestConfig guest;
+        guest.tls_required = tls;
         guest.address = IpAddress::loopback(IpFamily::Ipv4);
         guest.control_port = port.value();
         guest.invite_code = code.value();
@@ -1041,6 +1081,719 @@ void pool_saturation_with_held_open_connections() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Transport versionné (mandat §24) : TCP clair déclaré, TLS 1.3 PSK réel.
+// ---------------------------------------------------------------------------
+
+#include "engine/net/transport.hpp"
+
+using plpt::net::ITransportChannel;
+using plpt::net::ITransportEndpoint;
+using plpt::net::ITransportFactory;
+using plpt::net::TransportCredentials;
+using plpt::net::TransportInfo;
+using plpt::net::TransportKind;
+
+namespace {
+const TransportCredentials kTlsCredentials{"devlink-session-test", "secret-hors-bande-0123456789"};
+
+std::string exchange_round_trip(ITransportChannel& channel, std::string_view payload) {
+    const auto sent = channel.send(std::span<const std::uint8_t>(
+        reinterpret_cast<const std::uint8_t*>(payload.data()), payload.size()));
+    if (!sent) return std::string("envoi en echec : ") + sent.error().message;
+    std::uint8_t buffer[256] = {};
+    const auto got = channel.receive(buffer);
+    if (!got) return std::string("reception en echec : ") + got.error().message;
+    return std::string(reinterpret_cast<char*>(buffer), got.value());
+}
+} // namespace
+
+void transport_clear_declares_itself() {
+    auto factory = plpt::net::make_clear_tcp_factory();
+    CHECK(factory.has_value());
+    if (!factory.has_value()) return;
+    CHECK_EQ(factory.value()->interface_version(), plpt::net::kTransportInterfaceVersion);
+    CHECK(factory.value()->kind() == TransportKind::ClearTcp);
+    CHECK(factory.value()->available());
+    auto endpoint = factory.value()->listen("127.0.0.1", kTlsCredentials);
+    CHECK(endpoint.has_value());
+    if (!endpoint.has_value()) return;
+    std::string server_report;
+    std::thread server([&] {
+        auto channel = endpoint.value()->accept();
+        if (!channel) { server_report = "accept clair en echec : " + channel.error().message; return; }
+        const TransportInfo info = channel.value()->info();
+        server_report = std::string(info.protocol) + "|" + (info.peer_authenticated ? "auth" : "non-auth") +
+            "|" + info.cipher + "|" + exchange_round_trip(*channel.value(), "ping-clair");
+    });
+    auto client = factory.value()->connect("127.0.0.1", endpoint.value()->port(), kTlsCredentials);
+    CHECK(client.has_value());
+    if (client.has_value()) {
+        const TransportInfo info = client.value()->info();
+        CHECK(info.protocol == "tcp clair");
+        CHECK(!info.peer_authenticated); // le clair ne pretend JAMAIS authentifier
+        CHECK(info.cipher.empty());
+        CHECK_EQ(exchange_round_trip(*client.value(), "ping-clair"), std::string("ping-clair"));
+    }
+    server.join();
+    CHECK_EQ(server_report, std::string("tcp clair|non-auth||ping-clair"));
+    endpoint.value()->close();
+}
+
+void tls13_psk_loopback_authenticated() {
+    auto factory = plpt::net::make_tls13_factory();
+    CHECK(factory.has_value());
+    if (!factory.has_value()) return;
+    CHECK(factory.value()->available());
+    CHECK_EQ(factory.value()->kind(), TransportKind::Tls13Psk);
+    auto endpoint = factory.value()->listen("127.0.0.1", kTlsCredentials);
+    CHECK(endpoint.has_value());
+    if (!endpoint.has_value()) return;
+    std::string server_report;
+    bool server_authenticated = false;
+    std::thread server([&] {
+        auto channel = endpoint.value()->accept();
+        if (!channel) { server_report = "accept tls en echec : " + channel.error().message; return; }
+        const TransportInfo info = channel.value()->info();
+        server_authenticated = info.peer_authenticated;
+        server_report = info.protocol + "|" + info.cipher + "|" +
+            exchange_round_trip(*channel.value(), "marqueur-tls-serveur");
+    });
+    auto client = factory.value()->connect("127.0.0.1", endpoint.value()->port(), kTlsCredentials);
+    CHECK(client.has_value());
+    if (client.has_value()) {
+        const TransportInfo info = client.value()->info();
+        CHECK(info.protocol == "TLSv1.3");
+        CHECK(info.peer_authenticated);
+        CHECK(info.cipher.find("TLS_AES") == 0);
+        CHECK_EQ(exchange_round_trip(*client.value(), "marqueur-tls-client"), std::string("marqueur-tls-serveur"));
+    }
+    server.join();
+    CHECK(server_authenticated);
+    CHECK(server_report.rfind("TLSv1.3|", 0) == 0);
+    CHECK(server_report.find("marqueur-tls-client") != std::string::npos);
+    endpoint.value()->close();
+}
+
+void tls13_psk_wrong_secret_refused() {
+    auto factory = plpt::net::make_tls13_factory();
+    CHECK(factory.has_value());
+    if (!factory.has_value()) return;
+    auto endpoint = factory.value()->listen("127.0.0.1", kTlsCredentials);
+    CHECK(endpoint.has_value());
+    if (!endpoint.has_value()) return;
+    bool server_refused = false;
+    std::thread server([&] {
+        auto channel = endpoint.value()->accept();
+        server_refused = !channel.has_value();
+        if (channel.has_value()) channel.value()->close(); // ne doit JAMAIS arriver
+    });
+    const TransportCredentials impostor{"devlink-session-test", "mauvais-secret-0123456789!!"};
+    auto client = factory.value()->connect("127.0.0.1", endpoint.value()->port(), impostor);
+    CHECK(!client.has_value());
+    if (!client.has_value()) {
+        CHECK(client.error().code == plpt::ErrorCode::Unauthorized ||
+              client.error().code == plpt::ErrorCode::Disconnected);
+    }
+    server.join();
+    CHECK(server_refused); // poignée de main refusée des deux côtés, aucun canal rendu
+    endpoint.value()->close();
+}
+
+void tls13_downgrade_refused() {
+    // Politique incohérente (min > max) : refusée AVANT toute écoute, sans thread.
+    plpt::net::TlsPolicy inverted;
+    inverted.min_version = plpt::net::kTls13Version;
+    inverted.max_version = plpt::net::kTls12Version;
+    auto rejected = plpt::net::make_tls13_factory(inverted);
+    CHECK(!rejected.has_value()); // jamais de fabrique silencieusement « corrigée »
+
+    // Client qui n'offre que TLS 1.2 face au serveur TLS 1.3 strict : refus des
+    // deux côtés, aucun canal, aucun repli.
+    auto server_factory = plpt::net::make_tls13_factory();
+    CHECK(server_factory.has_value());
+    if (!server_factory.has_value()) return;
+    auto endpoint = server_factory.value()->listen("127.0.0.1", kTlsCredentials);
+    CHECK(endpoint.has_value());
+    if (!endpoint.has_value()) return;
+    bool server_refused = false;
+    std::thread server([&] {
+        auto channel = endpoint.value()->accept();
+        server_refused = !channel.has_value();
+        if (channel.has_value()) channel.value()->close(); // ne doit JAMAIS arriver
+    });
+    plpt::net::TlsPolicy legacy;
+    legacy.min_version = plpt::net::kTls12Version;
+    legacy.max_version = plpt::net::kTls12Version;
+    auto client_factory = plpt::net::make_tls13_factory(legacy);
+    CHECK(client_factory.has_value());
+    if (client_factory.has_value()) {
+        auto client = client_factory.value()->connect("127.0.0.1", endpoint.value()->port(), kTlsCredentials);
+        CHECK(!client.has_value()); // le serveur TLS 1.3 strict refuse la négociation 1.2
+    }
+    server.join();
+    CHECK(server_refused);
+    endpoint.value()->close();
+}
+
+void tls13_availability_is_honest() {
+    std::string reason;
+    const bool available = plpt::net::tls13_runtime_available(&reason);
+    const char* forced = std::getenv("DEVLINK_TLS_LIBRARY_PATH");
+    auto factory = plpt::net::make_tls13_factory();
+    CHECK(factory.has_value());
+    if (!factory.has_value()) return;
+    if (forced != nullptr) {
+        // Variable de test : bibliothèque volontairement introuvable. La fabrique
+        // doit le dire, et refuser listen/connect sans jamais replier sur du clair.
+        CHECK(!available);
+        CHECK(!reason.empty());
+        CHECK(!factory.value()->available());
+        CHECK(factory.value()->unavailability_reason() == reason);
+        auto listen = factory.value()->listen("127.0.0.1", kTlsCredentials);
+        CHECK(!listen.has_value());
+        if (!listen.has_value()) CHECK_EQ(listen.error().code, plpt::ErrorCode::Unsupported);
+        std::printf("tls-unavailable-proof: reason=%s\n", reason.c_str());
+    } else {
+        CHECK_EQ(factory.value()->available(), available);
+        if (!available) CHECK(!reason.empty()); // indisponible doit savoir pourquoi
+        std::printf("tls13 runtime: available=%d reason=%s\n", available ? 1 : 0, reason.c_str());
+    }
+}
+
+namespace {
+// Lecteur brut : collecte les trames d'une socket non bloquante jusqu'à obtenir
+// le type attendu. `seen` conserve TOUTES les trames lues, ce qui permet
+// d'assertion sur l'ordre (notice d'upgrade AVANT Auth, par exemple).
+bool raw_collect(Socket& socket, FrameAssembler& assembler, std::vector<model::Envelope>& seen,
+    model::MessageType wanted, bool& closed, std::chrono::milliseconds budget) {
+    using namespace plpt::net;
+    using namespace plpt::model;
+    closed = false;
+    const auto deadline = std::chrono::steady_clock::now() + budget;
+    std::array<std::uint8_t, 8192> buffer{};
+    while (std::chrono::steady_clock::now() < deadline) {
+        while (auto framed = assembler.next()) {
+            seen.push_back(framed.value());
+            if (framed.value().type == wanted) return true;
+        }
+        PollEntry entry{socket.native(), true, false, false, false, false};
+        auto waited = poll_sockets(std::span<PollEntry>(&entry, 1), std::chrono::milliseconds(100));
+        if (!waited) return false;
+        if (entry.failed) { closed = true; return false; }
+        if (!entry.readable) continue;
+        auto received = socket.receive(buffer);
+        if (!received) {
+            if (received.error().code == ErrorCode::WouldBlock) continue;
+            closed = true;
+            return false;
+        }
+        if (received.value() == 0) { closed = true; return false; }
+        if (auto fed = assembler.feed({buffer.data(), received.value()}); !fed) { closed = true; return false; }
+    }
+    return false;
+}
+
+Socket raw_connect(Port port) {
+    Socket socket;
+    auto created = Socket::create(TransportProtocol::Tcp, IpFamily::Ipv4);
+    if (!created) return socket;
+    socket = std::move(created).value();
+    if (auto connected = connect_with_timeout(socket, IpAddress::loopback(IpFamily::Ipv4), port, 2000ms); !connected)
+        return Socket{};
+    (void)socket.set_nonblocking(true);
+    return socket;
+}
+
+bool raw_send(Socket& socket, std::span<const std::uint8_t> data) {
+    return write_all(socket, data, 2000ms).has_value();
+}
+} // namespace
+
+// ---------------------------------------------------------------------------
+// ADR-017 : la porte d'entrée du plan de contrôle est un défi-réponse. Ce cas
+// parle le protocole à la main, sans client DevLink : il prouve que le chemin
+// clair historique est BLOQUÉ, que le défi existe réellement sur le fil, qu'une
+// preuve forgée est refusée et comptée, et qu'une preuve exacte ouvre le canal
+// chiffré avant toute trame utile.
+// ---------------------------------------------------------------------------
+void control_plane_challenge_response_gates_admission() {
+    using namespace plpt::net;
+    using namespace plpt::model;
+    SystemClock clock;
+    auto generated = generate_invite_code(); REQUIRE(generated);
+    const InviteCode code = generated.value();
+    std::string reason;
+    const bool tls = tls13_runtime_available(&reason);
+    HostConfig config;
+    config.session_name = "Session défi";
+    config.host_name = "hôte-test";
+    config.bind_address = IpAddress::loopback(IpFamily::Ipv4);
+    config.max_participants = 2;
+    config.approval_required = false;
+    config.heartbeat_interval_ms = 200;
+    config.auth_timeout_ms = 4000;
+    config.tls_handshake_timeout_ms = 1000;   // poignée de main bornée : le cas reste court
+    config.invite_code = code;
+    config.tls_required = tls;   // sans runtime : clair ASSUMÉ et étiqueté, jamais silencieux
+    HostServer host(clock);
+    auto started = host.start(config); REQUIRE(started);
+    const auto port = Port{started.value()};
+    std::printf("control-plane: tls_runtime=%d\n", tls ? 1 : 0);
+
+    const std::string client_tag = std::string("PLPT ") + std::to_string(model::kProtocolMajor) + "." +
+        std::to_string(model::kProtocolMinor);
+
+    // 1) Secret EN CLAIR (comportement 1.2) : refus net, jamais ignoré.
+    {
+        Socket socket = raw_connect(port); REQUIRE(socket.valid());
+        GuestHello hello;
+        hello.guest_name = "intrus";
+        hello.client = client_tag;
+        hello.invite_code = code.text;          // l'erreur historique : le code sur le fil
+        auto framed = frame(MessageType::Hello, SessionId{}, ParticipantId{}, 0, encode(hello));
+        REQUIRE(framed);
+        REQUIRE(raw_send(socket, framed.value()));
+        FrameAssembler assembler;
+        std::vector<model::Envelope> seen;
+        bool closed = false;
+        const bool refused = raw_collect(socket, assembler, seen, MessageType::Auth, closed, 3000ms);
+        CHECK(refused || closed);
+        if (refused) {
+            auto denial = decode_host_auth(seen.back().payload);
+            REQUIRE(denial);
+            CHECK(!denial.value().accepted);
+            CHECK(denial.value().reason == ErrorCode::ProtocolViolation);
+            CHECK(denial.value().reason_text.find("clair") != std::string::npos);
+        }
+        socket.close();
+        CHECK(host.wait_for([](const HostSnapshot& view) { return view.counters.invalid_frames >= 1; }, 3s));
+        CHECK_EQ(host.snapshot()->participants.size(), 0U);
+    }
+
+    // 2) Hello propre : le défi arrive, avec un nonce de 32 octets.
+    Socket socket = raw_connect(port); REQUIRE(socket.valid());
+    {
+        GuestHello hello;
+        hello.guest_name = "Alice";
+        hello.client = client_tag;
+        auto framed = frame(MessageType::Hello, SessionId{}, ParticipantId{}, 0, encode(hello));
+        REQUIRE(framed);
+        REQUIRE(raw_send(socket, framed.value()));
+    }
+    FrameAssembler assembler;
+    std::vector<model::Envelope> seen;
+    bool closed = false;
+    REQUIRE(raw_collect(socket, assembler, seen, MessageType::AuthChallenge, closed, 3000ms));
+    model::Envelope challenge_envelope = seen.back();
+    auto challenge = decode_auth_challenge(challenge_envelope.payload); REQUIRE(challenge);
+    CHECK_EQ(challenge.value().nonce.size(), kAuthNonceBytes);
+    CHECK_EQ(challenge_envelope.session.value, host.snapshot()->session_id);
+    // Aucun secret dans le défi : uniquement un nonce public.
+    CHECK_EQ(challenge_envelope.payload.size(), 4U + kAuthNonceBytes);
+
+    // 3) Preuve forgée : refus mesuré, aucune admission, compteur nourri.
+    {
+        AuthProof bogus;
+        bogus.invite_proof.assign(kAuthProofBytes, 0x5a);
+        auto encoded = encode_auth_proof(bogus); REQUIRE(encoded);
+        auto framed = frame(MessageType::AuthProof, SessionId{challenge_envelope.session.value}, ParticipantId{}, 1,
+            encoded.value());
+        REQUIRE(framed);
+        REQUIRE(raw_send(socket, framed.value()));
+        std::vector<model::Envelope> refusals;
+        FrameAssembler refusal_assembler;
+        bool refusal_closed = false;
+        const bool denied = raw_collect(socket, refusal_assembler, refusals, MessageType::Auth, refusal_closed, 3000ms);
+        CHECK(denied);
+        if (denied) {
+            auto denial = decode_host_auth(refusals.back().payload);
+            REQUIRE(denial);
+            CHECK(!denial.value().accepted);
+            CHECK(denial.value().reason == ErrorCode::Unauthorized);
+        }
+        CHECK(host.wait_for([](const HostSnapshot& view) { return view.counters.bad_codes >= 1; }, 3s));
+        CHECK_EQ(host.snapshot()->participants.size(), 0U);
+        // Une preuve forgée n'ouvre AUCUN canal : toujours pas d'upgrade.
+        for (const auto& frame_seen : refusals)
+            CHECK(frame_seen.type != MessageType::TlsUpgrade);
+    }
+
+    // 4) Preuve exacte sur la MÊME connexion : le secret ne transite pas, il est
+    //    prouvé ; puis upgrade TLS 1.3 AVANT Auth quand le runtime est présent.
+    {
+        auto proof = compute_auth_proof(std::span<const std::uint8_t>(code.bytes),
+            challenge.value().nonce, challenge_envelope.session.value, AuthProofKind::InviteCode);
+        REQUIRE(proof);
+        AuthProof response;
+        response.invite_proof = proof.value();
+        auto encoded = encode_auth_proof(response); REQUIRE(encoded);
+        auto framed = frame(MessageType::AuthProof, SessionId{challenge_envelope.session.value}, ParticipantId{}, 2,
+            encoded.value());
+        REQUIRE(framed);
+        REQUIRE(raw_send(socket, framed.value()));
+
+        std::vector<model::Envelope> admitted;
+        FrameAssembler admitted_assembler;
+        bool admitted_closed = false;
+        if (tls) {
+            // La notice d'upgrade est la DERNIÈRE trame claire, et elle ne porte
+            // aucun secret : identité publique, nature du secret, nonce du défi.
+            const bool upgraded = raw_collect(socket, admitted_assembler, admitted, MessageType::TlsUpgrade,
+                admitted_closed, 5000ms);
+            CHECK(upgraded);
+            if (upgraded) {
+                auto notice = decode_tls_upgrade(admitted.back().payload);
+                REQUIRE(notice);
+                CHECK_EQ(notice.value().nonce, challenge.value().nonce);
+                CHECK(notice.value().secret_kind == AuthProofKind::InviteCode);
+                CHECK(!notice.value().identity.empty());
+                // Aucun Auth en clair après l'upgrade : la suite est chiffrée.
+                std::vector<model::Envelope> after;
+                bool after_closed = false;
+                const bool clear_auth = raw_collect(socket, admitted_assembler, after, MessageType::Auth,
+                    after_closed, 1500ms);
+                CHECK(!clear_auth);
+            }
+            // Contrôle négatif : ce client brut ne fait PAS la poignée de main.
+            // Capturer la notice ne donne donc rien — il n'est jamais admis, et
+            // la connexion tombe au terme du délai de poignée de main borné.
+            CHECK_EQ(host.snapshot()->participants.size(), 0U);
+            CHECK(host.wait_for([](const HostSnapshot& view) { return view.connection_count == 0; }, 6s));
+            CHECK_EQ(host.snapshot()->participants.size(), 0U);
+            bool handshake_refused = false;
+            for (const auto& event : host.snapshot()->events) {
+                if (event.find("upgrade TLS 1.3 refusé") != std::string::npos) handshake_refused = true;
+            }
+            CHECK(handshake_refused);
+            // La session, elle, reste annoncée sur le canal réel.
+            CHECK(host.snapshot()->transport.rfind("TLS 1.3", 0) == 0);
+        } else {
+            const bool admitted_now = raw_collect(socket, admitted_assembler, admitted, MessageType::Auth,
+                admitted_closed, 5000ms);
+            CHECK(admitted_now);
+            if (admitted_now) {
+                auto reply = decode_host_auth(admitted.back().payload);
+                REQUIRE(reply);
+                CHECK(reply.value().accepted);
+            }
+            CHECK(host.wait_for([](const HostSnapshot& view) { return view.participants.size() == 1; }, 5s));
+            CHECK(host.snapshot()->transport.find("clair") != std::string::npos);
+        }
+    }
+    socket.close();
+    host.stop();
+}
+
+// ---------------------------------------------------------------------------
+// ADR-016 : sans runtime TLS, un partage RÉEL est refusé — pas dégradé. Le cas
+// n'est enregistré que quand le runtime est volontairement rendu indisponible
+// (auto-test tls-unavailable-proof) : SKIP n'est pas PASS.
+// ---------------------------------------------------------------------------
+void host_refuses_session_without_tls_runtime() {
+    using namespace plpt::net;
+    using namespace plpt::model;
+    SystemClock clock;
+    std::string reason;
+    if (tls13_runtime_available(&reason)) {
+        std::printf("SKIP host-refusal: runtime TLS présent, ce cas ne s'exerce qu'en son absence\n");
+        return;
+    }
+    auto generated = generate_invite_code(); REQUIRE(generated);
+    HostConfig config;
+    config.session_name = "Session refusée";
+    config.host_name = "hôte-test";
+    config.bind_address = IpAddress::loopback(IpFamily::Ipv4);
+    config.max_participants = 2;
+    config.approval_required = false;
+    config.invite_code = generated.value();
+    // tls_required reste à sa valeur par défaut : true.
+    HostServer host(clock);
+    auto started = host.start(config);
+    CHECK(!started.has_value());
+    if (!started.has_value()) {
+        CHECK(started.error().code == ErrorCode::Unsupported);
+        CHECK(started.error().message.find("TLS 1.3") != std::string::npos);
+        CHECK(started.error().message.find(reason) != std::string::npos);
+        std::printf("host-refusal-proof: %s\n", started.error().message.c_str());
+    }
+    // Rien n'est à moitié ouvert : aucun port de contrôle n'est publié.
+    CHECK_EQ(host.control_port(), 0);
+    CHECK(!host.snapshot()->running);
+
+    // Le clair n'existe que s'il est ASSUMÉ des deux côtés, et il est étiqueté.
+    config.tls_required = false;
+    HostServer assumed(clock);
+    auto clear_started = assumed.start(config);
+    REQUIRE(clear_started.has_value());
+    const auto view = assumed.snapshot();
+    CHECK(view->transport.find("clair") != std::string::npos);
+    CHECK(view->transport.find(reason) != std::string::npos);
+    CHECK(view->transport.find("TLS 1.3 PSK") == std::string::npos);
+    std::printf("host-cleared-proof: %s\n", view->transport.c_str());
+    assumed.stop();
+}
+
+#ifndef _WIN32
+#include <poll.h>
+// Oracle d'écoute : un relais octet-par-octet enregistre tout ce qui traverse.
+// Le marqueur clair doit être ABSENT de l'enregistrement : la charge utile est
+// réellement chiffrée de bout en bout, pas simplement déclarée telle.
+void tls13_wire_oracle_no_plaintext() {
+    auto factory = plpt::net::make_tls13_factory();
+    CHECK(factory.has_value());
+    if (!factory.has_value()) return;
+    auto endpoint = factory.value()->listen("127.0.0.1", kTlsCredentials);
+    CHECK(endpoint.has_value());
+    if (!endpoint.has_value()) return;
+
+    const int relay_listener = ::socket(AF_INET, SOCK_STREAM, 0);
+    CHECK(relay_listener >= 0);
+    sockaddr_in relay_address{};
+    relay_address.sin_family = AF_INET;
+    relay_address.sin_port = 0;
+    CHECK_EQ(::inet_pton(AF_INET, "127.0.0.1", &relay_address.sin_addr), 1);
+    CHECK_EQ(::bind(relay_listener, reinterpret_cast<sockaddr*>(&relay_address), sizeof(relay_address)), 0);
+    CHECK_EQ(::listen(relay_listener, 1), 0);
+    sockaddr_in bound{};
+    socklen_t bound_len = sizeof(bound);
+    CHECK_EQ(::getsockname(relay_listener, reinterpret_cast<sockaddr*>(&bound), &bound_len), 0);
+    const std::uint16_t relay_port = static_cast<std::uint16_t>(ntohs(bound.sin_port));
+
+    std::mutex wire_mutex;
+    std::string wire;
+    std::atomic<bool> relay_done{false};
+    const std::uint16_t tls_port = endpoint.value()->port();
+    std::thread relay([&] {
+        const int client_fd = ::accept(relay_listener, nullptr, nullptr);
+        if (client_fd < 0) { relay_done.store(true); return; }
+        sockaddr_in upstream{};
+        upstream.sin_family = AF_INET;
+        upstream.sin_port = htons(tls_port);
+        ::inet_pton(AF_INET, "127.0.0.1", &upstream.sin_addr);
+        const int server_fd = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (::connect(server_fd, reinterpret_cast<sockaddr*>(&upstream), sizeof(upstream)) != 0) {
+            ::close(client_fd); relay_done.store(true); return;
+        }
+        pollfd watches[2] = {{client_fd, POLLIN, 0}, {server_fd, POLLIN, 0}};
+        char buffer[2048];
+        for (;;) {
+            const int ready = ::poll(watches, 2, 2000);
+            if (ready <= 0) break;
+            bool closed = false;
+            for (int side = 0; side < 2 && !closed; ++side) {
+                if (watches[side].revents & POLLIN) {
+                    const int got = ::recv(watches[side].fd, buffer, sizeof(buffer), 0);
+                    if (got <= 0) { closed = true; break; }
+                    {
+                        std::lock_guard<std::mutex> lock(wire_mutex);
+                        wire.append(buffer, static_cast<std::size_t>(got));
+                    }
+                    const int peer = side == 0 ? server_fd : client_fd;
+                    int offset = 0;
+                    while (offset < got) {
+                        const int sent = ::send(peer, buffer + offset, got - offset, 0);
+                        if (sent <= 0) { closed = true; break; }
+                        offset += sent;
+                    }
+                }
+            }
+            if (closed) break;
+        }
+        ::close(client_fd);
+        ::close(server_fd);
+        relay_done.store(true);
+    });
+
+    std::thread server([&] {
+        auto channel = endpoint.value()->accept();
+        if (!channel) return;
+        std::uint8_t buffer[256] = {};
+        const auto got = channel.value()->receive(buffer);
+        if (got) {
+            const auto echo = channel.value()->send(std::span<const std::uint8_t>(buffer, got.value()));
+            if (!echo) std::printf("oracle: echo tls en echec : %s\n", echo.error().message.c_str());
+        }
+    });
+
+    auto client = factory.value()->connect("127.0.0.1", relay_port, kTlsCredentials);
+    CHECK(client.has_value());
+    if (client.has_value()) {
+        CHECK_EQ(exchange_round_trip(*client.value(), "MARQUEUR-CLAIR-DEVLINK-4242"),
+            std::string("MARQUEUR-CLAIR-DEVLINK-4242"));
+        client.value()->close();
+    }
+    server.join();
+    for (int wait = 0; wait < 100 && !relay_done.load(); ++wait) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ::close(relay_listener);
+    relay.join();
+    std::string captured;
+    {
+        std::lock_guard<std::mutex> lock(wire_mutex);
+        captured = wire;
+    }
+    CHECK(captured.size() > 200); // du trafic a réellement traversé l'oracle
+    CHECK(captured.find("MARQUEUR-CLAIR-DEVLINK-4242") == std::string::npos); // jamais en clair
+    CHECK(captured.find("DevLink TLS13 PSK v1") == std::string::npos); // ni le libellé de dérivation
+    endpoint.value()->close();
+}
+
+// Oracle du plan de contrôle DevLink : un relais octet-par-octet s'interpose
+// entre l'invité et l'hôte et enregistre TOUT ce qui traverse. Ni le code
+// d'invitation, ni le secret de reprise, ni les messages, ni les libellés de
+// dérivation ne doivent y apparaître (ADR-017 : rien de secret ne transite).
+void lan_control_wire_never_carries_secrets() {
+    using namespace plpt::net;
+    using namespace plpt::model;
+    SystemClock clock;
+    std::string reason;
+    if (!tls13_runtime_available(&reason)) {
+        std::printf("SKIP control-wire-oracle: runtime TLS indisponible (%s)\n", reason.c_str());
+        return;
+    }
+    auto generated = generate_invite_code(); REQUIRE(generated);
+    const InviteCode code = generated.value();
+    HostConfig config;
+    config.session_name = "Session oracle";
+    config.host_name = "hôte-oracle";
+    config.bind_address = IpAddress::loopback(IpFamily::Ipv4);
+    config.max_participants = 2;
+    config.approval_required = false;
+    config.heartbeat_interval_ms = 200;
+    config.invite_code = code;
+    HostServer host(clock);
+    auto started = host.start(config); REQUIRE(started);
+    const std::uint16_t host_port = started.value();
+
+    const int relay_listener = ::socket(AF_INET, SOCK_STREAM, 0);
+    CHECK(relay_listener >= 0);
+    sockaddr_in relay_address{};
+    relay_address.sin_family = AF_INET;
+    relay_address.sin_port = 0;
+    CHECK_EQ(::inet_pton(AF_INET, "127.0.0.1", &relay_address.sin_addr), 1);
+    CHECK_EQ(::bind(relay_listener, reinterpret_cast<sockaddr*>(&relay_address), sizeof(relay_address)), 0);
+    CHECK_EQ(::listen(relay_listener, 1), 0);
+    sockaddr_in bound{};
+    socklen_t bound_len = sizeof(bound);
+    CHECK_EQ(::getsockname(relay_listener, reinterpret_cast<sockaddr*>(&bound), &bound_len), 0);
+    const std::uint16_t relay_port = static_cast<std::uint16_t>(ntohs(bound.sin_port));
+
+    std::mutex wire_mutex;
+    std::string wire;
+    std::atomic<bool> relay_done{false};
+    std::thread relay([&] {
+        const int client_fd = ::accept(relay_listener, nullptr, nullptr);
+        if (client_fd < 0) { relay_done.store(true); return; }
+        sockaddr_in upstream{};
+        upstream.sin_family = AF_INET;
+        upstream.sin_port = htons(host_port);
+        ::inet_pton(AF_INET, "127.0.0.1", &upstream.sin_addr);
+        const int server_fd = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (::connect(server_fd, reinterpret_cast<sockaddr*>(&upstream), sizeof(upstream)) != 0) {
+            ::close(client_fd); relay_done.store(true); return;
+        }
+        pollfd watches[2] = {{client_fd, POLLIN, 0}, {server_fd, POLLIN, 0}};
+        char buffer[4096];
+        for (;;) {
+            const int ready = ::poll(watches, 2, 2000);
+            if (ready <= 0) break;
+            bool closed = false;
+            for (int side = 0; side < 2 && !closed; ++side) {
+                if (watches[side].revents & POLLIN) {
+                    const int got = ::recv(watches[side].fd, buffer, sizeof(buffer), 0);
+                    if (got <= 0) { closed = true; break; }
+                    {
+                        std::lock_guard<std::mutex> lock(wire_mutex);
+                        wire.append(buffer, static_cast<std::size_t>(got));
+                    }
+                    const int peer = side == 0 ? server_fd : client_fd;
+                    int offset = 0;
+                    while (offset < got) {
+                        const int sent = ::send(peer, buffer + offset, got - offset, 0);
+                        if (sent <= 0) { closed = true; break; }
+                        offset += sent;
+                    }
+                }
+            }
+            if (closed) break;
+        }
+        ::close(client_fd);
+        ::close(server_fd);
+        relay_done.store(true);
+    });
+
+    // Garde-fou : quoi qu'il arrive ensuite (y compris une exigence qui échoue),
+    // le relais est arrêté et rejoint — jamais de thread joignable abandonné.
+    struct RelayGuard {
+        std::thread& thread;
+        int listener;                 // pris par valeur : fermé une seule fois, ici
+        std::atomic<bool>& done;
+        ~RelayGuard() {
+            ::shutdown(listener, SHUT_RDWR);   // réveille l'accept() du relais
+            if (thread.joinable()) thread.join();
+            ::close(listener);
+        }
+    } relay_guard{relay, relay_listener, relay_done};
+    GuestConfig guest_config;
+    guest_config.address = IpAddress::loopback(IpFamily::Ipv4);
+    guest_config.control_port = relay_port;      // l'invité passe par l'oracle
+    guest_config.guest_name = "Alice";
+    guest_config.invite_code = code;
+    guest_config.heartbeat_interval_ms = 200;
+    GuestClient guest(clock);
+    REQUIRE(guest.start(guest_config));
+    if (!guest.wait_for([](const GuestSnapshot& view) { return view.phase == GuestPhase::Connected; }, 10s)) {
+        for (const auto& line : guest.snapshot()->events) std::printf("oracle: invité %s\n", line.c_str());
+        for (const auto& line : host.snapshot()->events) std::printf("oracle: hôte %s\n", line.c_str());
+        CHECK(false);   // échec explicite, sans exception pendant que le relais tourne
+        guest.stop();
+        host.stop();
+        return;
+    }
+    const std::string marker_guest = "MARQUEUR-INVITE-DEVLINK-7777";
+    const std::string marker_host = "MARQUEUR-HOTE-DEVLINK-8888";
+    CHECK(guest.post_chat(marker_guest));
+    CHECK(host.post_chat(marker_host));
+    REQUIRE(guest.wait_for([&](const GuestSnapshot& view) {
+        for (const auto& line : view.chat) if (line.body == marker_host) return true;
+        return false;
+    }, 5s));
+    REQUIRE(host.wait_for([&](const HostSnapshot& view) {
+        for (const auto& line : view.chat) if (line.body == marker_guest) return true;
+        return false;
+    }, 5s));
+    const std::string resume = guest.resume_secret();
+    CHECK(!resume.empty());
+    // Les deux côtés décrivent le même canal réel.
+    CHECK(guest.snapshot()->transport.rfind("TLSv1.3", 0) == 0);
+    CHECK(host.snapshot()->transport.rfind("TLS 1.3", 0) == 0);
+    guest.stop();
+    host.stop();
+    for (int wait = 0; wait < 200 && !relay_done.load(); ++wait)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    std::string captured;
+    {
+        std::lock_guard<std::mutex> lock(wire_mutex);
+        captured = wire;
+    }
+    CHECK(captured.size() > 200);   // du trafic a réellement traversé l'oracle
+    const std::string code_binary(reinterpret_cast<const char*>(code.bytes.data()), code.bytes.size());
+    CHECK(captured.find(code.text) == std::string::npos);            // code dictable : jamais
+    CHECK(captured.find(code_binary) == std::string::npos);          // ni sa forme binaire
+    CHECK(captured.find(resume) == std::string::npos);               // secret de reprise : jamais
+    CHECK(captured.find(marker_guest) == std::string::npos);         // messages : chiffrés
+    CHECK(captured.find(marker_host) == std::string::npos);
+    CHECK(captured.find("DevLink TLS13 PSK") == std::string::npos);  // libellés de dérivation
+    CHECK(captured.find("DevLink auth proof") == std::string::npos);
+    // Le clair initial a bien été observé : l'oracle n'est pas vide par hasard.
+    CHECK(captured.find("Alice") != std::string::npos);
+    std::printf("control-wire-oracle: %zu octets observés, aucun secret ni message en clair\n", captured.size());
+}
+#endif
+
 int main(int argc, char** argv) {
     if (argc == 2 && std::string_view(argv[1]) == "--ipv6") {
         DynamicPortAllocator allocator;
@@ -1057,5 +1810,28 @@ int main(int argc, char** argv) {
     CASE(lan_resume_secret_binds_identity);
     CASE(lan_discovery_announce_and_listen);
     CASE(lan_proxy_informational_and_upgrade_responses); CASE(pool_saturation_with_held_open_connections);
+    CASE(transport_clear_declares_itself);
+    CASE(tls13_availability_is_honest);
+    {
+        std::string tls_reason;
+        const bool tls_available = plpt::net::tls13_runtime_available(&tls_reason);
+        if (!tls_available) {
+            // SKIP n'est pas un PASS : les cas TLS ne sont pas comptes ici.
+            std::printf("SKIP tls13: runtime indisponible (%s)\n", tls_reason.c_str());
+            // Preuves qui n'existent QUE sans runtime : refus de démarrer un
+            // partage réel, et plan de contrôle en clair assumé/étiqueté.
+            CASE(host_refuses_session_without_tls_runtime);
+            CASE(control_plane_challenge_response_gates_admission);
+        } else {
+            CASE(tls13_psk_loopback_authenticated);
+            CASE(tls13_psk_wrong_secret_refused);
+            CASE(tls13_downgrade_refused);
+            CASE(control_plane_challenge_response_gates_admission);
+#ifndef _WIN32
+            CASE(tls13_wire_oracle_no_plaintext);
+            CASE(lan_control_wire_never_carries_secrets);
+#endif
+        }
+    }
     return plpt_test::finish("platform");
 }

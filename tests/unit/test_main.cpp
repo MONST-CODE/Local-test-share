@@ -1,7 +1,9 @@
-﻿#include <algorithm>
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <limits>
+#include <memory>
 #include <random>
 #include <type_traits>
 #include "tests/test_harness.hpp"
@@ -14,14 +16,18 @@
 #include "engine/protocol/envelope.hpp"
 #include "engine/resource_manager/resource.hpp"
 #include "engine/core/digest.hpp"
+#include "engine/core/mac.hpp"
 #include "engine/core/format.hpp"
 #include "engine/core/secrets.hpp"
 #include "engine/net/discovery.hpp"
 #include "engine/net/proxy.hpp"
 #include "engine/net/wire.hpp"
-#include "engine/net/secure_channel.hpp"
 #include "engine/browser/remote_frame.hpp"
+#include "engine/media/frame_queue.hpp"
 #include "engine/browser/webview2_backend.hpp"
+#include "engine/share/media_wire.hpp"
+#include "engine/share/share_policy.hpp"
+#include "engine/share/view_mapping.hpp"
 
 using namespace plpt;
 using namespace plpt::model;
@@ -306,15 +312,214 @@ void protocol_golden_and_bounds() {
         auto corrupt = encoded.value(); corrupt[offset] = 0xFF; CHECK(!decode_envelope(corrupt));
     }
     // Même majeur obligatoire, révision mineure inférieure ou égale acceptée.
-    // 1.2 porte le secret de reprise ; 1.3 n'existe pas et doit être refusé.
+    // 1.3 porte l'upgrade TLS en cours de connexion (TlsUpgrade, ADR-016) ;
+    // 1.4 n'existe pas et doit être refusé.
     CHECK(negotiate_version(1, 0)); CHECK(negotiate_version(1, 1)); CHECK(negotiate_version(1, 2));
-    CHECK(!negotiate_version(1, 3)); CHECK(!negotiate_version(2, 0)); CHECK(!negotiate_version(0, 1));
+    CHECK(negotiate_version(1, 3));
+    CHECK(!negotiate_version(1, 5)); CHECK(!negotiate_version(2, 0)); CHECK(!negotiate_version(0, 1));
     e.payload.resize(8193); CHECK(!encode_envelope(e));
     e = chat(); e.type = static_cast<MessageType>(999); CHECK(!encode_envelope(e));
     e = chat(); e.flags = 1; CHECK(!encode_envelope(e));
     e = chat(); e.participant = {}; CHECK(!encode_envelope(e));
     e = chat(); e.sequence = 0; CHECK(!encode_envelope(e));
 }
+// ---------------------------------------------------------------------------
+// ADR-017 : HMAC-SHA256 (RFC 2104) sur le fournisseur d'empreintes de l'OS.
+// Les vecteurs RFC 4231 sont la preuve que la construction est exacte : une
+// erreur de construction donnerait des MAC différents de la norme.
+// ---------------------------------------------------------------------------
+void hmac_sha256_matches_rfc4231() {
+    const auto provider = digest_provider();
+    REQUIRE(provider.available);   // sans fournisseur, aucune preuve n'est possible.
+    struct Vector { std::vector<std::uint8_t> key; std::string data; const char* hex; };
+    const std::vector<Vector> vectors = {
+        {std::vector<std::uint8_t>(20, 0x0b), "Hi There",
+            "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"},
+        {std::vector<std::uint8_t>{'J', 'e', 'f', 'e'}, "what do ya want for nothing?",
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"},
+        {std::vector<std::uint8_t>(20, 0xaa), std::string(50, '\xdd'),
+            "773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe"},
+        {std::vector<std::uint8_t>(131, 0xaa), "Test Using Larger Than Block-Size Key - Hash Key First",
+            "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"},
+        {std::vector<std::uint8_t>(131, 0xaa),
+            "This is a test using a larger than block-size key and a larger than block-size data. "
+            "The key needs to be hashed before being used by the HMAC algorithm.",
+            "9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2"},
+    };
+    for (std::size_t index = 0; index < vectors.size(); ++index) {
+        const auto& vector = vectors[index];
+        auto mac = hmac_sha256(vector.key,
+            {reinterpret_cast<const std::uint8_t*>(vector.data.data()), vector.data.size()});
+        REQUIRE(mac);
+        CHECK_EQ(mac.value().size(), kHmacSha256Size);
+        CHECK_EQ(to_hex(mac.value()), std::string(vector.hex));  // vecteur RFC 4231
+    }
+    // Clé vide et message vide : définis, pas une erreur silencieuse.
+    auto empty = hmac_sha256(std::span<const std::uint8_t>{}, std::span<const std::uint8_t>{});
+    REQUIRE(empty);
+    CHECK_EQ(to_hex(empty.value()),
+        std::string("b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad"));
+    // Surcharge string_view cohérente avec la surcharge binaire.
+    auto by_string = hmac_sha256(std::string_view("clé"), std::string_view("message"));
+    REQUIRE(by_string);
+    const std::string key = "clé";
+    const std::string message = "message";
+    auto by_span = hmac_sha256({reinterpret_cast<const std::uint8_t*>(key.data()), key.size()},
+        {reinterpret_cast<const std::uint8_t*>(message.data()), message.size()});
+    REQUIRE(by_span);
+    CHECK(mac_equals(by_string.value(), by_span.value()));
+    // Comparaison à temps constant : une seule différence invalide la preuve.
+    auto altered = by_string.value();
+    altered[altered.size() - 1] ^= 0x01;
+    CHECK(!mac_equals(by_string.value(), altered));
+    CHECK(!mac_equals(by_string.value(), std::span<const std::uint8_t>(by_string.value()).first(31)));
+}
+
+// ---------------------------------------------------------------------------
+// ADR-017 : défi-réponse du protocole 1.3. Aucun secret ne transite ; les
+// preuves sont liées au nonce, à la session et à la nature du secret.
+// ---------------------------------------------------------------------------
+void challenge_response_codec_and_derivation() {
+    using namespace plpt::net;
+    auto code = generate_invite_code(); REQUIRE(code);
+    auto resume = generate_resume_secret(); REQUIRE(resume);
+    std::vector<std::uint8_t> nonce(kAuthNonceBytes);
+    SecureRandom random; REQUIRE(random.fill(nonce));
+    const std::vector<std::uint8_t> code_bytes(code.value().bytes.begin(), code.value().bytes.end());
+    const std::vector<std::uint8_t> resume_bytes(resume.value().begin(), resume.value().end());
+
+    // Défi : aller-retour exact, nonce public de taille imposée.
+    AuthChallenge challenge; challenge.nonce = nonce;
+    auto encoded_challenge = encode_auth_challenge(challenge); REQUIRE(encoded_challenge);
+    auto challenge_back = decode_auth_challenge(encoded_challenge.value()); REQUIRE(challenge_back);
+    CHECK_EQ(challenge_back.value().nonce, nonce);
+    AuthChallenge short_nonce; short_nonce.nonce.assign(nonce.begin(), nonce.begin() + 16);
+    CHECK(!encode_auth_challenge(short_nonce));            // encodeur : jamais un nonce tronqué
+    auto truncated = encoded_challenge.value(); truncated.pop_back();
+    CHECK(!decode_auth_challenge(truncated));              // décodeur : troncature refusée
+    auto padded = encoded_challenge.value(); padded.push_back(0);
+    CHECK(!decode_auth_challenge(padded));                 // octets surnuméraires refusés
+
+    // Preuve : une ou deux preuves, jamais aucune.
+    auto invite_proof = compute_auth_proof(code_bytes, nonce, 4242, AuthProofKind::InviteCode);
+    REQUIRE(invite_proof);
+    auto resume_proof = compute_auth_proof(resume_bytes, nonce, 4242, AuthProofKind::ResumeSecret);
+    REQUIRE(resume_proof);
+    CHECK_EQ(invite_proof.value().size(), kAuthProofBytes);
+    CHECK(!mac_equals(invite_proof.value(), resume_proof.value()));
+    AuthProof both; both.invite_proof = invite_proof.value(); both.resume_proof = resume_proof.value();
+    auto encoded_both = encode_auth_proof(both); REQUIRE(encoded_both);
+    auto both_back = decode_auth_proof(encoded_both.value()); REQUIRE(both_back);
+    CHECK_EQ(both_back.value().invite_proof, invite_proof.value());
+    CHECK_EQ(both_back.value().resume_proof, resume_proof.value());
+    AuthProof invite_only; invite_only.invite_proof = invite_proof.value();
+    auto encoded_invite = encode_auth_proof(invite_only); REQUIRE(encoded_invite);
+    auto invite_back = decode_auth_proof(encoded_invite.value()); REQUIRE(invite_back);
+    CHECK(invite_back.value().resume_proof.empty());
+    AuthProof none;
+    CHECK(!encode_auth_proof(none));                       // aucune preuve = refus
+    auto tampered = encoded_invite.value(); tampered.pop_back();
+    CHECK(!decode_auth_proof(tampered));
+    // Une preuve de mauvaise taille est refusée à l'encodage comme au décodage.
+    AuthProof bogus; bogus.invite_proof.assign(31, 0x5a);
+    CHECK(!encode_auth_proof(bogus));
+
+    // La preuve dépend du nonce, de la session et de la nature du secret :
+    // aucune réutilisation possible d'une capture.
+    std::vector<std::uint8_t> other_nonce(kAuthNonceBytes, 0x11);
+    auto other = compute_auth_proof(code_bytes, other_nonce, 4242, AuthProofKind::InviteCode);
+    REQUIRE(other);
+    CHECK(!mac_equals(other.value(), invite_proof.value()));
+    auto other_session = compute_auth_proof(code_bytes, nonce, 4243, AuthProofKind::InviteCode);
+    REQUIRE(other_session);
+    CHECK(!mac_equals(other_session.value(), invite_proof.value()));
+    auto other_kind = compute_auth_proof(code_bytes, nonce, 4242, AuthProofKind::ResumeSecret);
+    REQUIRE(other_kind);
+    CHECK(!mac_equals(other_kind.value(), invite_proof.value()));
+    // Le message authentifié est explicite et borné.
+    const auto message = auth_proof_message(nonce, 4242, AuthProofKind::InviteCode);
+    CHECK_EQ(message.size(), kAuthNonceBytes + 9);
+    CHECK_EQ(message.back(), static_cast<std::uint8_t>(AuthProofKind::InviteCode));
+    // Nonce hors taille : refus, jamais de preuve sur un contexte faux.
+    CHECK(!compute_auth_proof(code_bytes, std::span<const std::uint8_t>(nonce).first(8), 4242,
+        AuthProofKind::InviteCode));
+    // Secret vide : refus explicite (pas de MAC sur clé vide silencieuse).
+    CHECK(!compute_auth_proof(std::span<const std::uint8_t>{}, nonce, 4242, AuthProofKind::InviteCode));
+
+    // Notice d'upgrade : publique, sans secret, liée au nonce vérifié.
+    TlsUpgradeNotice notice;
+    notice.identity = "dl-s4242-abcd";
+    notice.secret_kind = AuthProofKind::ResumeSecret;
+    notice.nonce = nonce;
+    auto encoded_notice = encode_tls_upgrade(notice); REQUIRE(encoded_notice);
+    auto notice_back = decode_tls_upgrade(encoded_notice.value()); REQUIRE(notice_back);
+    CHECK_EQ(notice_back.value().identity, notice.identity);
+    CHECK(notice_back.value().secret_kind == AuthProofKind::ResumeSecret);
+    CHECK_EQ(notice_back.value().nonce, nonce);
+    TlsUpgradeNotice empty_identity = notice; empty_identity.identity.clear();
+    CHECK(!encode_tls_upgrade(empty_identity));
+    TlsUpgradeNotice control_identity = notice; control_identity.identity = "dl\ns7";
+    CHECK(!encode_tls_upgrade(control_identity));
+    TlsUpgradeNotice long_identity = notice; long_identity.identity.assign(129, 'a');
+    CHECK(!encode_tls_upgrade(long_identity));
+    TlsUpgradeNotice wrong_nonce = notice; wrong_nonce.nonce.assign(kAuthNonceBytes - 1, 0x22);
+    CHECK(!encode_tls_upgrade(wrong_nonce));
+    auto notice_truncated = encoded_notice.value(); notice_truncated.pop_back();
+    CHECK(!decode_tls_upgrade(notice_truncated));
+
+    // Secret de transport : dérivé localement, identique des deux côtés, lié au
+    // contexte, et jamais égal au secret ni à sa simple empreinte.
+    auto host_secret = derive_transport_secret(code_bytes, nonce, 4242, notice.identity);
+    REQUIRE(host_secret);
+    auto guest_secret = derive_transport_secret(code_bytes, nonce, 4242, notice.identity);
+    REQUIRE(guest_secret);
+    CHECK_EQ(host_secret.value(), guest_secret.value());
+    CHECK(host_secret.value().size() >= 16);               // borne de la fabrique TLS
+    CHECK_EQ(host_secret.value().size(), 64U);             // hexadécimal de 32 octets
+    for (const char digit : host_secret.value())
+        CHECK((digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f'));
+    CHECK(host_secret.value() != to_hex(code_bytes));
+    auto other_identity = derive_transport_secret(code_bytes, nonce, 4242, "dl-s4242-autre");
+    REQUIRE(other_identity);
+    CHECK(other_identity.value() != host_secret.value());
+    auto other_nonce_secret = derive_transport_secret(code_bytes, other_nonce, 4242, notice.identity);
+    REQUIRE(other_nonce_secret);
+    CHECK(other_nonce_secret.value() != host_secret.value());
+    auto resume_secret_derived = derive_transport_secret(resume_bytes, nonce, 4242, notice.identity);
+    REQUIRE(resume_secret_derived);
+    CHECK(resume_secret_derived.value() != host_secret.value());
+    CHECK(!derive_transport_secret(code_bytes, std::span<const std::uint8_t>(nonce).first(4), 4242,
+        notice.identity));
+    CHECK(!derive_transport_secret(std::span<const std::uint8_t>{}, nonce, 4242, notice.identity));
+    CHECK(!derive_transport_secret(code_bytes, nonce, 4242, std::string()));
+
+    // Trames d'AVANT admission (ADR-017) : participant nul accepté pour le défi,
+    // la preuve et la notice d'upgrade ; refusé pour le reste du protocole, qui
+    // exige une place attribuée. Séquence et session restent obligatoires :
+    // aucune de ces trames n'est rejouable.
+    auto framed_proof = frame(MessageType::AuthProof, SessionId{4242}, ParticipantId{}, 1, encoded_invite.value());
+    REQUIRE(framed_proof);
+    auto framed_notice = frame(MessageType::TlsUpgrade, SessionId{4242}, ParticipantId{}, 1, encoded_notice.value());
+    REQUIRE(framed_notice);
+    CHECK(!frame(MessageType::Chat, SessionId{4242}, ParticipantId{}, 1, encoded_challenge.value()));
+    CHECK(!frame(MessageType::ServiceList, SessionId{4242}, ParticipantId{}, 1, encoded_challenge.value()));
+    CHECK(!frame(MessageType::AuthChallenge, SessionId{4242}, ParticipantId{}, 0, encoded_challenge.value()));
+    CHECK(!frame(MessageType::AuthProof, SessionId{4242}, ParticipantId{}, 0, encoded_invite.value()));
+    CHECK(!frame(MessageType::TlsUpgrade, SessionId{4242}, ParticipantId{}, 0, encoded_notice.value()));
+    CHECK(!frame(MessageType::AuthChallenge, SessionId{}, ParticipantId{}, 1, encoded_challenge.value()));
+    CHECK(!frame(MessageType::TlsUpgrade, SessionId{}, ParticipantId{}, 1, encoded_notice.value()));
+
+    // Les nouvelles trames respectent les bornes de charge utile du protocole.
+    CHECK(max_payload_size(MessageType::AuthChallenge) >= encoded_challenge.value().size());
+    CHECK(max_payload_size(MessageType::AuthProof) >= encoded_both.value().size());
+    CHECK(max_payload_size(MessageType::TlsUpgrade) >= encoded_notice.value().size());
+    auto framed_challenge = frame(MessageType::AuthChallenge, SessionId{4242}, ParticipantId{}, 1,
+        encoded_challenge.value());
+    REQUIRE(framed_challenge);
+    auto framed_back = decode_envelope(framed_challenge.value()); REQUIRE(framed_back);
+    CHECK(framed_back.value().type == MessageType::AuthChallenge);
+}
+
 void protocol_deterministic_mutations() {
     std::mt19937 rng(20261113); // tests uniquement, jamais un secret.
     const auto seed = encode_envelope(chat()); REQUIRE(seed);
@@ -343,8 +548,8 @@ void audit_is_opt_in_typed_and_bounded() {
     CHECK_EQ(on.entries().size(), 256U); CHECK_EQ(on.entries().back().timestamp_ms, 500U);
     on.clear(); CHECK(on.entries().empty());
 }
-void managed_browser_isolation_and_allowlist() {
-    ManagedBrowserBackend backend;
+void demo_browser_isolation_and_allowlist() {
+    DemoBrowserBackend backend;
     BrowserPolicy policy;
     policy.allowed_origins.push_back("http://127.0.0.1:8080");
     policy.allowed_origins.push_back("http://localhost:3000");
@@ -365,8 +570,24 @@ void managed_browser_isolation_and_allowlist() {
     CHECK(!policy.is_origin_allowed("javascript:alert(1)"));
     CHECK(!policy.is_origin_allowed("data:text/html,bad"));
     CHECK(!policy.is_origin_allowed("http://malicious-site.com"));
+    CHECK(!policy.is_origin_allowed("http://127.0.0.1:8080.attacker.example/dashboard"));
+    CHECK(!policy.is_origin_allowed("http://127.0.0.1:8080@attacker.example/dashboard"));
+    CHECK(!policy.is_origin_allowed("http://127.0.0.1:8080\\@attacker.example/dashboard"));
+    CHECK(!policy.is_origin_allowed("http://127.0.0.1:8080.evil/dashboard"));
+    CHECK(!policy.is_origin_allowed("http://0x7f000001:8080/dashboard"));
+    CHECK(!policy.is_origin_allowed("http://127.1:8080/dashboard"));
+    CHECK(!policy.is_origin_allowed("http://0177.0.0.1:8080/dashboard"));
+    CHECK(policy.is_origin_allowed("HTTP://127.0.0.1:08080/dashboard"));
     CHECK(policy.is_origin_allowed("http://127.0.0.1:8080/dashboard"));
     CHECK(policy.is_origin_allowed("http://localhost:3000/api"));
+    CHECK(policy.is_origin_allowed("http://LOCALHOST:3000/api"));
+    CHECK(!policy.is_origin_allowed("http://localhost:3001/api"));
+    BrowserPolicy wildcard;
+    wildcard.allowed_origins.push_back("*");
+    CHECK(!wildcard.is_origin_allowed("http://127.0.0.1:8080/"));
+    BrowserPolicy ipv6;
+    ipv6.allowed_origins.push_back("http://[::1]:8080");
+    CHECK(ipv6.is_origin_allowed("http://[0:0:0:0:0:0:0:1]:8080/page"));
 
     // Navigation security
     CHECK(!backend.navigate(c1.value().context, "file:///etc/passwd"));
@@ -570,10 +791,21 @@ void wire_messages_roundtrip_and_guard() {
 
     SessionInfo info; info.session = SessionId{42}; info.session_name = "Session démo"; info.host_name = "poste-hôte";
     info.state = 3; info.max_participants = 5; info.started_ms = 1234;
-    info.peers.push_back(PeerInfo{ParticipantId{2}, "Alice", 0, 999, 12, true});
+    // ADR-016 : le transport RÉEL de la session et de chaque pair est annoncé.
+    info.transport = "TLS 1.3 PSK (pairs authentifiés)";
+    info.peers.push_back(PeerInfo{ParticipantId{2}, "Alice", 0, 999, 12, true,
+        "TLSv1.3 TLS_AES_128_GCM_SHA256 (pair authentifié)"});
     auto info_back = decode_session_info(encode(info)); REQUIRE(info_back);
     CHECK_EQ(info_back.value().peers.size(), 1U); CHECK(info_back.value().peers[0].self);
     CHECK_EQ(info_back.value().peers[0].latency_ms, 12U);
+    CHECK_EQ(info_back.value().transport, info.transport);
+    CHECK_EQ(info_back.value().peers[0].transport, info.peers[0].transport);
+    // Bloc 1.3 vide : encodage court, décodage identique (les pairs 1.2 aussi).
+    SessionInfo plain = info; plain.transport.clear(); plain.peers[0].transport.clear();
+    auto plain_back = decode_session_info(encode(plain)); REQUIRE(plain_back);
+    CHECK(plain_back.value().transport.empty());
+    CHECK(plain_back.value().peers[0].transport.empty());
+    CHECK_EQ(plain_back.value().peers[0].name, std::string("Alice"));
 
     ServiceList list{{ServiceInfo{1, "Démo HTTP", 43211, "http://192.168.1.10:43211/?plpt=abcd", true}}, "192.168.1.10:40000"};
     auto list_back = decode_service_list(encode(list)); REQUIRE(list_back);
@@ -973,70 +1205,61 @@ void resume_secret_is_the_only_proof_of_a_place() {
     }
 }
 
-void secure_channel_confidentiality_and_anti_replay() {
-    using namespace plpt::net;
-    std::vector<std::uint8_t> ikm = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
-    std::vector<std::uint8_t> c_nonce(16, 0xAA);
-    std::vector<std::uint8_t> s_nonce(16, 0x55);
-    auto keys_res = derive_session_keys(ikm, c_nonce, s_nonce);
-    REQUIRE(keys_res);
-
-    SecureChannel client_chan(keys_res.value(), false);
-    SecureChannel server_chan(keys_res.value(), true);
-
-    std::string secret_payload = "Contrat secret d'invitation DevLink 2026";
-    std::vector<std::uint8_t> plain(secret_payload.begin(), secret_payload.end());
-
-    auto sealed = client_chan.seal(plain, 1, 1000);
-    REQUIRE(sealed);
-    CHECK(sealed.value().size() > plain.size());
-
-    // Dechiffrement nominal
-    auto unsealed = server_chan.unseal(sealed.value(), 1050);
-    REQUIRE(unsealed);
-    std::string recovered(unsealed.value().begin(), unsealed.value().end());
-    CHECK_EQ(recovered, secret_payload);
-
-    // Rejet anti-rejeu : rejeu du meme paquet
-    auto replay_attempt = server_chan.unseal(sealed.value(), 1100);
-    CHECK(!replay_attempt);
-
-    // Rejet d'un paquet altere (integrite HMAC)
-    auto sealed2 = client_chan.seal(plain, 1, 2000);
-    REQUIRE(sealed2);
-    auto tampered = sealed2.value();
-    tampered[kSecureHeaderBytes + 2] ^= 0xFF;
-    auto tampered_attempt = server_chan.unseal(tampered, 2010);
-    CHECK(!tampered_attempt);
-
-    // Rejet d'un paquet expire (> max_skew)
-    auto sealed3 = client_chan.seal(plain, 1, 3000);
-    REQUIRE(sealed3);
-    auto expired_attempt = server_chan.unseal(sealed3.value(), 30000);
-    CHECK(!expired_attempt);
-}
-
 void remote_frame_and_input_serialization() {
     using namespace plpt::media;
     VideoFrame frame;
-    frame.header.width = 1280;
-    frame.header.height = 720;
-    frame.header.frame_index = 42;
-    frame.header.timestamp_ms = 1337;
-    frame.header.format = FrameFormat::RawRGBA32;
-    frame.header.flags = 1;
+    frame.header.session = SessionId{0x0102030405060708ULL};
+    frame.header.participant = ParticipantId{9};
+    frame.header.stream_id = 3;
+    frame.header.context = ContextId{11};
+    frame.header.sequence = 42;
+    frame.header.timestamp_ns = 1337;
+    frame.header.width = 2;
+    frame.header.height = 1;
+    frame.header.stride_bytes = 8;
     frame.pixels = {10, 20, 30, 40, 50, 60, 70, 80};
 
     auto enc_frame = serialize_video_frame(frame);
-    auto dec_frame = deserialize_video_frame(enc_frame);
+    REQUIRE(enc_frame);
+    CHECK_EQ(enc_frame.value().size(), kFrameHeaderBytes + frame.pixels.size());
+    CHECK_EQ(enc_frame.value()[0], static_cast<std::uint8_t>('D'));
+    CHECK_EQ(enc_frame.value()[1], static_cast<std::uint8_t>('L'));
+    CHECK_EQ(enc_frame.value()[2], static_cast<std::uint8_t>('V'));
+    CHECK_EQ(enc_frame.value()[3], static_cast<std::uint8_t>('F'));
+    auto dec_frame = deserialize_video_frame(enc_frame.value());
     REQUIRE(dec_frame);
-    CHECK_EQ(dec_frame.value().header.width, 1280);
-    CHECK_EQ(dec_frame.value().header.height, 720);
-    CHECK_EQ(dec_frame.value().header.frame_index, 42U);
-    CHECK_EQ(dec_frame.value().header.timestamp_ms, 1337ULL);
+    CHECK_EQ(dec_frame.value().header.session.value, frame.header.session.value);
+    CHECK_EQ(dec_frame.value().header.participant.value, 9ULL);
+    CHECK_EQ(dec_frame.value().header.stream_id, 3U);
+    CHECK_EQ(dec_frame.value().header.context.value, 11ULL);
+    CHECK_EQ(dec_frame.value().header.width, 2U);
+    CHECK_EQ(dec_frame.value().header.height, 1U);
+    CHECK_EQ(dec_frame.value().header.stride_bytes, 8U);
+    CHECK_EQ(dec_frame.value().header.sequence, 42ULL);
+    CHECK_EQ(dec_frame.value().header.timestamp_ns, 1337ULL);
     CHECK_EQ(dec_frame.value().pixels.size(), 8U);
     CHECK_EQ(dec_frame.value().pixels[0], 10);
     CHECK_EQ(dec_frame.value().pixels[7], 80);
+
+    auto truncated_frame = deserialize_video_frame(std::span<const std::uint8_t>(enc_frame.value()).first(kFrameHeaderBytes - 1));
+    CHECK(!truncated_frame);
+    auto extra_frame_bytes = enc_frame.value();
+    extra_frame_bytes.push_back(0);
+    CHECK(!deserialize_video_frame(extra_frame_bytes));
+    auto wrong_magic = enc_frame.value();
+    wrong_magic[0] = 0;
+    CHECK(!deserialize_video_frame(wrong_magic));
+    auto wrong_stride = enc_frame.value();
+    wrong_stride[67] = 7; // stride field is big-endian at offsets 64..67
+    CHECK(!deserialize_video_frame(wrong_stride));
+    auto unsupported_codec = enc_frame.value();
+    unsupported_codec[8] = 99;
+    CHECK(!deserialize_video_frame(unsupported_codec));
+    auto unsupported_version = enc_frame.value();
+    unsupported_version[5] = 99;
+    auto bad_version = deserialize_video_frame(unsupported_version);
+    CHECK(!bad_version);
+    if (!bad_version) CHECK_EQ(bad_version.error().code, ErrorCode::UnsupportedVersion);
 
     InputEvent ev;
     ev.type = InputEventType::MouseDown;
@@ -1044,30 +1267,138 @@ void remote_frame_and_input_serialization() {
     ev.y_norm = 0.25f;
     ev.button = 1;
     ev.modifiers = 2;
-    ev.wheel_delta = 120;
-    ev.key_code = 65;
-    ev.text[0] = 'A';
-    ev.text[1] = '\0';
 
     auto enc_ev = serialize_input_event(ev);
-    auto dec_ev = deserialize_input_event(enc_ev);
+    REQUIRE(enc_ev);
+    auto dec_ev = deserialize_input_event(enc_ev.value());
     REQUIRE(dec_ev);
     CHECK_EQ(static_cast<int>(dec_ev.value().type), static_cast<int>(InputEventType::MouseDown));
-    CHECK_EQ(dec_ev.value().x_norm, 0.5f);
-    CHECK_EQ(dec_ev.value().y_norm, 0.25f);
+    CHECK(std::abs(dec_ev.value().x_norm - 0.5f) < 0.00002f);
+    CHECK(std::abs(dec_ev.value().y_norm - 0.25f) < 0.00002f);
     CHECK_EQ(dec_ev.value().button, 1);
     CHECK_EQ(dec_ev.value().modifiers, 2);
-    CHECK_EQ(dec_ev.value().wheel_delta, 120);
-    CHECK_EQ(dec_ev.value().key_code, 65U);
-    CHECK_EQ(dec_ev.value().text[0], 'A');
+    CHECK_EQ(dec_ev.value().wheel_delta, 0);
+    CHECK_EQ(dec_ev.value().key_code, 0U);
+    CHECK(dec_ev.value().text.empty());
+
+    InputEvent text;
+    text.type = InputEventType::TextInput;
+    text.text = "Café";
+    auto encoded_text = serialize_input_event(text);
+    REQUIRE(encoded_text);
+    auto decoded_text = deserialize_input_event(encoded_text.value());
+    REQUIRE(decoded_text);
+    CHECK_EQ(decoded_text.value().text, text.text);
+
+    InputEvent invalid = ev;
+    invalid.x_norm = std::numeric_limits<float>::quiet_NaN();
+    CHECK(!serialize_input_event(invalid));
+    invalid = text;
+    invalid.text = std::string("\xC0\xAF", 2); // non-canonical UTF-8
+    CHECK(!serialize_input_event(invalid));
+    auto trailing_input = encoded_text.value();
+    trailing_input.push_back(0);
+    CHECK(!deserialize_input_event(trailing_input));
+    auto reserved_input = enc_ev.value();
+    reserved_input[7] = 1;
+    CHECK(!deserialize_input_event(reserved_input));
+    auto invalid_type = enc_ev.value();
+    invalid_type[5] = 0xff;
+    CHECK(!deserialize_input_event(invalid_type));
+
+    InputEvent focus_lost;
+    focus_lost.type = InputEventType::FocusLost;
+    auto encoded_focus = serialize_input_event(focus_lost);
+    REQUIRE(encoded_focus);
+    CHECK(deserialize_input_event(encoded_focus.value()));
+}
+
+void bounded_frame_queue_enforces_limits_and_lifecycle() {
+    using namespace plpt::media;
+    auto make_frame = [](std::uint64_t sequence, ContextId context = ContextId{7}) {
+        VideoFrame frame;
+        frame.header.context = context;
+        frame.header.stream_id = 2;
+        frame.header.sequence = sequence;
+        frame.header.width = 1;
+        frame.header.height = 1;
+        frame.header.stride_bytes = 4;
+        frame.pixels = {static_cast<std::uint8_t>(sequence), 2, 3, 255};
+        return frame;
+    };
+
+    BoundedFrameQueue queue(3, 8);
+    auto first = queue.push(make_frame(1)); REQUIRE(first);
+    CHECK_EQ(first.value(), FramePushOutcome::Queued);
+    REQUIRE(queue.push(make_frame(2)));
+    auto third = queue.push(make_frame(3)); REQUIRE(third);
+    CHECK_EQ(third.value(), FramePushOutcome::QueuedAfterDroppingOldest);
+    auto snapshot = queue.snapshot();
+    CHECK_EQ(snapshot.queued_frames, 2U);
+    CHECK_EQ(snapshot.queued_bytes, 8U);
+    CHECK_EQ(snapshot.dropped_frames, 1ULL);
+    auto second_frame = queue.try_pop(); REQUIRE(second_frame);
+    CHECK_EQ(second_frame->header.sequence, 2ULL);
+    auto third_frame = queue.try_pop(); REQUIRE(third_frame);
+    CHECK_EQ(third_frame->header.sequence, 3ULL);
+    CHECK(!queue.try_pop());
+    auto replay = queue.push(make_frame(3));
+    CHECK(!replay);
+    if (!replay) CHECK_EQ(replay.error().code, ErrorCode::Replayed);
+    auto wrong_context = queue.push(make_frame(4, ContextId{8}));
+    CHECK(!wrong_context);
+    if (!wrong_context) CHECK_EQ(wrong_context.error().code, ErrorCode::InvalidArgument);
+
+    BoundedFrameQueue too_small(2, 3);
+    auto too_large = too_small.push(make_frame(1));
+    CHECK(!too_large);
+    if (!too_large) CHECK_EQ(too_large.error().code, ErrorCode::TooLarge);
+
+    BoundedFrameQueue closed(2, 8);
+    REQUIRE(closed.push(make_frame(1)));
+    closed.close();
+    closed.close();
+    CHECK(closed.snapshot().closed);
+    auto rejected = closed.push(make_frame(2));
+    CHECK(!rejected);
+    if (!rejected) CHECK_EQ(rejected.error().code, ErrorCode::InvalidState);
+    auto drain = closed.try_pop(); REQUIRE(drain);
+    CHECK_EQ(drain->header.sequence, 1ULL);
 }
 
 void browser_backend_selection_and_lifecycle() {
-    auto backend = plpt::browser::create_browser_backend();
-    REQUIRE(backend);
-
+    // Availability is a runtime fact, never a constant: implemented code AND an
+    // installed runtime. The real browser is exercised by devlink-browser-tests;
+    // here only the fail-closed contract that needs no browser process.
+    CHECK_EQ(plpt::browser::WebView2Backend::is_available(),
+        plpt::browser::kWebView2BackendImplemented && plpt::browser::WebView2Backend::runtime_available());
+    plpt::browser::WebView2Backend real;
     BrowserPolicy policy;
     policy.allowed_origins.push_back("http://127.0.0.1:3000");
+    auto bad_owner = real.create_context(ParticipantId{0}, policy);
+    CHECK(!bad_owner);
+    if (!bad_owner) CHECK(bad_owner.error().code == ErrorCode::InvalidArgument || bad_owner.error().code == ErrorCode::PlatformError);
+    auto no_selection = real.create_context(ParticipantId{7}, BrowserPolicy{});
+    CHECK(!no_selection); // no explicit origin, no browser
+    BrowserPolicy wildcard;
+    wildcard.allowed_origins.push_back("http://*:3000");
+    CHECK(!real.create_context(ParticipantId{7}, wildcard));
+    auto rejected_frame = real.capture_frame(ContextId{1});
+    CHECK(!rejected_frame);
+    auto rejected_input = real.inject_input(ContextId{1}, std::vector<std::uint8_t>{1, 2, 3});
+    CHECK(!rejected_input); // malformed and unknown context
+    CHECK(!real.wait_frame(ContextId{1}, 0, std::chrono::milliseconds(0)));
+    CHECK(real.destroy_context(ContextId{1})); // idempotent on unknown
+    CHECK_EQ(real.active_contexts(), 0U);
+    CHECK_EQ(real.real_engine(), plpt::browser::kWebView2BackendImplemented);
+    plpt::DemoBrowserBackend synthetic_check;
+    CHECK(!synthetic_check.real_engine()); // the demo backend never claims a real engine
+    CHECK(!synthetic_check.wait_frame(ContextId{1}, 0, std::chrono::milliseconds(0)));
+
+    // Le backend géré est utilisé ici comme fixture synthétique de test; il ne
+    // constitue jamais une preuve de capture navigateur réelle.
+    auto backend = std::make_unique<plpt::DemoBrowserBackend>();
+    REQUIRE(backend);
 
     auto ctx_res = backend->create_context(ParticipantId{7}, policy);
     REQUIRE(ctx_res);
@@ -1097,13 +1428,211 @@ void browser_backend_selection_and_lifecycle() {
     CHECK(destroy_res);
 }
 
+// ---- engine/share : policy (modes A/B/C), media records, view mapping ----
+
+static void share_policy_modes_are_enforced_server_side() {
+    using namespace plpt::share;
+    const ParticipantId a{11}, b{12}, c{13};
+    // Mode C: valid, fresh records are still refused; no lease ever exists.
+    {
+        SharePolicy p(ShareMode::ObserveOnly);
+        p.set_shared_context(ContextId{7});
+        REQUIRE(p.add(a, "A"));
+        ContextId target{};
+        CHECK(p.authorize(a, 1, &target) == InputDecision::ObserveOnlyMode);
+        CHECK(!p.request_control(a));
+        CHECK(!p.host_grant(a));
+        CHECK(!p.may_input(a));
+        CHECK_EQ(target.value, 0U);
+    }
+    // Mode B: exclusive lease, FIFO transfer, refused after release/revocation.
+    {
+        SharePolicy p(ShareMode::Collaborative);
+        p.set_shared_context(ContextId{7});
+        REQUIRE(p.add(a, "A"));
+        REQUIRE(p.add(b, "B"));
+        REQUIRE(p.add(c, "C"));
+        ContextId target{};
+        CHECK(p.authorize(a, 1, &target) == InputDecision::NotController); // nobody holds the lease
+        CHECK(p.request_control(a));
+        const auto epoch = p.lease().epoch;
+        CHECK(p.authorize(a, 2, &target) == InputDecision::Accepted);
+        CHECK_EQ(target.value, 7U);
+        CHECK(p.authorize(b, 1, &target) == InputDecision::NotController);
+        CHECK(!p.request_control(b));
+        CHECK(!p.request_control(c));
+        CHECK_EQ(p.lease().waiting.size(), 2U);
+        p.release_control(a);
+        CHECK(p.lease().holder == b);              // FIFO
+        CHECK(p.lease().epoch > epoch);
+        CHECK(p.authorize(a, 3, &target) == InputDecision::NotController); // former controller refused
+        CHECK(p.authorize(b, 2, &target) == InputDecision::Accepted);
+        // Replay of an already consumed sequence, and a non-increasing one.
+        CHECK(p.authorize(b, 2, &target) == InputDecision::Replayed);
+        CHECK(p.authorize(b, 1, &target) == InputDecision::Replayed);
+        // Pause blocks the controller too.
+        p.set_paused(true);
+        CHECK(p.authorize(b, 3, &target) == InputDecision::Paused);
+        p.set_paused(false);
+        // Revoking the holder passes the lease on; the revoked id never comes back.
+        p.remove(b, true);
+        CHECK(p.lease().holder == c);
+        CHECK(p.authorize(b, 10, &target) == InputDecision::Revoked);
+        CHECK(!p.add(b, "B again"));
+        CHECK(!p.host_grant(b));
+        CHECK(p.host_grant(ParticipantId{}));      // host takes control back
+        CHECK(p.authorize(c, 1, &target) == InputDecision::NotController);
+    }
+    // Mode A: each participant drives only its own context; a disconnection
+    // keeps that context for the resume (regression: it used to be zeroed,
+    // orphaning a live browser context and creating a second one).
+    {
+        SharePolicy p(ShareMode::Independent);
+        p.set_shared_context(ContextId{1});
+        REQUIRE(p.add(a, "A"));
+        REQUIRE(p.add(b, "B"));
+        ContextId target{};
+        CHECK(p.authorize(a, 1, &target) == InputDecision::NoContext);
+        p.set_context(a, ContextId{21});
+        p.set_context(b, ContextId{22});
+        CHECK(p.authorize(a, 2, &target) == InputDecision::Accepted);
+        CHECK_EQ(target.value, 21U);
+        CHECK(p.authorize(b, 1, &target) == InputDecision::Accepted);
+        CHECK_EQ(target.value, 22U);
+        CHECK(!p.request_control(a)); // no lease in mode A
+        p.remove(a, false);
+        REQUIRE(p.find(a));
+        CHECK_EQ(p.find(a)->context.value, 21U);
+        REQUIRE(p.add(a, "A resumed"));
+        CHECK_EQ(p.find(a)->context.value, 21U);
+        p.remove(a, true);
+        CHECK(p.find(a) == nullptr);
+    }
+}
+
+static void share_media_records_are_bounded() {
+    using namespace plpt::share;
+    // Hello roundtrip and refusal of any trailing/oversized bytes.
+    auto hello = encode_hello(MediaHello{5, 9});
+    RecordAssembler hello_reader(kMaxHelloRecord);
+    REQUIRE(hello_reader.feed(hello));
+    auto body = hello_reader.next();
+    REQUIRE(body);
+    auto decoded = decode_hello(*body);
+    REQUIRE(decoded);
+    CHECK_EQ(decoded.value().session, 5U);
+    CHECK_EQ(decoded.value().participant, 9U);
+    CHECK(!decode_hello(std::vector<std::uint8_t>{1, 0, 0}));
+    // A length beyond the bound fails BEFORE any allocation and poisons the stream.
+    RecordAssembler bounded(64);
+    const std::uint8_t huge[] = {0x7F, 0xFF, 0xFF, 0xFF, 1};
+    CHECK(!bounded.feed(huge));
+    CHECK(bounded.failed());
+    CHECK(!bounded.feed(hello));
+    // Input record: zero sequence refused both ways, oversized text refused.
+    InputRecord in;
+    in.input_seq = 0;
+    in.event.type = plpt::media::InputEventType::MouseMove;
+    CHECK(!encode_input(in));
+    in.input_seq = 42;
+    in.event.x_norm = 0.25f;
+    in.event.y_norm = 0.75f;
+    auto rec = encode_input(in);
+    REQUIRE(rec);
+    RecordAssembler reader(kMaxControlRecord);
+    REQUIRE(reader.feed(rec.value()));
+    auto in_body = reader.next();
+    REQUIRE(in_body);
+    auto back = decode_input(*in_body);
+    REQUIRE(back);
+    CHECK_EQ(back.value().input_seq, 42U);
+    auto zero = *in_body;
+    for (int i = 1; i <= 8; ++i) zero[static_cast<std::size_t>(i)] = 0;
+    CHECK(!decode_input(zero));
+    // Control: only the two defined actions.
+    auto ctl = encode_control(ControlAction::RequestControl);
+    CHECK(decode_control(std::span<const std::uint8_t>(ctl).subspan(4)));
+    const std::uint8_t bad_ctl[] = {static_cast<std::uint8_t>(RecordKind::Control), 9};
+    CHECK(!decode_control(bad_ctl));
+    // State roundtrip, invalid mode refused.
+    StateRecord st;
+    st.mode = ShareMode::Collaborative;
+    st.you = 3;
+    st.controller = 3;
+    st.lease_epoch = 4;
+    st.you_may_input = true;
+    st.viewport_width = 1280;
+    st.viewport_height = 720;
+    st.note = "ok";
+    auto st_rec = encode_state(st);
+    auto st_back = decode_state(std::span<const std::uint8_t>(st_rec).subspan(4));
+    REQUIRE(st_back);
+    CHECK(st_back.value().you_may_input);
+    CHECK(st_back.value().mode == ShareMode::Collaborative);
+    auto bad_state = std::vector<std::uint8_t>(st_rec.begin() + 4, st_rec.end());
+    bad_state[1] = 9;
+    CHECK(!decode_state(bad_state));
+    // The PSK identity is public and never contains the key.
+    CHECK(media_identity(1, 2) == "devlink-media-s1-p2");
+}
+
+static void share_view_mapping_letterbox_and_text_split() {
+    using namespace plpt::share;
+    // 1280x720 frame in a 1000x1000 panel: full width, centred vertically.
+    const auto r = fit_letterbox(ViewRect{100, 50, 1000, 1000}, 1280, 720);
+    CHECK_EQ(r.width, 1000.0f);
+    CHECK_EQ(r.height, 562.0f);
+    CHECK_EQ(r.x, 100.0f);
+    CHECK_EQ(r.y, 50.0f + 219.0f);
+    // Centre of the picture -> (0.5, 0.5) whatever the panel or DPI.
+    auto centre = to_normalized(r, r.x + r.width / 2, r.y + r.height / 2, false);
+    REQUIRE(centre);
+    CHECK(std::fabs(centre->x - 0.5f) < 1e-4f);
+    CHECK(std::fabs(centre->y - 0.5f) < 1e-4f);
+    // The same logical point at 200 % (all coordinates doubled) maps identically.
+    const auto r2 = fit_letterbox(ViewRect{200, 100, 2000, 2000}, 1280, 720);
+    auto centre2 = to_normalized(r2, r2.x + r2.width / 2, r2.y + r2.height / 2, false);
+    REQUIRE(centre2);
+    CHECK(std::fabs(centre2->x - centre->x) < 1e-3f);
+    // Letterbox bars are not part of the page; a drag is clamped to the edge.
+    CHECK(!to_normalized(r, 500, 60, false));
+    auto clamped = to_normalized(r, 500, 60, true);
+    REQUIRE(clamped);
+    CHECK_EQ(clamped->y, 0.0f);
+    CHECK(fit_letterbox(ViewRect{0, 0, 100, 100}, 0, 720).width == 0.0f);
+    CHECK(!to_normalized(ViewRect{}, 1, 1, true));
+    // UTF-8 split never cuts a code point and drops invalid lead bytes.
+    std::vector<std::string> parts;
+    split_utf8("é✓abc", 4, [&](const char* p, std::size_t n) { parts.emplace_back(p, n); });
+    REQUIRE(parts.size() == 3);
+    CHECK(parts[0] == "é");
+    CHECK(parts[1] == "✓a");
+    CHECK(parts[2] == "bc");
+    parts.clear();
+    split_utf8("Bob écrit ✓ — 32 octets au plus par enregistrement", plpt::media::kMaxInputTextBytes,
+        [&](const char* p, std::size_t n) { parts.emplace_back(p, n); });
+    std::string joined;
+    for (const auto& part : parts) {
+        CHECK(part.size() <= plpt::media::kMaxInputTextBytes);
+        joined += part;
+    }
+    CHECK(joined == "Bob écrit ✓ — 32 octets au plus par enregistrement");
+    parts.clear();
+    const char invalid[] = {'a', static_cast<char>(0xFF), 'b', 0};
+    split_utf8(invalid, 32, [&](const char* p, std::size_t n) { parts.emplace_back(p, n); });
+    std::string kept;
+    for (const auto& part : parts) kept += part;
+    CHECK(kept == "ab");
+}
+
 int main() {
     CASE(result_invariants); CASE(exact_classifier_and_ancestry); CASE(cycles_missing_and_reused_pid);
     CASE(registry_grouping_and_no_auto_share); CASE(registry_churn_and_incomplete); CASE(unknown_owner_cannot_retain_selection);
     CASE(state_expiry_and_cleanup); CASE(closing_revokes_without_waiting_for_expiry); CASE(roles_contexts_control_and_revocation);
     CASE(five_model_guests_and_capacity); CASE(messages_dm_privacy_and_read_receipts); CASE(messages_quotas_and_feedback_redaction);
-    CASE(text_validation); CASE(protocol_golden_and_bounds); CASE(protocol_deterministic_mutations); CASE(estimates_are_bounded);
-    CASE(audit_is_opt_in_typed_and_bounded); CASE(managed_browser_isolation_and_allowlist); CASE(unavailable_backends_fail_closed);
+    CASE(text_validation); CASE(protocol_golden_and_bounds);
+    CASE(hmac_sha256_matches_rfc4231); CASE(challenge_response_codec_and_derivation); CASE(protocol_deterministic_mutations); CASE(estimates_are_bounded);
+    CASE(audit_is_opt_in_typed_and_bounded); CASE(demo_browser_isolation_and_allowlist); CASE(unavailable_backends_fail_closed);
     CASE(observation_brackets_process_identity); CASE(observation_keeps_first_snapshot_warning);
     CASE(partial_registry_history_is_bounded); CASE(partial_process_inventory_invalidates_selection);
     CASE(registry_capacity_failure_invalidates_selection); CASE(worker_publishes_immutable_snapshots);
@@ -1112,9 +1641,10 @@ int main() {
     CASE(proxy_handshake_is_bounded_and_exact); CASE(discovery_announcement_codec_is_bounded);
     CASE(capability_is_never_forwarded_upstream); CASE(bind_resolution_never_defaults_to_any);
     CASE(resume_secret_is_the_only_proof_of_a_place);
-    CASE(secure_channel_confidentiality_and_anti_replay);
-    CASE(remote_frame_and_input_serialization);
+    CASE(remote_frame_and_input_serialization); CASE(bounded_frame_queue_enforces_limits_and_lifecycle);
     CASE(browser_backend_selection_and_lifecycle);
+    CASE(share_policy_modes_are_enforced_server_side); CASE(share_media_records_are_bounded);
+    CASE(share_view_mapping_letterbox_and_text_split);
     return plpt_test::finish("unit");
 }
 

@@ -1,0 +1,86 @@
+DevLink — preuve typographique multi-échelle (sonde reproductible)
+
+Portée et limites
+-----------------
+La sonde versionnée `tests/build/dpi_typography_probe.cpp` charge la vraie
+implémentation `typography.cpp`, applique le thème courant, dessine avec Dear ImGui
+1.93 et le renderer SDL3 software, lit les pixels du framebuffer, calcule les lignes
+qui tiennent dans la fenêtre et sauvegarde les captures. Les facteurs 1.00, 1.25,
+1.50 et 2.00 sont injectés au chargement des polices. SDL dummy rapporte une échelle
+de fenêtre 1.00 dans les quatre runs. Ceci ne constitue PAS une preuve de DPI
+physique ni de déplacement entre moniteurs Windows.
+
+Environnement observé : GCC 12.2 (adaptateur de validation locale), SDL3 épinglé
+`f00dc919ca35b9756316e86c4777392de442f9b2` et Dear ImGui 1.93 (`c1aaac65e896a45f81f47a4d68f9959e0f86c859`). Le compilateur Clang officiel n'est pas présent dans ce sandbox.
+
+Préparation des objets nécessaires :
+
+  ./.cache/build_local_tmp.sh test debug --headless
+
+Cette commande est un adaptateur GCC temporaire, pas le build officiel. Elle produit
+les objets SDL/ImGui/UI du probe dans `out/linux/tests/debug/`.
+
+Construction stricte de la sonde :
+
+  g++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I . \
+    -isystem out/linux/tests/debug/vendor/imgui \
+    -isystem out/linux/tests/debug/vendor/imgui/backends \
+    -isystem out/linux/tests/debug/vendor/sdl/include \
+    tests/build/dpi_typography_probe.cpp \
+    out/linux/tests/debug/objects/imgui_imgui.cpp.o \
+    out/linux/tests/debug/objects/imgui_imgui_draw.cpp.o \
+    out/linux/tests/debug/objects/imgui_imgui_tables.cpp.o \
+    out/linux/tests/debug/objects/imgui_imgui_widgets.cpp.o \
+    out/linux/tests/debug/objects/imgui_backends_imgui_impl_sdl3.cpp.o \
+    out/linux/tests/debug/objects/imgui_backends_imgui_impl_sdlrenderer3.cpp.o \
+    out/linux/tests/debug/objects/app_desktop_ui_design_system_themes.cpp.o \
+    out/linux/tests/debug/objects/app_desktop_ui_design_system_typography.cpp.o \
+    out/linux/tests/debug/bin/libSDL3.so.0 -ldl \
+    -o .cache/dpi-typography-probe
+
+Exécution et conversion lossless des BMP SDL en PNG RGBA8 (Python standard library) :
+
+  SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software \
+    LD_LIBRARY_PATH="$PWD/out/linux/tests/debug/bin" \
+    .cache/dpi-typography-probe docs/reports/evidence/dpi-captures
+  for s in 100 125 150 200; do \
+    python3 tests/build/bmp_to_png.py \
+      "docs/reports/evidence/dpi-captures/dpi-$s.bmp" \
+      "docs/reports/evidence/dpi-captures/dpi-$s.png"; \
+    rm "docs/reports/evidence/dpi-captures/dpi-$s.bmp"; \
+  done
+
+Mesures exécutées et résultat
+-----------------------------
+
+  DPI scale=1.00 (100%) SDL_window_scale=1.00 family=DejaVu Sans
+  source=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+  sizes=24/18/15/14/12/13 foreground_pixels=12492 color_variants=682 lines_fit=1 vertices=1188 commands=1 FontGlobalScale=1.0 PASS
+  capture: dpi-captures/dpi-100.png (960x480)
+
+  DPI scale=1.25 (125%) SDL_window_scale=1.00 family=DejaVu Sans
+  source=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+  sizes=30/23/19/18/15/16 foreground_pixels=17672 color_variants=709 lines_fit=1 vertices=1188 commands=1 FontGlobalScale=1.0 PASS
+  capture: dpi-captures/dpi-125.png (960x480)
+
+  DPI scale=1.50 (150%) SDL_window_scale=1.00 family=DejaVu Sans
+  source=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+  sizes=36/27/23/21/18/20 foreground_pixels=22802 color_variants=710 lines_fit=1 vertices=1188 commands=1 FontGlobalScale=1.0 PASS
+  capture: dpi-captures/dpi-150.png (960x480)
+
+  DPI scale=2.00 (200%) SDL_window_scale=1.00 family=DejaVu Sans
+  source=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+  sizes=48/36/30/28/24/26 foreground_pixels=36318 color_variants=718 lines_fit=1 vertices=1188 commands=1 FontGlobalScale=1.0 PASS
+  capture: dpi-captures/dpi-200.png (960x480)
+
+Assertions par facteur : hiérarchie des six tailles réelles, police chargée depuis
+un chemin réel, rendu non vide, lecture pixels du framebuffer, variétés de pixels
+anti-crénelés, présence de géométrie ImGui et vérification des bornes horizontales
+de chacune des six lignes par `ImGui::GetItemRectMax()`. `FontGlobalScale` reste à
+1.0. Les captures ont été examinées visuellement ; à 200 %, le texte reste net et
+contenu dans la fenêtre.
+
+Conclusion : PASS pour la rasterisation logiciel des tailles demandées avec la vraie
+hiérarchie DevLink/ImGui. PARTIAL / non vérifié pour l'exigence physique : une
+qualification PerMonitorV2 après déplacement entre de vrais écrans Windows 100/125/
+150/200 % demeure à faire sur la machine appropriée.
