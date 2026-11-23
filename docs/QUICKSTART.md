@@ -58,6 +58,6 @@ limite de visibilité sans en comprendre la cause.
   `docs/reports/evidence/2026-11-21-desktop-e2e-guest-window.png`.
 - Aucun test LAN physique à deux machines n'est revendiqué.
 
-Voir [`SECURITY.md`](SECURITY.md), [`NETWORK.md`](NETWORK.md) et le rapport
-[`reports/FINAL_COMPLETION_AUDIT.md`](reports/FINAL_COMPLETION_AUDIT.md) avant toute
+Voir [`SECURITY.md`](SECURITY.md), [`NETWORK.md`](NETWORK.md) et l'état vérifié
+[`reports/IMPLEMENTATION_STATUS.md`](reports/IMPLEMENTATION_STATUS.md) avant toute
 évaluation de portée.

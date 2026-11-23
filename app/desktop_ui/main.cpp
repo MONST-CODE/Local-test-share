@@ -350,6 +350,15 @@ struct AppState {
     int guest_port = 0;
 
     char chat_input[512] = "";
+    // Destinataire du prochain message : 0 = canal general, sinon un participant
+    // publie par le moteur (jamais un identifiant saisi a la main).
+    std::uint64_t chat_recipient = 0;
+
+    // Signalement d'anomalie (invite -> hote, protocole 1.5). Bornes identiques a
+    // celles du moteur : kMaxFeedbackBytes (2048) et kMaxFeedbackContextBytes (256).
+    int feedback_severity = static_cast<int>(plpt::net::FeedbackSeverity::Minor);
+    char feedback_context[257] = "";
+    char feedback_description[2049] = "";
 
     // Notification
     std::string toast;
@@ -1150,6 +1159,17 @@ void render_active_session(AppState& state) {
         text_card_title(snapshot->session_name);
         ImGui::SameLine();
         status_pill(plpt::net::session_state_text(snapshot->state), colors.status_success);
+        if (state.share) {
+            // Mode RÉELLEMENT appliqué par le moteur de partage, pas le formulaire.
+            const auto applied = state.share->snapshot().mode;
+            const ParticipationMode shown = applied == plpt::share::ShareMode::Independent
+                ? ParticipationMode::Independent
+                : applied == plpt::share::ShareMode::Collaborative ? ParticipationMode::Collaborative
+                                                                    : ParticipationMode::Observation;
+            ImGui::Text("Mode appliqué :");
+            ImGui::SameLine();
+            text_code(mode_label(shown));
+        }
         ImGui::Spacing();
         ImGui::Text("Code d'invitation :");
         ImGui::SameLine();
@@ -1907,95 +1927,331 @@ void render_guest_join(AppState& state) {
     }
 }
 
+// Destinataire possible d'un message prive : toujours un participant publie par
+// le moteur (hote ou invite), jamais un identifiant saisi.
+struct ChatRecipient {
+    std::uint64_t id = 0;
+    std::string label;
+};
+
+// Nom affichable d'un participant de la session, d'apres l'instantane du moteur.
+std::string participant_name(const std::vector<ChatRecipient>& known, std::uint64_t id, const std::string& fallback) {
+    for (const auto& entry : known)
+        if (entry.id == id) return entry.label;
+    return fallback;
+}
+
 void render_messaging(AppState& state) {
     using namespace devlink::ui;
     const auto& colors = theme_colors();
 
     text_section_title("Messagerie de session");
-    text_muted("Le chat passe par le moteur : l'hote est l'autorite (quotas, messages "
-               "prives, visibilite). Rien n'est fabrique localement.");
+    text_muted("Le chat passe par le moteur : l'hôte est l'autorité (quotas, messages "
+               "privés, visibilité). Rien n'est fabriqué localement. Conformément au "
+               "§13.3, l'hôte peut lire les messages privés : ils ne sont pas chiffrés "
+               "de bout en bout entre invités.");
     ImGui::Spacing();
 
     const bool host_side = state.host_mode && state.host_running && state.host;
     const bool guest_side = !host_side && state.guest_running && state.guest;
-    std::vector<plpt::net::ChatLine> lines;
-    if (host_side) {
-        if (auto snapshot = state.host->snapshot()) lines = snapshot->chat;
-    } else if (guest_side) {
-        if (auto snapshot = state.guest->snapshot()) lines = snapshot->chat;
+    if (!host_side && !guest_side) {
+        empty_state("Aucune session connectée",
+            "La messagerie n'existe que pendant une session hôte active ou une connexion invitée admise.");
+        return;
     }
 
-    if (!host_side && !guest_side) {
-        empty_state("Aucune session connectee",
-            "La messagerie n'existe que pendant une session hote active ou une connexion invite admise.");
-        return;
+    std::vector<plpt::net::ChatLine> lines;
+    std::vector<ChatRecipient> recipients;   // destinataires privés possibles
+    std::vector<ChatRecipient> everyone;     // pour nommer les destinataires affichés
+    std::uint64_t self_id = 0;
+    if (host_side) {
+        if (auto snapshot = state.host->snapshot()) {
+            lines = snapshot->chat;
+            for (const auto& participant : snapshot->participants) {
+                if (participant.state != plpt::model::ParticipantState::Connected) continue;
+                recipients.push_back({participant.id.value, participant.name});
+            }
+            everyone = recipients;
+        }
+    } else if (auto snapshot = state.guest->snapshot()) {
+        lines = snapshot->chat;
+        self_id = snapshot->self.value;
+        if (snapshot->host_participant.value != 0)
+            recipients.push_back({snapshot->host_participant.value, snapshot->host_name + " (hôte)"});
+        for (const auto& peer : snapshot->peers) {
+            if (peer.self) { everyone.push_back({peer.id.value, peer.name + " (vous)"}); continue; }
+            if (peer.state != plpt::model::ParticipantState::Connected) continue;
+            recipients.push_back({peer.id.value, peer.name});
+        }
+        everyone.insert(everyone.end(), recipients.begin(), recipients.end());
+    }
+
+    // Un destinataire parti n'est plus proposé : retour au canal général, signalé.
+    if (state.chat_recipient != 0 &&
+        std::none_of(recipients.begin(), recipients.end(),
+            [&](const ChatRecipient& r) { return r.id == state.chat_recipient; })) {
+        state.chat_recipient = 0;
+        state.notify("Le destinataire privé a quitté la session : retour au canal général");
     }
 
     if (card_begin("##chat_feed", ImVec2(pane_width(0.7f, 520.0f), 340.0f))) {
         if (lines.empty()) {
-            text_muted("Aucun message relaye par le moteur pour l'instant.");
+            text_muted("Aucun message relayé par le moteur pour l'instant.");
         } else {
             for (const auto& line : lines) {
                 if (line.system) {
-                    status_pill("EVENEMENT", colors.status_info);
+                    status_pill("ÉVÉNEMENT", colors.status_info);
                     ImGui::SameLine();
                     text_muted(line.body);
                     continue;
                 }
-                ImGui::TextColored(line.direct ? colors.status_warning : colors.accent_light, "%s%s",
-                    line.direct ? "(prive) " : "", line.sender_name.c_str());
+                std::string who = line.sender_name;
+                if (line.direct) {
+                    // Sens réel de l'échange : « A → B », B lu dans l'instantané.
+                    const std::string to = line.recipient.value == self_id && self_id != 0
+                        ? std::string("vous")
+                        : participant_name(everyone, line.recipient.value, "destinataire");
+                    who = "(privé) " + line.sender_name + " → " + to;
+                }
+                ImGui::TextColored(line.direct ? colors.status_warning : colors.accent_light, "%s", who.c_str());
                 ImGui::SameLine();
                 ImGui::TextWrapped("%s", line.body.c_str());
             }
+            // Suit le dernier message tant que l'utilisateur n'a pas remonté le fil.
+            if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f) ImGui::SetScrollHereY(1.0f);
         }
     }
     card_end();
 
     ImGui::Spacing();
-    ImGui::PushItemWidth(pane_width(0.55f, 420.0f));
-    const bool entered = ImGui::InputText("##chat_input", state.chat_input, sizeof(state.chat_input),
-        ImGuiInputTextFlags_EnterReturnsTrue);
+    const std::string current = state.chat_recipient == 0
+        ? std::string("Canal général")
+        : "Privé : " + participant_name(recipients, state.chat_recipient, "?");
+    ImGui::PushItemWidth(pane_width(0.22f, 200.0f));
+    if (ImGui::BeginCombo("##chat_recipient", current.c_str())) {
+        if (ImGui::Selectable("Canal général", state.chat_recipient == 0)) state.chat_recipient = 0;
+        for (const auto& recipient : recipients) {
+            const std::string label = "Privé : " + recipient.label + "##dm" + std::to_string(recipient.id);
+            if (ImGui::Selectable(label.c_str(), state.chat_recipient == recipient.id)) state.chat_recipient = recipient.id;
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::PopItemWidth();
+    ImGui::SameLine();
+    ImGui::PushItemWidth(pane_width(0.42f, 320.0f));
+    const bool entered = ImGui::InputTextWithHint("##chat_input",
+        state.chat_recipient == 0 ? "Message à toute la session" : "Message privé",
+        state.chat_input, sizeof(state.chat_input), ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::PopItemWidth();
     ImGui::SameLine();
     if (button_primary("Envoyer", ImVec2(130, 32)) || entered) {
         if (state.chat_input[0] == '\0') {
-            state.notify("Message vide : rien n'est envoye");
+            state.notify("Message vide : rien n'est envoyé");
         } else {
-            const bool queued = host_side
-                ? state.host->post_chat(state.chat_input)
-                : state.guest->post_chat(state.chat_input);
+            const plpt::ParticipantId to{state.chat_recipient};
+            bool queued = false;
+            if (state.chat_recipient == 0) {
+                queued = host_side ? state.host->post_chat(state.chat_input) : state.guest->post_chat(state.chat_input);
+            } else {
+                queued = host_side ? state.host->post_direct_message(to, state.chat_input)
+                                   : state.guest->post_direct_message(to, state.chat_input);
+            }
             if (queued) {
                 state.chat_input[0] = '\0';
-                state.notify("Message transmis au moteur de session");
+                state.notify(state.chat_recipient == 0 ? "Message transmis au moteur de session"
+                                                       : "Message privé transmis au moteur de session");
             } else {
-                state.notify("Envoi refuse par le moteur (quota, session fermee ou file pleine)");
+                state.notify("Envoi refusé par le moteur (quota, destinataire absent, session fermée ou file pleine)");
             }
         }
+        ImGui::SetKeyboardFocusHere(-1);
+    }
+}
+
+// Couleur d'une gravité : le sens est aussi porté par le libellé (jamais la
+// couleur seule).
+ImVec4 severity_color(plpt::net::FeedbackSeverity severity) {
+    const auto& colors = devlink::ui::theme_colors();
+    switch (severity) {
+    case plpt::net::FeedbackSeverity::Informative: return colors.text_secondary;
+    case plpt::net::FeedbackSeverity::Minor: return colors.status_info;
+    case plpt::net::FeedbackSeverity::Major: return colors.status_warning;
+    case plpt::net::FeedbackSeverity::Blocker: return colors.status_error;
+    }
+    return colors.text_secondary;
+}
+
+std::string severity_badge(plpt::net::FeedbackSeverity severity) {
+    std::string text = plpt::net::feedback_severity_text(severity);
+    for (auto& character : text)
+        if (character >= 'a' && character <= 'z') character = static_cast<char>(character - 'a' + 'A');
+    return text;
+}
+
+// Âge lisible d'un signalement, d'après l'horloge murale de l'hôte.
+std::string age_text(std::uint64_t now_ms, std::uint64_t then_ms) {
+    if (then_ms == 0 || now_ms < then_ms) return "à l'instant";
+    const std::uint64_t seconds = (now_ms - then_ms) / 1000;
+    if (seconds < 60) return "il y a " + std::to_string(seconds) + " s";
+    if (seconds < 3600) return "il y a " + std::to_string(seconds / 60) + " min";
+    return "il y a " + std::to_string(seconds / 3600) + " h " + std::to_string((seconds % 3600) / 60) + " min";
+}
+
+void render_feedback_form(AppState& state) {
+    using namespace devlink::ui;
+    using plpt::net::FeedbackSeverity;
+    const auto& colors = theme_colors();
+    const auto snapshot = state.guest->snapshot();
+    const bool connected = snapshot && snapshot->phase == plpt::net::GuestPhase::Connected;
+
+    if (card_begin("##feedback_form", ImVec2(pane_width(0.62f, 520.0f), 0))) {
+        text_card_title("Nouveau signalement");
+        text_muted("Envoyé à l'hôte seul, par le canal chiffré de la session. Décrivez ce que "
+                   "vous avez fait, ce que vous attendiez et ce qui s'est produit.");
+        ImGui::Spacing();
+        text_disabled_label("Gravité");
+        static constexpr FeedbackSeverity kLevels[] = {FeedbackSeverity::Informative, FeedbackSeverity::Minor,
+            FeedbackSeverity::Major, FeedbackSeverity::Blocker};
+        static constexpr const char* kLabels[] = {"Information", "Mineure", "Majeure", "Bloquante"};
+        for (int index = 0; index < 4; ++index) {
+            if (index > 0) ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_CheckMark, severity_color(kLevels[index]));
+            ImGui::RadioButton(kLabels[index], &state.feedback_severity, static_cast<int>(kLevels[index]));
+            ImGui::PopStyleColor();
+        }
+        ImGui::Spacing();
+        text_disabled_label("Contexte (écran, route ou étape) — facultatif");
+        ImGui::PushItemWidth(-1.0f);
+        ImGui::InputTextWithHint("##feedback_context", "ex. : page Paiement, étape 2",
+            state.feedback_context, sizeof(state.feedback_context));
+        ImGui::PopItemWidth();
+        text_disabled_label("Ne collez pas d'URL contenant un jeton, un identifiant ou une donnée personnelle (§13.2).");
+        ImGui::Spacing();
+        text_disabled_label("Description");
+        ImGui::InputTextMultiline("##feedback_description", state.feedback_description,
+            sizeof(state.feedback_description), ImVec2(-1.0f, ImGui::GetTextLineHeight() * 7.0f));
+        const std::size_t used = std::strlen(state.feedback_description);
+        text_disabled_label(std::to_string(used) + " / " + std::to_string(plpt::net::kMaxFeedbackBytes) + " octets");
+        ImGui::Spacing();
+        ImGui::BeginDisabled(!connected);
+        if (button_primary("Envoyer le signalement", ImVec2(220, 34))) {
+            const auto severity = static_cast<FeedbackSeverity>(state.feedback_severity);
+            if (state.guest->submit_feedback(severity, state.feedback_description, state.feedback_context)) {
+                state.feedback_description[0] = '\0';
+                state.feedback_context[0] = '\0';
+                state.notify("Signalement transmis : l'accusé de réception de l'hôte apparaîtra ci-dessous");
+            } else {
+                state.notify("Signalement refusé localement : description vide, texte invalide ou session non admise");
+            }
+        }
+        ImGui::EndDisabled();
+        if (!connected) {
+            ImGui::SameLine();
+            status_pill("SESSION NON ADMISE", colors.status_warning);
+        }
+    }
+    card_end();
+
+    ImGui::Spacing();
+    if (card_begin("##feedback_acks", ImVec2(pane_width(0.62f, 520.0f), 0))) {
+        text_card_title("Accusés de réception de l'hôte");
+        std::size_t acks = 0;
+        if (snapshot) {
+            for (const auto& line : snapshot->chat) {
+                if (!line.system || line.body.rfind("Signalement n°", 0) != 0) continue;
+                status_pill(icons::Icon::Feedback, "REÇU", colors.status_success);
+                ImGui::SameLine();
+                text_muted(line.body);
+                ++acks;
+            }
+        }
+        if (acks == 0) text_muted("Aucun accusé pour l'instant. Seul un accusé de l'hôte prouve la réception.");
+        if (snapshot) {
+            text_disabled_label("Envoyés depuis ce poste : " + std::to_string(snapshot->counters.feedback_sent));
+        }
+    }
+    card_end();
+}
+
+void render_feedback_registry(AppState& state) {
+    using namespace devlink::ui;
+    using plpt::net::FeedbackSeverity;
+    const auto& colors = theme_colors();
+    const auto snapshot = state.host->snapshot();
+    std::vector<plpt::net::FeedbackEntry> entries;
+    if (snapshot) entries = snapshot->feedback;
+
+    std::size_t counts[4] = {0, 0, 0, 0};
+    for (const auto& entry : entries) {
+        const auto level = static_cast<std::size_t>(entry.severity);
+        if (level < 4) ++counts[level];
+    }
+    const float width = std::max(150.0f, (ImGui::GetContentRegionAvail().x - 3.0f * ImGui::GetStyle().ItemSpacing.x) / 4.0f);
+    metric_card("##fb_blocker", "Bloquants", counts[3], "à traiter en priorité", width);
+    ImGui::SameLine();
+    metric_card("##fb_major", "Majeurs", counts[2], "fonction dégradée", width);
+    ImGui::SameLine();
+    metric_card("##fb_minor", "Mineurs", counts[1], "gêne limitée", width);
+    ImGui::SameLine();
+    metric_card("##fb_info", "Informations", counts[0], "remarques, idées", width);
+    ImGui::Spacing();
+    text_muted("Mémoire de session uniquement (§13.4) : la liste est oubliée à l'arrêt de la "
+               "session. Le journal ne contient que le numéro et la gravité, jamais le texte.");
+    ImGui::Spacing();
+
+    if (entries.empty()) {
+        empty_state("Aucun signalement reçu",
+            "Les invités admis envoient leurs anomalies depuis leur écran Signalements ; "
+            "elles apparaissent ici, la plus récente en tête.");
+        return;
+    }
+    const std::uint64_t now = state.clock.now_wall_ms();
+    // Plus récent en tête : le moteur publie dans l'ordre d'arrivée.
+    for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
+        const auto& entry = *it;
+        const std::string id = "##feedback_" + std::to_string(entry.id);
+        if (card_begin(id.c_str(), ImVec2(pane_width(0.82f, 560.0f), 0))) {
+            status_pill(severity_badge(entry.severity), severity_color(entry.severity));
+            ImGui::SameLine();
+            ImGui::TextColored(colors.accent_light, "N°%llu", static_cast<unsigned long long>(entry.id));
+            ImGui::SameLine();
+            ImGui::TextUnformatted(entry.reporter_name.c_str());
+            ImGui::SameLine();
+            text_disabled_label(age_text(now, entry.received_ms));
+            if (!entry.context.empty()) {
+                text_disabled_label("Contexte :");
+                ImGui::SameLine();
+                text_code(entry.context);
+            }
+            ImGui::Spacing();
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextUnformatted(entry.description.c_str());
+            ImGui::PopTextWrapPos();
+        }
+        card_end();
+        ImGui::Spacing();
     }
 }
 
 void render_feedback(AppState& state) {
     using namespace devlink::ui;
-    const auto& colors = theme_colors();
 
     text_section_title("Signalements et anomalies");
+    text_muted("Un signalement va de l'invité à l'hôte seul (protocole 1.5). Aucune "
+               "capture ni pièce jointe n'est envoyée en V1 (FR-MSG-006, FR-MSG-008).");
     ImGui::Spacing();
-    status_pill("FONCTION NON RELIEE AU MOTEUR", colors.status_warning);
-    ImGui::Spacing();
-    ImGui::TextWrapped(
-        "Etat reel : le modele de messagerie possede la capacite SubmitFeedback et un "
-        "identifiant de rapport, et le protocole reserve le type de message Feedback. "
-        "Aucune route reseau ne transporte encore ces rapports : ni le serveur hote ni le "
-        "client invite ne traitent ce type. Aucun signalement n'est donc envoye ni stocke.");
-    ImGui::Spacing();
-    text_muted("Ce qui manque exactement : la prise en charge de MessageType::Feedback dans "
-               "host_server (relayage et persistance bornee) et dans guest_client (emission), "
-               "plus un ecran de consultation cote hote. Tant que ce n'est pas fait, cet ecran "
-               "n'affiche aucun signalement fictif.");
-    ImGui::Spacing();
-    text_disabled_label("Mode demande pour cette session : ");
-    ImGui::SameLine();
-    text_code(mode_label(state.mode));
+
+    const bool host_side = state.host_mode && state.host_running && state.host;
+    const bool guest_side = !host_side && state.guest_running && state.guest;
+    if (host_side) {
+        render_feedback_registry(state);
+    } else if (guest_side) {
+        render_feedback_form(state);
+    } else {
+        empty_state("Aucune session connectée",
+            "Côté hôte : démarrez une session pour recevoir les signalements. "
+            "Côté invité : rejoignez une session pour en envoyer.");
+    }
 }
 
 void render_diagnostics(AppState& state, const plpt::MonitorView& view, const Runtime& runtime) {
@@ -2225,6 +2481,7 @@ struct Qualification {
     double capture_after_s = -1.0;
     std::string capture_path;
     bool captured = false;
+    int capture_deferrals = 0;    // trames sans surface d'affichage sautees avant la capture
     double exit_after_s = -1.0;
     std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point last_report = started;
@@ -2352,7 +2609,21 @@ void qualification_tick(Qualification& q, AppState& app, const plpt::share::View
     if (q.exit_after_s >= 0 && q.elapsed() >= q.exit_after_s) running = false;
 }
 
-bool save_window_capture(SDL_Renderer* renderer, const std::string& path) {
+// Etat de la fenetre au moment d'une capture : une preuve visuelle doit dire si
+// la trame avait une surface d'affichage (une fenetre minimisee ne dessine rien).
+std::string window_state_text(SDL_Window* window) {
+    const SDL_WindowFlags flags = SDL_GetWindowFlags(window);
+    std::string text;
+    if (flags & SDL_WINDOW_MINIMIZED) text += "minimized,";
+    if (flags & SDL_WINDOW_HIDDEN) text += "hidden,";
+    if (flags & SDL_WINDOW_OCCLUDED) text += "occluded,";
+    if (flags & SDL_WINDOW_INPUT_FOCUS) text += "focused,";
+    if (text.empty()) return "normal";
+    text.pop_back();
+    return text;
+}
+
+bool save_window_capture(SDL_Window* window, SDL_Renderer* renderer, const std::string& path, int deferrals) {
     SDL_Surface* capture = SDL_RenderReadPixels(renderer, nullptr);
     if (!capture) {
         std::fprintf(stderr, "SDL_RenderReadPixels: %s\n", SDL_GetError());
@@ -2360,7 +2631,8 @@ bool save_window_capture(SDL_Renderer* renderer, const std::string& path) {
     }
     const bool saved = SDL_SaveBMP(capture, path.c_str());
     if (!saved) std::fprintf(stderr, "SDL_SaveBMP: %s\n", SDL_GetError());
-    std::printf("devlink-capture: %s %dx%d %s\n", path.c_str(), capture->w, capture->h, saved ? "saved" : "FAILED");
+    std::printf("devlink-capture: %s %dx%d %s window=%s deferred_frames=%d\n", path.c_str(), capture->w, capture->h,
+        saved ? "saved" : "FAILED", window_state_text(window).c_str(), deferrals);
     std::fflush(stdout);
     SDL_DestroySurface(capture);
     return saved;
@@ -2718,9 +2990,25 @@ int main(int argc, char** argv) {
         SDL_RenderClear(runtime.renderer);
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), runtime.renderer);
         // Capture de la VRAIE fenetre, avant presentation (contenu garanti).
+        // Une trame sans surface d'affichage (fenetre minimisee ou masquee : le
+        // backend ImGui met DisplaySize a 0 et ne dessine rien) n'est jamais
+        // enregistree comme preuve : la fenetre est restauree et la capture
+        // reportee a la premiere trame reellement dessinee (borne : 5 s environ).
         if (q.captured && !q.capture_path.empty()) {
-            (void)save_window_capture(runtime.renderer, q.capture_path);
-            q.capture_path.clear();
+            const ImVec2 display = ImGui::GetIO().DisplaySize;
+            if ((display.x <= 0.0f || display.y <= 0.0f) && q.capture_deferrals < 300) {
+                if (q.capture_deferrals == 0) {
+                    std::printf("devlink-capture: deferred window=%s (no drawable surface)\n",
+                        window_state_text(runtime.window).c_str());
+                    std::fflush(stdout);
+                    (void)SDL_ShowWindow(runtime.window);
+                    (void)SDL_RestoreWindow(runtime.window);
+                }
+                ++q.capture_deferrals;
+            } else {
+                (void)save_window_capture(runtime.window, runtime.renderer, q.capture_path, q.capture_deferrals);
+                q.capture_path.clear();
+            }
         }
         SDL_RenderPresent(runtime.renderer);
         if (q.any()) qualification_tick(q, app, app.guest_rect, running);

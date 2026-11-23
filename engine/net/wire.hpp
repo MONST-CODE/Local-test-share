@@ -104,6 +104,9 @@ struct SessionInfo {
     std::uint64_t started_ms = 0;
     std::vector<PeerInfo> peers;
     std::string transport;   // chemin de données réel de la session (1.3+)
+    // Bloc 1.5 optionnel : identifiant public de l'hôte, pour qu'un invité puisse
+    // lui écrire en privé (§4.2 du maître). 0 = absent. Ce n'est pas un secret.
+    ParticipantId host_participant{};
 };
 
 struct ServiceInfo {
@@ -126,6 +129,16 @@ struct ChatText {
     std::uint64_t sent_ms = 0;
     bool system = false;             // true = événement de session, pas un utilisateur.
     ParticipantId recipient{};       // 0 = canal général ; sinon message privé.
+};
+
+// Signalement invité -> hôte (protocole 1.5). Bornes vérifiées au décodage.
+inline constexpr std::size_t kMaxFeedbackBytes = 2048;
+inline constexpr std::size_t kMaxFeedbackContextBytes = 256;
+struct FeedbackReport {
+    std::uint8_t severity = 1;       // FeedbackSeverity
+    std::string description;         // <= kMaxFeedbackBytes, UTF-8 validé
+    std::string context;             // <= kMaxFeedbackContextBytes, sans contrôle
+    std::uint64_t sent_ms = 0;
 };
 
 struct ErrorNotice {
@@ -161,6 +174,8 @@ std::vector<std::uint8_t> encode(const HostAuth&);
 std::vector<std::uint8_t> encode(const SessionInfo&);
 std::vector<std::uint8_t> encode(const ServiceList&);
 std::vector<std::uint8_t> encode(const ChatText&);
+std::vector<std::uint8_t> encode(const FeedbackReport&);
+Result<FeedbackReport> decode_feedback(std::span<const std::uint8_t>);
 std::vector<std::uint8_t> encode(const ByeNotice&);
 std::vector<std::uint8_t> encode(const ErrorNotice&);
 std::vector<std::uint8_t> encode(const Heartbeat&);

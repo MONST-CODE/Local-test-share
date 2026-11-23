@@ -10,6 +10,49 @@ Toutes les évolutions et jalons notables de **DevLink** sont consignés dans ce
 
 ---
 
+## [Non publié] — 2026-11-21 — protocole 1.5, signalements, interface de build
+
+### Ajouté
+- **Signalements d'anomalie (FR-MSG-005, P0)** : `FeedbackReport` borné sur
+  `MessageType::Feedback`, registre hôte en mémoire (200 au plus), accusé de
+  réception visible de l'auteur seul, aucun texte dans le journal (ADR-019).
+  Écran « Signalements » réel : formulaire côté invité (gravité, contexte,
+  description, compteur d'octets, accusés), registre côté hôte (compteurs par
+  gravité, plus récent en tête).
+- **Messages privés vers l'hôte** : identifiant public de l'hôte dans
+  `SessionInfo` (bloc 1.5) ; l'hôte voit ses propres messages privés. Messagerie :
+  sélecteur de destinataire, sens « A → B » affiché, défilement suivi.
+- « Session active » affiche le mode **appliqué par le moteur**.
+- **Interface de build** (`build.bat`, `build.sh`) : bandeau DEVLINK UTF-8 en
+  dégradé marron, une étape `[n/N]` par phase réelle, progression réécrite sur
+  place, lignes de résultat par suite, résumé final ; aucune sortie brute d'outil
+  hors échec ou `--verbose` (un `test debug` passe de 848 460 lignes à ~40) ; en
+  cas d'échec, sortie de la commande fautive telle quelle (compatible avec le
+  problem matcher `$gcc`). Options `--plain`, `NO_COLOR`, `DEVLINK_PLAIN`.
+  Bandeau partagé : `tools/build/devlink-banner.txt`.
+- ADR-019 ; rapport d'état vérifié `docs/reports/IMPLEMENTATION_STATUS.md`.
+
+### Modifié
+- Protocole 1.4 → **1.5** (un invité 1.4 est refusé explicitement par un hôte 1.5).
+- `build.bat` : toute la compilation précède l'édition des liens ; contrôles PE
+  regroupés dans une étape dédiée ; verrou de build bloqué expliqué avec la
+  commande de déblocage ; page de codes console restaurée à la sortie.
+
+### Corrigé
+- `desktop-e2e` échouait dès qu'on utilisait le poste pendant le test (fenêtre
+  minimisée : capture vide ; clics réels transmis : carré d'une autre couleur).
+  Une trame sans surface n'est plus enregistrée, la couleur capturée doit
+  correspondre à un état réellement atteint par l'hôte, et toute entrée
+  extérieure est consignée en preuve.
+- Course de données dans `GuestClient::post_direct_message` (lecture d'un état du
+  thread d'E/S depuis le thread UI).
+- Test de négociation de version codé en dur ; dérivé de `kProtocolMinor`.
+- `PLPT_IMGUI_DIR` (documenté, lu par VS Code) ignoré par `build.bat` : accepté.
+- Documentation contradictoire avec le code (WebView2 « absent », TLS Windows
+  « à câbler », protocole « 1.3 », erreurs 502 d'un proxy hors partage).
+
+---
+
 ## [Non publié] — 2026-11-21 — partage réel (Windows, qualifié sur une machine)
 
 ### Ajouté

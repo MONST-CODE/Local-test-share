@@ -105,6 +105,7 @@ struct HostCounters {
     std::uint64_t rate_limited = 0;
     std::uint64_t invalid_frames = 0;
     std::uint64_t chat_relayed = 0;
+    std::uint64_t feedback_received = 0; // signalements acceptés (jamais leur contenu ici)
     std::uint64_t timeouts = 0;
     std::uint64_t media_offers = 0;    // offres de canal média émises (jamais le secret).
 };
@@ -128,6 +129,7 @@ struct HostSnapshot {
     std::vector<PendingJoin> pending;
     std::vector<SharedServiceRecord> services;
     std::vector<ChatLine> chat;
+    std::vector<FeedbackEntry> feedback;  // signalements reçus, bornés, plus récent en dernier
     std::vector<std::string> events;
     std::vector<Error> warnings;
     HostCounters counters;
@@ -252,6 +254,7 @@ private:
     void handle_auth_proof(Connection& connection, const model::Envelope& envelope);
     void refuse_proof(Connection& connection, const std::string& reason);
     void handle_chat(Connection& connection, const model::Envelope& envelope);
+    void handle_feedback(Connection& connection, const model::Envelope& envelope);
     void handle_heartbeat(Connection& connection, const model::Envelope& envelope);
     void handle_bye(Connection& connection, const model::Envelope& envelope);
     void admit(Connection& connection);
@@ -310,6 +313,7 @@ private:
     ParticipantId host_participant_{};
     std::map<ParticipantId, ParticipantMeta> participant_meta_;
     std::map<DirectKey, std::deque<model::ChatMessage>> direct_channels_;
+    std::deque<FeedbackEntry> feedback_;  // borné à 200, temporaire (durée de la session)
     bool shutdown_done_ = false;     // la fermeture réelle n'a lieu qu'une fois.
     std::uint64_t next_context_ = 1;   // contexte invité unique : jamais celui de l'hôte.
     std::uint64_t heartbeat_token_ = 1;

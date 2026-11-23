@@ -77,6 +77,7 @@ struct GuestCounters {
     std::uint64_t invalid_frames = 0;
     std::uint64_t chat_received = 0;
     std::uint64_t chat_sent = 0;
+    std::uint64_t feedback_sent = 0;
     std::uint64_t errors = 0;
     std::uint64_t reconnects = 0;
 };
@@ -90,6 +91,7 @@ struct GuestSnapshot {
     std::string host_name;
     std::string session_name;
     ParticipantId self{};
+    ParticipantId host_participant{}; // publié par l'hôte (1.5) : destinataire privé possible
     std::string host_address;         // adresse réellement utilisée (celle saisie ou découverte).
     std::uint16_t host_port = 0;
     std::vector<GuestPeer> peers;
@@ -146,6 +148,10 @@ public:
 
     bool post_chat(std::string body);
     bool post_direct_message(ParticipantId peer, std::string body);
+    // Signalement d'anomalie vers l'hôte. Refusé localement s'il est vide, trop
+    // long ou si la gravité est inconnue ; l'hôte accuse réception par un
+    // événement système visible de l'auteur seul.
+    bool submit_feedback(FeedbackSeverity severity, std::string description, std::string context);
     bool leave();
 
     // Secret matériel de reprise, à replacer dans un GuestConfig pour retrouver SA
@@ -157,12 +163,14 @@ public:
     std::optional<MediaOffer> media_offer() const;
 
 private:
-    enum class CommandKind : std::uint8_t { PostChat, PostDirect, Leave, Stop };
+    enum class CommandKind : std::uint8_t { PostChat, PostDirect, Feedback, Leave, Stop };
     // Type complet : la file de commandes l'instancie dans l'en-tête.
     struct Command {
         CommandKind kind = CommandKind::Stop;
         ParticipantId recipient{};
         std::string text;
+        std::string context{};          // Feedback seulement
+        std::uint8_t severity = 0;      // Feedback seulement
     };
 
     bool enqueue(Command command);

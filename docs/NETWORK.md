@@ -30,56 +30,57 @@ Le code courant utilise un échange de défi-réponse avant l'upgrade TLS :
 5. poignée TLS 1.3 PSK avec identité liée à la session ;
 6. admission/état/chat sur le canal TLS selon le cycle de session.
 
-Le code de transport charge OpenSSL à l'exécution sous Linux et exige TLS 1.3. Le
-contrôle d'indisponibilité échoue fermé ; aucun fallback TCP clair n'est permis
-quand TLS est requis. Le transport TLS Windows n'est pas câblé/qualifié : ne pas
-annoncer le plan de contrôle chiffré comme disponible sur Windows. Les preuves
-loopback consignées dans `docs/reports/evidence/2026-11-18-etape5-basculement-tls13.txt`
-ne sont ni un test physique LAN ni un audit cryptographique indépendant.
+Le transport charge OpenSSL 3 à l'exécution et exige TLS 1.3 : bibliothèque
+système sous Linux, DLL UCRT64 épinglées livrées à côté de l'application sous
+Windows (chargées depuis son dossier seulement). Le contrôle d'indisponibilité
+échoue fermé ; aucun repli TCP clair n'est permis quand TLS est requis. Les preuves
+sont en boucle locale (Linux historique, Windows 2026-11-21) : ni test physique
+LAN, ni audit cryptographique indépendant.
+
+Sur ce canal circulent aussi le chat, les messages privés et, depuis le protocole
+1.5, les signalements d'anomalie (invité → hôte seulement, accusé à l'auteur seul ;
+ADR-019).
 
 ## 4. Proxy applicatif
 
 `ServiceProxy` est un pont HTTP applicatif entre un invité et un endpoint local
 sélectionné, avec jeton de capacité, limites et gestion de réponses HTTP/1.x,
-`1xx` et WebSocket documentée dans les tests existants. Il ne capture pas une page
-WebView et ne fournit pas le partage d'images. Le trafic du proxy n'est pas établi
-comme chiffré de bout en bout dans l'état courant ; ne l'utilisez pas sur un réseau
-non fiable. La politique d'origine et le confinement des sous-ressources d'un vrai
-navigateur ne sont pas implémentés.
+`1xx` et WebSocket documentée dans les tests existants. **Il ne fait plus partie du partage**
+(ADR-018) : il livrerait aux invités le HTML, le JavaScript et les ressources du
+projet. Son trafic n'est pas chiffré ; ne l'exposez pas à un réseau non fiable.
 
-## 5. Browser Worker, frames et interactions — non disponibles
+## 5. Partage : navigateur hôte, canal média, entrées (ADR-018)
 
-`engine/browser/webview2_backend.cpp` échoue explicitement : création du contrôleur,
-navigation réelle, capture et injection WebView2 ne sont pas implémentées. Le backend
-géré génère du contenu synthétique et est réservé aux tests/démos explicites. Aucun
-invité ne reçoit actuellement un rendu navigateur réel.
+Chaîne vérifiée en boucle locale sous Windows :
 
-`engine/browser/remote_frame.hpp` fournit maintenant un codec de payload v1
-portable (big-endian) et borné pour les frames complètes RGBA8 et les événements
-input ; `engine/media/frame_queue.hpp` ajoute une file bornée avec abandon des frames
-complètes périmées. Ces composants ne sont pas connectés à un transport média/TLS,
-à WebView2 ou au renderer invité et ne constituent pas encore un flux réseau supporté.
+`WebView2 hors écran → images JPEG du compositeur → TLS 1.3 PSK par invité →
+décodage WIC → texture SDL3 → souris/clavier/texte → autorisation côté hôte →
+injection dans le seul contexte navigateur concerné`.
 
-Il n'existe pas de chaîne vérifiée :
-
-`WebView2 → pixels → encodage → TLS → invité → décodage → texture SDL3`.
-
-De même, les interactions ne sont pas injectées dans un navigateur réel. Les rôles
-et permissions du modèle de session ne prouvent pas encore un parcours A/B/C
-complet sur connexions réseau forgées.
+- **Sortie réseau du navigateur** : uniquement par EgressGuard, un proxy SOCKS5
+  DevLink qui n'ouvre que les couples `hôte:port` autorisés (boucle locale
+  comprise). Mesure : 0 connexion vers un port canari interdit. Navigations,
+  redirections, sous-ressources, fenêtres, téléchargements et schémas externes
+  hors allowlist sont refusés.
+- **Canal média** : une connexion TCP par invité, sur la même interface que le
+  contrôle et un port choisi par l'OS ; clé PSK de 32 octets propre au
+  participant, offerte uniquement sur le contrôle déjà chiffré ; enregistrements
+  bornés avant allocation ; une seule image en attente par invité.
+- **Entrées** : chaque enregistrement est réautorisé par `SharePolicy` (participant,
+  révocation, séquence strictement croissante, suspension, mode, bail) ; refus
+  systématique en mode C, même pour un client modifié.
+- **Limites** : viewport fixe 1280×720 ; invité Linux non disponible ; aucune
+  mesure sur deux machines.
 
 ## 6. Tests et limites
 
-- Les suites loopback testent le protocole, le transport Linux et le proxy sans
-  remplacer une validation LAN multi-machine.
-- `DemoBrowserBackend` est explicitement synthétique, pas un navigateur ; la fabrique
-  dédiée `create_demo_browser_backend()` ne sert qu'au parcours `--demo-synthetic-browser`.
-- `BrowserPolicy` compare désormais les origines HTTP(S) canoniques exactement (sans
-  préfixe ni joker) et rejette userinfo/ports invalides/IP non canoniques. Ce
-  validateur unitaire ne filtre pas encore les navigations, redirections ou
-  sous-ressources d'un WebView2 réel, puisque ce backend n'existe pas.
-- L'absence d'IPv6, d'un runtime Windows, d'un second ordinateur ou d'un écran
-  physique doit rester `SKIP`, `BLOCKED` ou `IMPLEMENTED_BUT_NOT_VERIFIED`, jamais
-  être transformée en PASS.
-- Les statuts détaillés et les prochaines portes figurent dans
-  `docs/reports/FINAL_COMPLETION_AUDIT.md`.
+- `devlink-platform-tests` : plan de contrôle réel, TLS 1.3, messagerie et
+  signalements en boucle locale. `devlink-browser-tests`, `devlink-share-tests`,
+  `devlink-desktop-e2e-tests` (Windows) : navigateur réel, partage, attaques, cinq
+  invités et bout en bout sur les vrais exécutables. Aucun ne remplace une
+  validation LAN multi-machine (`docs/reports/REAL_LAN_QUALIFICATION.md`).
+- `DemoBrowserBackend` est explicitement synthétique et réservé au parcours
+  `--demo-synthetic-browser` ; il n'est jamais partageable.
+- L'absence d'IPv6, d'un runtime, d'un second ordinateur ou d'un écran physique
+  reste `SKIP` (code 77) ou non qualifiée, jamais un PASS.
+- État vérifié et prochaines portes : `docs/reports/IMPLEMENTATION_STATUS.md`.

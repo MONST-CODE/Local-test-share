@@ -5,11 +5,11 @@ compile each test executable directly, check the link output, execute it and pre
 its exit code and log. `test` always compiles fresh; it never trusts old executables.
 
 ```bat
-build.bat test debug --native-ui
-build.bat test release --native-ui
-build.bat test asan --native-ui
-build.bat fuzz
-build.bat selftest
+./build.bat test debug --native-ui
+./build.bat test release --native-ui
+./build.bat test asan --native-ui
+./build.bat fuzz
+./build.bat selftest
 ```
 
 ```sh
@@ -22,14 +22,26 @@ build.bat selftest
 ./build.sh test debug --headless
 ```
 
+Reading the console: the test step prints one line per suite (cases and checks
+from the harness summary, or the SKIP reason), then grouped CLI and desktop
+checks. A failing suite shows its assertions, evidence lines and summary, raw,
+followed by the path of its complete capture. Full logs: `out/windows/logs/` and
+`<build dir>/<suite>.log`. See `docs/BUILD.md`, « Lire la sortie du build ».
+
 Preserved suites:
 
 - `tests/unit/test_main.cpp`: types/results, ancestry, registry incompleteness and
   capacity, immutable snapshots/queue bounds, local session/role/context rules,
-  DM privacy/quotas/UTF-8, protocol bounds/mutations, audit and unavailable backends.
+  DM privacy/quotas/UTF-8, protocol bounds/mutations, audit and unavailable backends,
+  feedback payload bounds and the protocol 1.5 `SessionInfo` host block (ADR-019);
+  version negotiation is derived from `kProtocolMinor`.
 - `tests/integration/platform_tests.cpp`: OS RNG, live dynamically bound TCP/UDP
   sockets, table ownership/processes/interfaces, IPv4 and IPv6; Linux proc fixtures
-  and FD release. Tests use port zero, not a fixed development listener.
+  and FD release. Tests use port zero, not a fixed development listener. The real
+  control plane (`lan_control_plane_host_and_guest`) also covers chat, private
+  messages guest↔guest, guest→host and host→guest (echo to the author, invisible
+  to third parties) and feedback reports (local refusal, host registry, severity,
+  context, acknowledgement visible to the author only).
 - `tests/integration/browser_pipeline_tests.cpp` (Windows, `devlink-browser-tests`):
   real WebView2 context, navigation to the `/fixture` of `devlink-demo-service`, run
   id read back FROM PIXELS, click -> changed frame, origin policy and SOCKS5 egress
@@ -43,11 +55,17 @@ Preserved suites:
   oversized record), refused unsafe starts with rollback, start/stop cycles, five
   guests.
 - `tests/integration/desktop_e2e_tests.cpp` (Windows, `devlink-desktop-e2e-tests`):
-  the SHIPPED executables. `devlink-demo-service`, `devlink-desktop --host`, then
+  the SHIPPED executables (it opens real, focused windows and moves the real mouse
+  cursor: do not use the mouse while it runs). `devlink-demo-service`,
+  `devlink-desktop --host`, then
   `devlink-desktop --join` in a real SDL3 window. Synthetic SDL mouse/text events go
   through ImGui, the letterbox mapping, the media channel and the host policy. The
   host DOM must show the click and the exact Unicode text, the guest's own window
-  capture must contain the fixture square in the clicked colour, both processes
+  capture must contain the fixture square in the colour of a click count the host
+  really reached (`clicks mod 4`; external clicks are reported as evidence) (a frame without a
+  drawable surface — minimised or hidden window — is never saved as evidence: the
+  window is restored and the capture deferred, and the evidence line records the
+  window state), both processes
   exit 0 and every browser context is destroyed. Single machine: **not** a LAN
   qualification (see `docs/reports/REAL_LAN_QUALIFICATION.md`).
 - CLI help/version/invalid/extra/ambiguous arguments: exact exit statuses.

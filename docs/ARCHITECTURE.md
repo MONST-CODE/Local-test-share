@@ -1,5 +1,12 @@
 # PLPT — conception technique du premier incrément
 
+> **Conception du premier incrément (2026-11-13), conservée comme référence.**
+> Depuis, le partage ne passe plus par le proxy TCP à jeton décrit ci-dessous mais
+> par le rendu distant (ADR-018) : navigateur WebView2 sur l'hôte, images sur un
+> canal TLS 1.3 par invité, entrées autorisées côté hôte. Le plan de contrôle est
+> en TLS 1.3 (ADR-016/017) et porte chat, messages privés et signalements
+> (protocole 1.5, ADR-019). État vérifié : `docs/reports/IMPLEMENTATION_STATUS.md`.
+
 Date : 2026-11-13. Statut : **moniteur local et socle**, pas une V1 de partage.
 Référence normative : [document maître v1.0](ARCHITECTURE_MASTER.md).
 

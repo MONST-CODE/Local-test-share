@@ -442,6 +442,73 @@ void lan_control_plane_host_and_guest() {
         for (const auto& line : snapshot.chat) if (line.body == "Privé pour Alice" && !line.direct) return true;
         return false;
     }, 400ms));
+    // L'expéditeur reçoit l'écho de SON message privé (accepté par l'hôte), avec le destinataire.
+    CHECK(bob.wait_for([&](const GuestSnapshot& snapshot) {
+        for (const auto& line : snapshot.chat)
+            if (line.body == "Privé pour Alice" && line.direct && line.recipient == alice_id) return true;
+        return false;
+    }, 5s));
+    // L'hôte voit la conversation privée et peut écrire en privé à un invité.
+    CHECK(host.wait_for([&](const HostSnapshot& snapshot) {
+        for (const auto& line : snapshot.chat)
+            if (line.body == "Privé pour Alice" && line.direct && line.recipient == alice_id) return true;
+        return false;
+    }, 5s));
+    CHECK(host.post_direct_message(alice_id, "Privé de l'hôte"));
+    CHECK(alice.wait_for([&](const GuestSnapshot& snapshot) {
+        for (const auto& line : snapshot.chat)
+            if (line.body == "Privé de l'hôte" && line.direct && line.recipient == alice_id) return true;
+        return false;
+    }, 5s));
+    CHECK(host.wait_for([&](const HostSnapshot& snapshot) {
+        for (const auto& line : snapshot.chat)
+            if (line.body == "Privé de l'hôte" && line.direct) return true;
+        return false;
+    }, 5s));
+    CHECK(!bob.wait_for([](const GuestSnapshot& snapshot) {
+        for (const auto& line : snapshot.chat) if (line.body == "Privé de l'hôte") return true;
+        return false;
+    }, 300ms));
+    // Protocole 1.5 : l'invité connaît l'identifiant public de l'hôte et peut lui
+    // écrire en privé ; l'hôte le lit, l'auteur reçoit l'écho, un tiers ne voit rien.
+    const auto host_id = bob.snapshot()->host_participant;
+    CHECK(host_id.value != 0);
+    CHECK(host_id != alice_id);
+    CHECK(bob.post_direct_message(host_id, "Privé pour l'hôte"));
+    CHECK(host.wait_for([&](const HostSnapshot& snapshot) {
+        for (const auto& line : snapshot.chat)
+            if (line.body == "Privé pour l'hôte" && line.direct && line.recipient == host_id) return true;
+        return false;
+    }, 5s));
+    CHECK(bob.wait_for([&](const GuestSnapshot& snapshot) {
+        for (const auto& line : snapshot.chat)
+            if (line.body == "Privé pour l'hôte" && line.direct && line.recipient == host_id) return true;
+        return false;
+    }, 5s));
+    CHECK(!alice.wait_for([](const GuestSnapshot& snapshot) {
+        for (const auto& line : snapshot.chat) if (line.body == "Privé pour l'hôte") return true;
+        return false;
+    }, 300ms));
+    // Signalement d'anomalie : invité -> hôte, accusé visible de l'auteur seul.
+    CHECK(!bob.submit_feedback(FeedbackSeverity::Major, "   ", "écran"));          // vide : refusé localement
+    CHECK(!bob.submit_feedback(FeedbackSeverity::Major, "texte", "a\x01b"));       // contrôle : refusé
+    CHECK(bob.submit_feedback(FeedbackSeverity::Major, "Le bouton Payer ne répond pas", "écran paiement"));
+    CHECK(host.wait_for([](const HostSnapshot& snapshot) {
+        return snapshot.feedback.size() == 1 && snapshot.feedback[0].reporter_name == "Bob" &&
+            snapshot.feedback[0].severity == FeedbackSeverity::Major &&
+            snapshot.feedback[0].context == "écran paiement" &&
+            snapshot.feedback[0].description == "Le bouton Payer ne répond pas" &&
+            snapshot.counters.feedback_received == 1;
+    }, 5s));
+    CHECK(bob.wait_for([](const GuestSnapshot& snapshot) {
+        for (const auto& line : snapshot.chat)
+            if (line.system && line.body.find("Signalement n°1") != std::string::npos) return true;
+        return false;
+    }, 5s));
+    CHECK(!alice.wait_for([](const GuestSnapshot& snapshot) {
+        for (const auto& line : snapshot.chat) if (line.body.find("Signalement n°") != std::string::npos) return true;
+        return false;
+    }, 300ms));
     CHECK(!bob.post_direct_message(ParticipantId{4242}, "inconnu")); // pair absent de la liste publiée.
     CHECK(!bob.post_direct_message(bob.snapshot()->self, "soi-même"));
     // Battements : la latence mesurée est un aller-retour réel, jamais une estimation.

@@ -67,5 +67,26 @@ Au premier partage, Windows demande l'accès réseau : autorisez-le pour les
 | Aucune session annoncée | multicast bloqué par le réseau : saisie manuelle de l'adresse et du port |
 | Page blanche ou bloquée | une ressource vient d'une origine non autorisée : ajoutez-la (compteurs « bloqués » dans Session active) |
 
-Le chat (onglet Messagerie) fonctionne pendant une session. Les signalements
-d'anomalie ne sont pas encore reliés au réseau (voir l'écran Signalements).
+## Messagerie et signalements
+
+Les deux passent par le canal de contrôle chiffré (TLS 1.3) de la session, sans
+service tiers. Rien n'est conservé après l'arrêt de la session.
+
+**Messagerie** (onglet Messagerie) : choisissez le destinataire à gauche de la
+zone de saisie, « Canal général » ou un participant (un invité peut aussi écrire
+à l'hôte). Un message privé est signalé « (privé) A → B ». L'hôte étant le serveur
+de la session, il peut lire les messages privés entre invités : ils ne sont pas
+chiffrés de bout en bout entre invités.
+
+**Signalements** (onglet Signalements) :
+
+- *Côté invité* : choisissez la gravité (information, mineure, majeure, bloquante),
+  indiquez éventuellement le contexte (écran, route, étape) et décrivez ce que vous
+  avez fait, ce que vous attendiez et ce qui s'est produit (2 048 octets au plus).
+  « Envoyer le signalement ». L'accusé de réception de l'hôte apparaît sous le
+  formulaire : seul cet accusé prouve la réception. N'y collez pas d'URL contenant
+  un jeton, un identifiant ou une donnée personnelle. Aucune capture d'écran ni
+  pièce jointe n'est envoyée.
+- *Côté hôte* : les signalements arrivent en tête de liste, avec gravité, auteur,
+  contexte et description, et des compteurs par gravité. Le journal de la session
+  ne garde que le numéro et la gravité, jamais le texte.

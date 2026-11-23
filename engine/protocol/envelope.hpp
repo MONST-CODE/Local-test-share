@@ -9,7 +9,9 @@ namespace plpt::model {
 // 1.2 : Hello porte le secret de reprise, Auth le délivre. Un pair annonçant une
 // révision mineure inférieure est refusé explicitement par l'hôte (pas de repli
 // muet sur une identité devinée). Aucune révision n'a jamais retiré de champ.
-inline constexpr std::uint16_t kProtocolMajor = 1, kProtocolMinor = 4;
+// 1.5 : signalement d'anomalie invité -> hôte (MessageType::Feedback, payload
+// FeedbackReport borné) ; l'hôte accuse réception à l'auteur seul.
+inline constexpr std::uint16_t kProtocolMajor = 1, kProtocolMinor = 5;
 inline constexpr std::size_t kEnvelopeHeaderBytes = 56;
 // Flux logiques multiplexés dans stream_id. Un seul est réellement utilisé par le
 // partage LAN (Control) ; les autres restent réservés et jamais acceptés en vrac.

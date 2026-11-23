@@ -457,6 +457,11 @@ void HostServer::drain_commands() {
             line.recipient = command.participant;
             line.body = body.value();
             line.sent_ms = clock_.now_monotonic_ms();
+            {
+                auto& stored = direct_channels_[direct_key(host_participant_, command.participant)];
+                stored.push_back(line);
+                if (stored.size() > 200) stored.pop_front();
+            }
             relay_chat(line, config_.host_name, true, command.participant);
             counters_.chat_relayed++;
             ++revision_;
@@ -725,6 +730,7 @@ SessionInfo HostServer::build_session_info() const {
     info.max_participants = static_cast<std::uint32_t>(config_.max_participants);
     info.started_ms = started_ms_;
     info.transport = session_transport_;
+    info.host_participant = host_participant_;
     for (const auto& meta : participant_meta_) {
         const auto* participant = session_ ? session_->find_participant(meta.first) : nullptr;
         if (!participant || participant->role == Role::Host) continue;
@@ -794,6 +800,10 @@ void HostServer::relay_chat(const model::ChatMessage& message, const std::string
     const auto payload = encode(text);
     if (direct && only.value != 0) {
         queue_to(only, model::MessageType::Chat, payload);
+        // Écho à l'expéditeur invité : il n'affiche que ce que l'hôte a accepté,
+        // y compris ses propres messages privés.
+        if (message.sender != host_participant_ && message.sender != only)
+            queue_to(message.sender, model::MessageType::Chat, payload);
         return;
     }
     // Écho inclus : l'invité n'affiche que ce qu'il a réellement reçu du réseau.
@@ -824,6 +834,7 @@ std::vector<ChatLine> HostServer::build_chat() const {
             line.body = message.body;
             line.sent_ms = message.sent_ms;
             line.direct = true;
+            line.recipient = message.recipient.value_or(ParticipantId{});
             const auto meta = participant_meta_.find(message.sender);
             line.sender_name = message.sender == host_participant_ ? config_.host_name : (meta == participant_meta_.end() ? std::string("invité") : meta->second.name);
             lines.push_back(std::move(line));
@@ -890,6 +901,7 @@ void HostServer::handle_frame(Connection& connection, const model::Envelope& env
     if (connection.phase != Connection::Phase::Authed) return;
     switch (envelope.type) {
     case model::MessageType::Chat: handle_chat(connection, envelope); break;
+    case model::MessageType::Feedback: handle_feedback(connection, envelope); break;
     case model::MessageType::Heartbeat: handle_heartbeat(connection, envelope); break;
     case model::MessageType::Bye: handle_bye(connection, envelope); break;
     default:
@@ -1316,6 +1328,54 @@ void HostServer::handle_chat(Connection& connection, const model::Envelope& enve
     publish();
 }
 
+void HostServer::handle_feedback(Connection& connection, const model::Envelope& envelope) {
+    auto report = decode_feedback(envelope.payload);
+    if (!report) {
+        counters_.invalid_frames++;
+        disconnect(connection, report.error().code, "signalement invalide", true);
+        return;
+    }
+    const auto refuse = [&](const Error& error) {
+        queue_frame(connection, model::MessageType::Error, encode(ErrorNotice{error.code, error.message}));
+        if (warnings_.size() < kMaxWarnings) warnings_.push_back(error);
+        ++revision_;
+    };
+    auto description = sanitize_chat_body(report.value().description);
+    if (!description) { refuse(description.error()); return; }
+    // Capacité SubmitFeedback et quotas : l'autorité de session décide.
+    model::IssueReport issue;
+    issue.description = description.value();
+    issue.severity = static_cast<model::Severity>(report.value().severity);
+    auto accepted = messaging_->report_issue(connection.participant, std::move(issue));
+    if (!accepted) { refuse(accepted.error()); return; }
+    FeedbackEntry entry;
+    // Identifiant unique attribué par l'autorité de messagerie : jamais réutilisé.
+    entry.id = accepted.value().value;
+    entry.reporter = connection.participant;
+    entry.reporter_name = connection.guest_name;
+    entry.severity = static_cast<FeedbackSeverity>(report.value().severity);
+    entry.description = description.value();
+    // Contexte saisi par l'invité, borné et sans caractère de contrôle.
+    entry.context = report.value().context;
+    entry.received_ms = clock_.now_wall_ms();
+    const std::string label = feedback_severity_text(entry.severity);
+    // Journal : jamais le contenu, seulement le fait et la gravité.
+    record_event("signalement n°" + std::to_string(entry.id) + " (" + label + ") reçu de « " + connection.guest_name + " »");
+    // Accusé de réception visible du seul auteur.
+    ChatText ack;
+    ack.sender = host_participant_;
+    ack.sender_name = config_.host_name;
+    ack.body = "Signalement n°" + std::to_string(entry.id) + " (gravité " + label + ") reçu par l'hôte.";
+    ack.sent_ms = clock_.now_wall_ms();
+    ack.system = true;
+    queue_frame(connection, model::MessageType::Chat, encode(ack));
+    feedback_.push_back(std::move(entry));
+    while (feedback_.size() > 200) feedback_.pop_front();
+    counters_.feedback_received++;
+    ++revision_;
+    publish();
+}
+
 void HostServer::handle_heartbeat(Connection& connection, const model::Envelope& envelope) {
     auto beat = decode_heartbeat(envelope.payload);
     if (!beat) {
@@ -1522,6 +1582,7 @@ void HostServer::publish() {
         snapshot->participants.push_back(std::move(record));
     }
     snapshot->chat = build_chat();
+    snapshot->feedback.assign(feedback_.begin(), feedback_.end());
     snapshot->events.assign(events_.begin(), events_.end());
     snapshot->warnings = warnings_;
     {

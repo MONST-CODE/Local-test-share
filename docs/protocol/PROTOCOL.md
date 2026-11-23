@@ -1,6 +1,10 @@
-# Protocole DevLink — état réel du contrôle et limite média
+# Protocole DevLink — plan de contrôle, messagerie et canal média
 
-**État du codec courant :** enveloppe de contrôle 1.3 (`engine/protocol/envelope.*`).
+**Version courante : 1.5** (`kProtocolMinor`, `engine/protocol/envelope.hpp`).
+Historique des mineures : 1.1 partage LAN, 1.2 reprise de place, 1.3 upgrade TLS
+(ADR-016/017), 1.4 offre média (ADR-018), 1.5 signalements et identifiant de
+l'hôte (ADR-019). Les mineures sont rétrocompatibles au décodage ; l'hôte refuse
+explicitement un invité de mineure inférieure.
 Ce document remplace les anciennes affirmations « version 1.0 sans handshake » de
 la version historique de ce fichier. Le codec teste la syntaxe ; il ne suffit pas à
 autoriser une opération réseau.
@@ -14,7 +18,7 @@ n'est copiée telle quelle. L'en-tête fixe fait 56 octets :
 |---:|---:|---|
 | 0 | 4 | magic `PLPT` (`50 4c 50 54`) |
 | 4 | 2 | version majeure (1) |
-| 6 | 2 | version mineure (courante 3) |
+| 6 | 2 | version mineure (courante 5) |
 | 8 | 2 | type de message |
 | 10 | 2 | réservé, doit être zéro |
 | 12 | 8 | session ID |
@@ -42,9 +46,9 @@ Le code du plan de contrôle a ajouté les types 16–18 : `TlsUpgrade`,
 4. notice d'upgrade sans secret ;
 5. poignée TLS 1.3 PSK avant l'admission et les échanges applicatifs.
 
-Les preuves loopback sont Linux/OpenSSL et ne représentent ni un test physique LAN
-ni un audit de cryptographie indépendant. Le transport TLS Windows n'est pas
-opérationnel/qualifié. Voir `engine/net/transport*`, `engine/net/wire.*`,
+TLS 1.3 PSK est fourni par OpenSSL 3 (système sous Linux ; DLL UCRT64 épinglées
+chargées depuis le dossier de l'application sous Windows). Les preuves sont en
+boucle locale : ni test physique LAN, ni audit cryptographique indépendant. Voir `engine/net/transport*`, `engine/net/wire.*`,
 `docs/ADR/ADR-016-transport-tls13-psk.md`, `docs/ADR/ADR-017-defi-reponse-et-basculement-tls13.md`
 et la preuve datée de basculement.
 
@@ -59,6 +63,28 @@ payloads typés se trouvent dans `engine/net/wire.*`.
 Ces vérifications ne prouvent pas à elles seules l'identité de l'appelant, son rôle,
 sa capacité ou son droit à une entrée. Ces décisions doivent être vérifiées par le
 moteur de session et attachées au canal réellement authentifié.
+
+## Messagerie et signalements (protocole 1.5, ADR-019)
+
+Tous ces messages circulent sur le canal de contrôle **déjà basculé en TLS 1.3**.
+L'identité d'expéditeur vient toujours de la connexion authentifiée, jamais du
+payload.
+
+- **Chat** (`Chat`, 8) : `ChatText` = expéditeur, nom, corps UTF-8 borné, horodatage,
+  drapeau système, destinataire (`0` = canal général, sinon message privé). L'hôte
+  relaie selon le modèle `Messaging` (quotas, visibilité) ; l'auteur reçoit l'écho
+  de ce que l'hôte a accepté, messages privés compris.
+- **Identifiant de l'hôte** : bloc optionnel 1.5 de `SessionInfo` (`SessionState`,
+  13), placé après le bloc 1.3 : `u64` non nul, distinct de tout pair listé. Il
+  permet à un invité d'écrire en privé à l'hôte. Ce n'est pas un secret.
+- **Signalement** (`Feedback`, 10), invité → hôte seulement : `FeedbackReport` =
+  `u8` gravité (0 information, 1 mineure, 2 majeure, 3 bloquante), `u64`
+  horodatage d'envoi, description UTF-8 de 1 à 2 048 octets, contexte UTF-8 de
+  256 octets au plus **sans caractère de contrôle**. Toute borne violée, gravité
+  inconnue, troncature ou octet surnuméraire fait refuser le payload. L'hôte
+  attribue l'identifiant (`ReportId`), réhorodate, conserve en mémoire (200 au
+  plus, oubliés à l'arrêt) et envoie un accusé système **à l'auteur seul**. Le
+  journal d'événements ne contient jamais le texte. Ni capture, ni pièce jointe.
 
 ## Codec média et canal média (protocole 1.4, ADR-018)
 
@@ -100,7 +126,11 @@ Le parcours complet entre les vrais exécutables l'est dans `desktop_e2e_tests.c
 
 ## Tests existants
 
-Les tests unitaires et platform couvrent des encodages, limites, erreurs, défi-
-réponse, TLS loopback, mauvais secret et refus de runtime absent. Les références et
-leurs limites sont consignées dans `docs/reports/FINAL_COMPLETION_AUDIT.md` et les
-rapports d'évidence. GCC exploratoire ne remplace pas les builds officiels Clang++.
+Unitaires (`tests/unit/test_main.cpp`) : encodages et limites de chaque payload,
+mutations d'enveloppe, négociation de version dérivée de `kProtocolMinor`,
+défi-réponse, codec média, signalement et bloc 1.5. Intégration
+(`tests/integration/platform_tests.cpp`) : plan de contrôle réel en boucle locale,
+TLS 1.3, mauvais secret, refus sans runtime, chat, messages privés (invité ↔ invité,
+invité → hôte, hôte → invité) et signalements. Partage et média :
+`share_pipeline_tests.cpp`, `desktop_e2e_tests.cpp` (Windows). État vérifié :
+[`docs/reports/IMPLEMENTATION_STATUS.md`](../reports/IMPLEMENTATION_STATUS.md).

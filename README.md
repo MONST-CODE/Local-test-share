@@ -38,15 +38,21 @@ ne sont pas à confondre avec les fonctions qualifiées dans l'état actuel.
   retour souris/molette/clavier/texte. Le mode A donne des profils navigateur
   indépendants (le backend de l'application reste commun). Le mode B donne un
   contrôle exclusif transférable. En mode C, les entrées sont refusées côté hôte.
+- **Messagerie et signalements (protocole 1.5) :** canal général, messages privés
+  entre tous les participants (hôte compris), signalements d'anomalie de l'invité
+  vers l'hôte avec gravité et contexte, accusés de réception à l'auteur seul. Tout
+  passe par le contrôle TLS 1.3 et reste en mémoire le temps de la session
+  (ADR-019). Pas de chiffrement de bout en bout entre invités : l'hôte est le
+  serveur de la session.
 - **Proxy HTTP :** le module existe encore, mais il **ne fait plus partie du
   partage** : il donnerait aux invités les ressources web du projet (ADR-013/018).
 
 ## Plateformes et limites
 
 - **Windows x64 / MSYS2 UCRT64 / Clang++ :** chaîne de référence définie par
-  `build.bat`; pas de qualification native disponible dans l'environnement de
-  continuation courant. TLS WebView2, icônes PE et fenêtre native doivent y être
-  revalidés.
+  `build.bat`. Le 2026-11-21, `doctor` et `test debug` (17 tests, dont navigateur
+  réel, partage et bout en bout sur les vrais exécutables) passent sur un poste
+  Windows 11 : voir [`docs/reports/IMPLEMENTATION_STATUS.md`](docs/reports/IMPLEMENTATION_STATUS.md).
 - **Linux x64 :** build distinct défini par `build.sh`. Les résultats GCC utilisés
   pour le diagnostic sont exploratoires et ne remplacent pas Clang++ >=18. La
   disponibilité d'un vrai navigateur de partage Linux n'est pas fournie.
@@ -65,18 +71,34 @@ ne sont pas à confondre avec les fonctions qualifiées dans l'état actuel.
 Consulter [`docs/BUILD.md`](docs/BUILD.md) avant le build. Les commandes officielles
 sont les scripts versionnés ; elles ne téléchargent les dépendances que sur demande.
 
+Windows x64 (terminal cmd, PowerShell ou VS Code ; MSYS2 UCRT64 sous `C:\msys64`) :
+
+```bat
+./build.bat help
+./build.bat deps --fetch
+./build.bat doctor
+./build.bat test debug --native-ui
+```
+
+Linux x64 (Clang++ >= 18) :
+
 ```sh
 ./build.sh help
 ./build.sh deps --fetch
-./build.sh doctor --verbose
+./build.sh doctor
 ./build.sh test debug --headless
-./build.sh selftest
 ```
 
-Build officiel Linux bloqué si Clang++ >=18 n'est pas installé. `--headless` est
-un profil de test, pas une build desktop native distribuable. Pour Windows, utiliser
-`build.bat help` dans un terminal Windows x64 puis suivre `docs/BUILD.md` ; les
-commandes Windows ne sont pas qualifiées en exécutant un build croisé Linux.
+Les deux scripts affichent le bandeau DevLink puis **une ligne par phase réelle**
+(`[4/11] Compilation du moteur DevLink … 30 fichiers · 55,7 s`), avec une
+progression réécrite sur place et un résumé final. Aucune sortie brute d'outil
+n'apparaît : tout est journalisé sous `out/<plateforme>/logs/`, et un échec affiche
+la sortie de la commande fautive telle quelle. `--verbose` montre tout, `--plain`
+(ou `NO_COLOR`) retire couleurs et réécriture. Détails : « Lire la sortie du build »
+dans `docs/BUILD.md`.
+
+`--headless` est un profil de test, pas une build desktop distribuable. Les
+commandes Windows ne sont pas qualifiées par un build croisé Linux, ni l'inverse.
 
 ## Branding et preuves
 
@@ -87,5 +109,7 @@ et ne remplacent pas une exécution courante. Voir aussi :
 - [`docs/SECURITY.md`](docs/SECURITY.md) — garanties et risques résiduels ;
 - [`docs/NETWORK.md`](docs/NETWORK.md) — transport et frontières réseau ;
 - [`docs/QUICKSTART.md`](docs/QUICKSTART.md) — portée réelle de cette préversion ;
-- [`docs/reports/FINAL_COMPLETION_AUDIT.md`](docs/reports/FINAL_COMPLETION_AUDIT.md) —
-  audit de clôture et critères encore bloquants.
+- [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) — partager une application, messagerie
+  et signalements ;
+- [`docs/reports/IMPLEMENTATION_STATUS.md`](docs/reports/IMPLEMENTATION_STATUS.md) —
+  état vérifié exigence par exigence, défauts corrigés et reste à faire.

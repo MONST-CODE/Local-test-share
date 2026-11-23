@@ -10,11 +10,15 @@
 //
 // Proof points: the guest receives real frames over TLS 1.3; its clicks and
 // Unicode text change the HOST DOM (read host-side); the guest's own window
-// capture contains the fixture square in the colour the click produced; both
-// processes exit 0 and every browser context is destroyed.
+// capture contains the fixture square in the colour of a click count the host
+// really reached; both processes exit 0 and every browser context is destroyed.
+// It opens real, focused windows and moves the real cursor: do not use the
+// mouse while it runs (outside clicks are detected and reported as evidence).
 // Loopback, single machine: NOT a LAN qualification. Exit 77 = SKIP.
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <set>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -154,11 +158,18 @@ std::wstring widen(const std::string& s) {
     return w;
 }
 
-// Counts pixels of the fixture green (#10b010) in a 24/32-bit BMP.
-long long green_pixels_in_bmp(const std::filesystem::path& path, int* width, int* height) {
+// Fixture square (demo-service /fixture): colour = clicks mod 4.
+struct SquareColour { int r, g, b; const char* name; };
+constexpr SquareColour kSquareColours[4] = {
+    {0xd0, 0x10, 0x10, "red"}, {0x10, 0xb0, 0x10, "green"}, {0x10, 0x30, 0xd0, "blue"}, {0xe0, 0xd0, 0x10, "yellow"}};
+
+// Counts, in a 24/32-bit BMP, the pixels close to each fixture square colour
+// (JPEG and scaling blur the edges, hence the per-channel tolerance).
+bool square_pixels_in_bmp(const std::filesystem::path& path, int* width, int* height, long long counts[4]) {
+    for (int i = 0; i < 4; ++i) counts[i] = 0;
     std::ifstream f(path, std::ios::binary);
     std::vector<unsigned char> d((std::istreambuf_iterator<char>(f)), {});
-    if (d.size() < 54 || d[0] != 'B' || d[1] != 'M') return -1;
+    if (d.size() < 54 || d[0] != 'B' || d[1] != 'M') return false;
     auto u32 = [&](std::size_t o) { return d[o] | (d[o + 1] << 8) | (d[o + 2] << 16) | (static_cast<unsigned>(d[o + 3]) << 24); };
     const std::size_t offset = u32(10);
     const int w = static_cast<int>(u32(18));
@@ -167,18 +178,21 @@ long long green_pixels_in_bmp(const std::filesystem::path& path, int* width, int
     const int h = h_raw < 0 ? -h_raw : h_raw;
     *width = w;
     *height = h;
-    if (bpp != 24 && bpp != 32) return -1;
+    if (bpp != 24 && bpp != 32) return false;
     const std::size_t bytes = static_cast<std::size_t>(bpp / 8);
     const std::size_t stride = (static_cast<std::size_t>(w) * bytes + 3) & ~static_cast<std::size_t>(3);
-    long long count = 0;
+    constexpr int kTolerance = 45;
     for (int y = 0; y < h; ++y)
         for (int x = 0; x < w; ++x) {
             const std::size_t o = offset + static_cast<std::size_t>(y) * stride + static_cast<std::size_t>(x) * bytes;
-            if (o + 2 >= d.size()) return count;
+            if (o + 2 >= d.size()) return true;
             const int b = d[o], g = d[o + 1], r = d[o + 2];
-            if (r < 60 && g > 140 && g < 210 && b < 60) ++count;
+            for (int i = 0; i < 4; ++i) {
+                const auto& c = kSquareColours[i];
+                if (std::abs(r - c.r) <= kTolerance && std::abs(g - c.g) <= kTolerance && std::abs(b - c.b) <= kTolerance) ++counts[i];
+            }
         }
-    return count;
+    return true;
 }
 
 std::optional<cdp::Value> fixture_state(const std::string& line_json) {
@@ -237,15 +251,47 @@ void shipped_desktop_host_and_guest_share_a_real_application() {
     CHECK(text_ok);
     std::printf("EVIDENCE host_dom clicks>=1=%d value_matches_guest_typing=%d\n", clicked ? 1 : 0, text_ok ? 1 : 0);
 
-    // The guest's REAL window shows the host page with the square turned green.
+    // The guest's REAL window shows the host page with the square in the clicked colour.
     const int guest_rc = guest.wait_exit(40s);
     CHECK_EQ(guest_rc, 0);
+    // Etat de la fenetre invitee au moment de la capture (normal, minimized...)
+    // et nombre de trames sans surface d'affichage sautees : trace de la preuve.
+    std::string capture_line;
+    const auto capture_state = guest.wait_line(
+        std::regex(R"(devlink-capture: .* saved window=(\S+) deferred_frames=(\d+))"), 2s, &capture_line);
+    CHECK(capture_state.has_value());
+    if (capture_state)
+        std::printf("EVIDENCE guest_capture_window=%s deferred_frames=%s\n",
+            (*capture_state)[1].str().c_str(), (*capture_state)[2].str().c_str());
     REQUIRE(std::filesystem::exists(capture));
+    // Every click count the HOST really reached (read from its DOM reports).
+    // This test runs on a live desktop: real clicks made while the guest window
+    // has the focus also reach the page. The capture must show the square in the
+    // colour of a state the host reached after at least one click (clicks mod 4);
+    // with no outside input that is exactly one click, i.e. green.
+    std::set<long long> host_clicks;
+    host.wait_any(std::regex(R"(devlink-host-fixture: (.*)$)"), [&](const std::smatch& m) {
+        if (auto st = fixture_state(m[1]))
+            host_clicks.insert(static_cast<long long>(st->number_at("clicks").value_or(0)));
+        return false;
+    }, 200ms);
+    long long counts[4] = {0, 0, 0, 0};
     int w = 0, h = 0;
-    const long long green = green_pixels_in_bmp(capture, &w, &h);
-    std::printf("EVIDENCE guest_window_capture=%dx%d fixture_green_pixels=%lld file=%s\n", w, h, green,
-        capture.filename().string().c_str());
-    CHECK(green > 2000);
+    REQUIRE(square_pixels_in_bmp(capture, &w, &h, counts));
+    int shown = 0;
+    for (int i = 1; i < 4; ++i)
+        if (counts[i] > counts[shown]) shown = i;
+    bool state_reached = false;
+    for (const long long n : host_clicks) state_reached = state_reached || (n >= 1 && n % 4 == shown);
+    const long long max_clicks = host_clicks.empty() ? 0 : *host_clicks.rbegin();
+    std::printf("EVIDENCE guest_window_capture=%dx%d square=%s pixels=%lld host_clicks_max=%lld file=%s\n", w, h,
+        kSquareColours[shown].name, counts[shown], max_clicks, capture.filename().string().c_str());
+    if (max_clicks > 1)
+        std::printf("EVIDENCE external_input clicks_max=%lld (one scripted click: the desktop was used during the test)\n",
+            max_clicks);
+    const bool square_ok = counts[shown] > 2000 && state_reached;
+    CHECK(counts[shown] > 2000);   // the host page is really drawn in the guest's own window
+    CHECK(state_reached);          // and it shows a state the host really reached after a click
 
     // The guest left: the host stops by itself and destroys every context.
     const int host_rc = host.wait_exit(40s);
@@ -254,7 +300,7 @@ void shipped_desktop_host_and_guest_share_a_real_application() {
     auto end = host.wait_line(std::regex(R"(devlink-host: stopped stage=.* contexts=(\d+)/(\d+))"), 5s, &stopped);
     REQUIRE(end);
     CHECK((*end)[1] == (*end)[2]);
-    if (!streaming || !clicked || !text_ok || green <= 2000) {
+    if (!streaming || !clicked || !text_ok || !square_ok) {
         host.dump("host");
         guest.dump("guest");
     }

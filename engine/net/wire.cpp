@@ -195,6 +195,8 @@ std::vector<std::uint8_t> encode(const SessionInfo& message) {
         writer.text(message.transport);
         for (const auto& peer : message.peers) writer.text(peer.transport);
     }
+    // Bloc 1.5 optionnel, toujours APRÈS le bloc 1.3 : identifiant de l'hôte.
+    if (message.host_participant.value != 0) writer.u64(message.host_participant.value);
     return writer.take();
 }
 std::vector<std::uint8_t> encode(const ServiceList& message) {
@@ -219,6 +221,34 @@ std::vector<std::uint8_t> encode(const ChatText& message) {
     writer.boolean(message.system);
     writer.text(message.body);
     return writer.take();
+}
+std::vector<std::uint8_t> encode(const FeedbackReport& message) {
+    PayloadWriter writer;
+    writer.u8(message.severity);
+    writer.u64(message.sent_ms);
+    writer.text(message.description);
+    writer.text(message.context);
+    return writer.take();
+}
+Result<FeedbackReport> decode_feedback(std::span<const std::uint8_t> data) {
+    PayloadReader reader(data);
+    auto severity = reader.u8();
+    auto sent = reader.u64();
+    auto description = reader.text(kMaxFeedbackBytes);
+    auto context = reader.text(kMaxFeedbackContextBytes);
+    if (!severity || !sent || !description || !context)
+        return Result<FeedbackReport>::failure({ErrorCode::ProtocolViolation, "signalement tronqué", "wire"});
+    if (auto end = reader.require_end(); !end) return Result<FeedbackReport>::failure(end.error());
+    if (severity.value() > 3)
+        return Result<FeedbackReport>::failure({ErrorCode::InvalidArgument, "gravité inconnue", "wire"});
+    if (!valid_text(context.value()) || !control_free(context.value()))
+        return Result<FeedbackReport>::failure({ErrorCode::InvalidArgument, "contexte de signalement invalide", "wire"});
+    FeedbackReport report;
+    report.severity = severity.value();
+    report.sent_ms = sent.value();
+    report.description = std::move(description).value();
+    report.context = std::move(context).value();
+    return Result<FeedbackReport>::success(std::move(report));
 }
 std::vector<std::uint8_t> encode(const ErrorNotice& message) {
     PayloadWriter writer;
@@ -368,6 +398,16 @@ Result<SessionInfo> decode_session_info(std::span<const std::uint8_t> data) {
                 if (!peer_transport) return Result<SessionInfo>::failure(peer_transport.error());
                 peer.transport = std::move(peer_transport).value();
             }
+        }
+        if (!reader.at_end()) {
+            auto host = reader.u64();
+            if (!host) return Result<SessionInfo>::failure(host.error());
+            if (host.value() == 0)
+                return Result<SessionInfo>::failure({ErrorCode::ProtocolViolation, "identifiant d'hôte nul", "wire"});
+            for (const auto& peer : message.peers)
+                if (peer.id.value == host.value())
+                    return Result<SessionInfo>::failure({ErrorCode::ProtocolViolation, "hôte listé comme invité", "wire"});
+            message.host_participant = ParticipantId{host.value()};
         }
     }
     if (auto end = reader.require_end(); !end) return Result<SessionInfo>::failure(end.error());

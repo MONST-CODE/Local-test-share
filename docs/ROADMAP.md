@@ -1,11 +1,10 @@
 # Roadmap et portes de validation
 
 > **Document de planification historique.** Sa rédaction précède l'intégration du
-> transport TLS 1.3 PSK dans `engine/net/transport*` et son basculement dans le plan
-> de contrôle (ADR-016/017). Les décisions TLS sont donc supersédées par ces ADR ;
-> les portes WebView2, pipeline média, LAN physique, Windows natif et release restent
-> ouvertes. Pour l'état audité de la branche active, voir
-> `docs/reports/FINAL_COMPLETION_AUDIT.md`.
+> transport TLS 1.3 PSK (ADR-016/017), du Browser Worker WebView2 et du partage réel
+> (ADR-018) et des signalements (ADR-019) : ces lots sont réalisés et testés sur une
+> machine. Restent ouvertes les portes LAN physique, mesures de charge, messagerie P1
+> et release. Priorités à jour : `docs/reports/IMPLEMENTATION_STATUS.md` §7.
 
 Le scénario directeur du maître reste prioritaire. Les modèles secondaires ne
 justifient pas de contourner une dépendance critique ou un test Windows.

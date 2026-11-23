@@ -7,6 +7,7 @@
 #include <array>
 #include <utility>
 #include "../core/format.hpp"
+#include "../core/text.hpp"
 
 namespace plpt::net {
 namespace {
@@ -103,17 +104,38 @@ bool GuestClient::post_chat(std::string body) {
 }
 
 bool GuestClient::post_direct_message(ParticipantId peer, std::string body) {
-    if (peer.value == 0 || peer == state_.self) return false;
+    if (peer.value == 0) return false;
     {
         // La liste des pairs publiée par l'hôte est la seule autorité dont dispose
         // l'invité : un destinataire absent est refusé avant même d'émettre.
+        // Lecture de l'instantané publié sous mutex : state_ appartient au seul
+        // thread d'entrées/sorties et n'est jamais lu depuis le thread appelant.
         std::lock_guard<std::mutex> guard(mutex_);
-        if (!view_) return false;
-        const bool known = std::any_of(view_->peers.begin(), view_->peers.end(),
-            [&](const GuestPeer& known_peer) { return known_peer.id == peer; });
+        if (!view_ || peer == view_->self) return false;
+        const bool known = peer == view_->host_participant ||
+            std::any_of(view_->peers.begin(), view_->peers.end(),
+                [&](const GuestPeer& known_peer) { return known_peer.id == peer; });
         if (!known) return false;
     }
     return enqueue(Command{CommandKind::PostDirect, peer, std::move(body)});
+}
+
+bool GuestClient::submit_feedback(FeedbackSeverity severity, std::string description, std::string context) {
+    if (static_cast<std::uint8_t>(severity) > 3) return false;
+    auto body = sanitize_chat_body(description);
+    if (!body || body.value().size() > kMaxFeedbackBytes) return false;
+    while (!context.empty() && (context.back() == ' ' || context.back() == '\n' || context.back() == '\r')) context.pop_back();
+    if (context.size() > kMaxFeedbackContextBytes || !valid_text(context)) return false;
+    for (const char character : context)
+        if (static_cast<unsigned char>(character) < 0x20 || character == 0x7F) return false;
+    {
+        std::lock_guard<std::mutex> guard(mutex_);
+        if (!view_ || view_->phase != GuestPhase::Connected) return false;
+    }
+    Command command{CommandKind::Feedback, ParticipantId{}, std::move(body).value()};
+    command.context = std::move(context);
+    command.severity = static_cast<std::uint8_t>(severity);
+    return enqueue(std::move(command));
 }
 
 bool GuestClient::leave() { return enqueue(Command{CommandKind::Leave, ParticipantId{}, ""}); }
@@ -182,6 +204,17 @@ void GuestClient::run(std::stop_token token) {
                     set_phase(GuestPhase::Stopped, "départ envoyé à l'hôte");
                     running_.store(false);
                     break;
+                }
+                if (command.kind == CommandKind::Feedback) {
+                    FeedbackReport report;
+                    report.severity = command.severity;
+                    report.description = command.text;
+                    report.context = command.context;
+                    report.sent_ms = clock_.now_wall_ms();
+                    if (!queue_frame(model::MessageType::Feedback, encode(report))) continue;
+                    state_.counters.feedback_sent++;
+                    ++revision_;
+                    continue;
                 }
                 auto body = sanitize_chat_body(command.text);
                 if (!body) { record_warning(body.error()); continue; }
@@ -556,6 +589,7 @@ void GuestClient::handle_frame(const model::Envelope& envelope) {
         state_.session_id = info.value().session.value;
         state_.session_name = info.value().session_name;
         state_.host_name = info.value().host_name;
+        state_.host_participant = info.value().host_participant;
         state_.peers.clear();
         for (const auto& peer : info.value().peers) {
             GuestPeer record;
@@ -619,6 +653,7 @@ void GuestClient::handle_frame(const model::Envelope& envelope) {
         line.sent_ms = chat.value().sent_ms;
         line.system = chat.value().system;
         line.direct = chat.value().recipient.value != 0;
+        line.recipient = chat.value().recipient;
         push_chat(std::move(line));
         state_.counters.chat_received++;
         if (chat.value().system) record_event(chat.value().body);

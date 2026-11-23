@@ -312,11 +312,12 @@ void protocol_golden_and_bounds() {
         auto corrupt = encoded.value(); corrupt[offset] = 0xFF; CHECK(!decode_envelope(corrupt));
     }
     // Même majeur obligatoire, révision mineure inférieure ou égale acceptée.
-    // 1.3 porte l'upgrade TLS en cours de connexion (TlsUpgrade, ADR-016) ;
-    // 1.4 n'existe pas et doit être refusé.
-    CHECK(negotiate_version(1, 0)); CHECK(negotiate_version(1, 1)); CHECK(negotiate_version(1, 2));
-    CHECK(negotiate_version(1, 3));
-    CHECK(!negotiate_version(1, 5)); CHECK(!negotiate_version(2, 0)); CHECK(!negotiate_version(0, 1));
+    // 1.3 : upgrade TLS (ADR-016) ; 1.4 : offre média (ADR-018) ; 1.5 : signalements.
+    // La révision suivante, qui n'existe pas encore, doit être refusée.
+    for (std::uint16_t minor = 0; minor <= kProtocolMinor; ++minor) CHECK(negotiate_version(1, minor));
+    CHECK_EQ(kProtocolMinor, 5);
+    CHECK(!negotiate_version(1, static_cast<std::uint16_t>(kProtocolMinor + 1)));
+    CHECK(!negotiate_version(2, 0)); CHECK(!negotiate_version(0, 1));
     e.payload.resize(8193); CHECK(!encode_envelope(e));
     e = chat(); e.type = static_cast<MessageType>(999); CHECK(!encode_envelope(e));
     e = chat(); e.flags = 1; CHECK(!encode_envelope(e));
@@ -806,6 +807,22 @@ void wire_messages_roundtrip_and_guard() {
     CHECK(plain_back.value().transport.empty());
     CHECK(plain_back.value().peers[0].transport.empty());
     CHECK_EQ(plain_back.value().peers[0].name, std::string("Alice"));
+    CHECK_EQ(plain_back.value().host_participant.value, 0U); // bloc 1.5 absent : 0.
+    // Bloc 1.5 : identifiant public de l'hôte, avec ou sans bloc 1.3.
+    SessionInfo with_host = info; with_host.host_participant = ParticipantId{1};
+    auto host_back = decode_session_info(encode(with_host)); REQUIRE(host_back);
+    CHECK_EQ(host_back.value().host_participant.value, 1U);
+    CHECK_EQ(host_back.value().transport, info.transport);
+    SessionInfo plain_host = plain; plain_host.host_participant = ParticipantId{1};
+    auto plain_host_back = decode_session_info(encode(plain_host)); REQUIRE(plain_host_back);
+    CHECK_EQ(plain_host_back.value().host_participant.value, 1U);
+    // Un hôte déguisé en invité de la liste est une incohérence : refusée.
+    SessionInfo host_as_peer = info; host_as_peer.host_participant = ParticipantId{2};
+    CHECK(!decode_session_info(encode(host_as_peer)));
+    auto host_extra = encode(with_host); host_extra.push_back(0);
+    CHECK(!decode_session_info(host_extra)); // octet surnuméraire après le bloc 1.5.
+    auto host_short = encode(with_host); host_short.pop_back();
+    CHECK(!decode_session_info(host_short)); // bloc 1.5 tronqué.
 
     ServiceList list{{ServiceInfo{1, "Démo HTTP", 43211, "http://192.168.1.10:43211/?plpt=abcd", true}}, "192.168.1.10:40000"};
     auto list_back = decode_service_list(encode(list)); REQUIRE(list_back);
@@ -819,6 +836,22 @@ void wire_messages_roundtrip_and_guard() {
     CHECK_EQ(chat_back.value().body, chat.body); CHECK_EQ(chat_back.value().recipient.value, 3U);
     ChatText self_dm = chat; self_dm.recipient = chat.sender;
     CHECK(!decode_chat(encode(self_dm))); // expéditeur = destinataire privé : refusé.
+
+    // Signalement (protocole 1.5) : aller-retour exact, bornes et gravité vérifiées.
+    FeedbackReport report; report.severity = 2; report.sent_ms = 77;
+    report.description = "Le bouton « Payer » ne répond pas\nétape 2"; report.context = "écran paiement";
+    auto report_back = decode_feedback(encode(report)); REQUIRE(report_back);
+    CHECK_EQ(report_back.value().description, report.description);
+    CHECK_EQ(report_back.value().context, report.context);
+    CHECK_EQ(report_back.value().severity, 2);
+    FeedbackReport bad_severity = report; bad_severity.severity = 9;
+    CHECK(!decode_feedback(encode(bad_severity)));
+    FeedbackReport control_context = report; control_context.context = "route\x1b[31m";
+    CHECK(!decode_feedback(encode(control_context)));
+    FeedbackReport oversized = report; oversized.description.assign(kMaxFeedbackBytes + 1, 'x');
+    CHECK(!decode_feedback(encode(oversized)));
+    auto report_truncated = encode(report); report_truncated.pop_back();
+    CHECK(!decode_feedback(report_truncated));
 
     ByeNotice bye{ErrorCode::PermissionDenied, "accès révoqué par l'hôte"};
     auto bye_back = decode_bye(encode(bye)); REQUIRE(bye_back);

@@ -1,5 +1,10 @@
 # NOT_FINALIZED — DevLink, audit d'implémentation et qualification
 
+> **Archive datée — ne décrit plus l'état du code.** Rédigé avant le Browser
+> Worker WebView2 (`41bd853`) et le partage réel (`8351a12`), ce rapport les déclare
+> absents. État vérifié courant :
+> [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) (2026-11-21).
+
 ## A. Résumé exécutif
 
 Date selon la session : **2026-11-13 UTC**. Les commandes exécutées dans ce

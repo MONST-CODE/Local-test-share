@@ -1,0 +1,10 @@
+; DevLink - bandeau des scripts de build (build.bat, build.sh).
+; UTF-8 sans BOM. Les lignes commencant par ";" sont des commentaires.
+; Police "ANSI Shadow". Une ligne = une rangee ; la couleur (degrade marron de la
+; marque, assets/branding/BRAND_GUIDELINES.md) est appliquee par les scripts.
+██████╗ ███████╗██╗   ██╗██╗     ██╗███╗   ██╗██╗  ██╗
+██╔══██╗██╔════╝██║   ██║██║     ██║████╗  ██║██║ ██╔╝
+██║  ██║█████╗  ██║   ██║██║     ██║██╔██╗ ██║█████╔╝
+██║  ██║██╔══╝  ╚██╗ ██╔╝██║     ██║██║╚██╗██║██╔═██╗
+██████╔╝███████╗ ╚████╔╝ ███████╗██║██║ ╚████║██║  ██╗
+╚═════╝ ╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝
