@@ -1,0 +1,297 @@
+Native UCRT64 PE dependency closure; source root=C:\msys64\ucrt64
+mingw-w64-ucrt-x86_64-webview2-loader 1.0.3912.50-1
+Hachage SHA256 de C:\msys64\ucrt64\bin\WebView2Loader.dll :
+5d8d6b663b6bdfb15bd49f0e36c181a47bb693c8368ece3e02f6524d83f2b8f2
+CertUtil: -hashfile La commande s’est terminée correctement.
+mingw-w64-ucrt-x86_64-openssl 3.6.3-1
+Hachage SHA256 de C:\msys64\ucrt64\bin\libssl-3-x64.dll :
+7f53951cf786e299521e46d860f7764d6bd671ce85d2a03dc929a8184792e2ab
+CertUtil: -hashfile La commande s’est terminée correctement.
+mingw-w64-ucrt-x86_64-openssl 3.6.3-1
+Hachage SHA256 de C:\msys64\ucrt64\bin\libcrypto-3-x64.dll :
+616e5c9cfd5c6f786fd81238198ec479076f5bf6702127f81686f46b31b2464d
+CertUtil: -hashfile La commande s’est terminée correctement.
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\devlink-browser-tests.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: ole32.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: USER32.dll
+	DLL Name: WS2_32.dll
+mingw-w64-ucrt-x86_64-gcc-libs 16.2.0-3
+Hachage SHA256 de C:\msys64\ucrt64\bin\libgcc_s_seh-1.dll :
+80940372431cc76224dfda06e2d33f01e49af3b4e7c499c535be856ebcadd273
+CertUtil: -hashfile La commande s’est terminée correctement.
+mingw-w64-ucrt-x86_64-libwinpthread 14.0.0.r283.ga7cb47123-1
+Hachage SHA256 de C:\msys64\ucrt64\bin\libwinpthread-1.dll :
+0bf76de7b957fc1f87f8be9c8c46af4588db204b0600a3e7abe7243c790f8dfd
+CertUtil: -hashfile La commande s’est terminée correctement.
+mingw-w64-ucrt-x86_64-gcc-libs 16.2.0-3
+Hachage SHA256 de C:\msys64\ucrt64\bin\libstdc++-6.dll :
+69200d6d96b903dac4c873031813485a0455828be8101479efc56008862420cc
+CertUtil: -hashfile La commande s’est terminée correctement.
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\devlink-demo-service.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\devlink-desktop-e2e-tests.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: ole32.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: USER32.dll
+	DLL Name: WS2_32.dll
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\devlink-desktop.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	DLL Name: ole32.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: SDL3.dll
+	DLL Name: SHELL32.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: USER32.dll
+	DLL Name: WS2_32.dll
+mingw-w64-ucrt-x86_64-sdl3 3.4.20-1
+Hachage SHA256 de C:\msys64\ucrt64\bin\SDL3.dll :
+fcf8a99a019c8d2ed947219e7e768aae1f9cef7219ad93c0ab0007b63db1a6f1
+CertUtil: -hashfile La commande s’est terminée correctement.
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\devlink-monitor.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: WS2_32.dll
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\devlink-platform-tests.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: ole32.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: USER32.dll
+	DLL Name: WS2_32.dll
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\devlink-share-tests.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: ole32.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: USER32.dll
+	DLL Name: WS2_32.dll
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\devlink-unit-tests.exe
+	DLL Name: bcrypt.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: IPHLPAPI.DLL
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: ole32.dll
+	DLL Name: libwinpthread-1.dll
+	DLL Name: libstdc++-6.dll
+	DLL Name: USER32.dll
+	DLL Name: WS2_32.dll
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\libcrypto-3-x64.dll
+	DLL Name: ADVAPI32.dll
+	DLL Name: CRYPT32.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	DLL Name: USER32.dll
+	DLL Name: WS2_32.dll
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\libssl-3-x64.dll
+	DLL Name: libcrypto-3-x64.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	DLL Name: WS2_32.dll
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\libstdc++-6.dll
+	DLL Name: libgcc_s_seh-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-time-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	DLL Name: libwinpthread-1.dll
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\libwinpthread-1.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\SDL3.dll
+	DLL Name: ADVAPI32.dll
+	DLL Name: GDI32.dll
+	DLL Name: libiconv-2.dll
+	DLL Name: IMM32.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-math-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll
+	DLL Name: ole32.dll
+	DLL Name: OLEAUT32.dll
+	DLL Name: SETUPAPI.dll
+	DLL Name: SHELL32.dll
+	DLL Name: USER32.dll
+	DLL Name: VERSION.dll
+	DLL Name: WINMM.dll
+mingw-w64-ucrt-x86_64-libiconv 1.19-1
+Hachage SHA256 de C:\msys64\ucrt64\bin\libiconv-2.dll :
+94ec68fb8d342b6c91b6b48a8d95092819cdcd006a7166e0b68062f946afd08a
+CertUtil: -hashfile La commande s’est terminée correctement.
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\WebView2Loader.dll
+	DLL Name: KERNEL32.dll
+PE=C:\Users\CEO BRUNO ZAMBA\Desktop\Local-test-share\out\windows\release\bin\libiconv-2.dll
+	DLL Name: KERNEL32.dll
+	DLL Name: api-ms-win-crt-convert-l1-1-0.dll
+	DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+	DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+	DLL Name: api-ms-win-crt-private-l1-1-0.dll
+	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+	DLL Name: api-ms-win-crt-string-l1-1-0.dll
+	DLL Name: api-ms-win-crt-utility-l1-1-0.dll

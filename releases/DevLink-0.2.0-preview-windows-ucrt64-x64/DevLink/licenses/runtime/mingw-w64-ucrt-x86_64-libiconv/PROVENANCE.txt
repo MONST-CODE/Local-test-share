@@ -1,0 +1,22 @@
+Name            : mingw-w64-ucrt-x86_64-libiconv
+Version         : 1.19-1
+Description     : Character encoding conversion library (mingw-w64)
+Architecture    : any
+URL             : https://www.gnu.org/software/libiconv/
+Licenses        : spdx:LGPL-2.1-or-later  documentation:spdx:GPL-3.0-or-later
+Groups          : None
+Provides        : None
+Depends On      : None
+Optional Deps   : None
+Required By     : mingw-w64-ucrt-x86_64-SDL2  mingw-w64-ucrt-x86_64-ffmpeg  mingw-w64-ucrt-x86_64-gettext-runtime  mingw-w64-ucrt-x86_64-lame  mingw-w64-ucrt-x86_64-libarchive  mingw-w64-ucrt-x86_64-libass  mingw-w64-ucrt-x86_64-libdatrie  mingw-w64-ucrt-x86_64-libidn2  mingw-w64-ucrt-x86_64-libpsl  mingw-w64-ucrt-x86_64-libunistring  mingw-w64-ucrt-x86_64-libxml2  mingw-w64-ucrt-x86_64-opencv  mingw-w64-ucrt-x86_64-sdl3  mingw-w64-ucrt-x86_64-zvbi
+Optional For    : None
+Conflicts With  : None
+Replaces        : None
+Installed Size  : 2.44 MiB
+Packager        : CI (msys2/msys2-autobuild/5e407709/23084514348)
+Build Date      : Sat Mar 14 09:45:32 2026
+Install Date    : Tue Aug 18 19:42:34 2026
+Install Reason  : Installed as a dependency for another package
+Install Script  : No
+Validated By    : SHA-256 Sum  Signature
+

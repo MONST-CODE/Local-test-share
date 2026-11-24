@@ -1,0 +1,22 @@
+Name            : mingw-w64-ucrt-x86_64-sdl3
+Version         : 3.4.20-1
+Description     : A library for portable low-level access to a video framebuffer, audio output, mouse, and keyboard (Version 3) (mingw-w64)
+Architecture    : any
+URL             : https://libsdl.org/
+Licenses        : spdx:Zlib
+Groups          : None
+Provides        : None
+Depends On      : mingw-w64-ucrt-x86_64-libiconv  mingw-w64-ucrt-x86_64-vulkan
+Optional Deps   : None
+Required By     : mingw-w64-ucrt-x86_64-fluidsynth  mingw-w64-ucrt-x86_64-sdl3-image  mingw-w64-ucrt-x86_64-sdl3-mixer  mingw-w64-ucrt-x86_64-sdl3-net  mingw-w64-ucrt-x86_64-sdl3-ttf
+Optional For    : None
+Conflicts With  : None
+Replaces        : None
+Installed Size  : 14.53 MiB
+Packager        : CI (https://github.com/msys2/msys2-autobuild/actions/runs/41892854185/job/126794548254)
+Build Date      : Wed Nov  4 20:08:34 2026
+Install Date    : Tue Nov 17 04:22:04 2026
+Install Reason  : Explicitly installed
+Install Script  : No
+Validated By    : None
+

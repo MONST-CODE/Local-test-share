@@ -1,0 +1,22 @@
+Name            : mingw-w64-ucrt-x86_64-gcc-libs
+Version         : 16.2.0-3
+Description     : GNU Compiler Collection (libraries) for MinGW-w64
+Architecture    : any
+URL             : https://gcc.gnu.org
+Licenses        : spdx:GPL-3.0-or-later WITH GCC-exception-3.1 AND LGPL-2.1-or-later
+Groups          : None
+Provides        : mingw-w64-ucrt-x86_64-omp  mingw-w64-ucrt-x86_64-cc-libs
+Depends On      : mingw-w64-ucrt-x86_64-libwinpthread  mingw-w64-ucrt-x86_64-tzdata
+Optional Deps   : None
+Required By     : mingw-w64-ucrt-x86_64-SDL2  mingw-w64-ucrt-x86_64-abseil-cpp  mingw-w64-ucrt-x86_64-aom  mingw-w64-ucrt-x86_64-aws-c-cal  mingw-w64-ucrt-x86_64-aws-c-common  mingw-w64-ucrt-x86_64-aws-c-io  mingw-w64-ucrt-x86_64-bullet  mingw-w64-ucrt-x86_64-cairo  mingw-w64-ucrt-x86_64-ceres-solver  mingw-w64-ucrt-x86_64-clang-libs  mingw-w64-ucrt-x86_64-curl  mingw-w64-ucrt-x86_64-double-conversion  mingw-w64-ucrt-x86_64-flac  mingw-w64-ucrt-x86_64-fluidsynth  mingw-w64-ucrt-x86_64-fontconfig  mingw-w64-ucrt-x86_64-freetype  mingw-w64-ucrt-x86_64-frei0r-plugins  mingw-w64-ucrt-x86_64-gcc  mingw-w64-ucrt-x86_64-gcc-libgfortran  mingw-w64-ucrt-x86_64-gettext-runtime  mingw-w64-ucrt-x86_64-gflags  mingw-w64-ucrt-x86_64-ggml  mingw-w64-ucrt-x86_64-giflib  mingw-w64-ucrt-x86_64-glog  mingw-w64-ucrt-x86_64-glsl-optimizer  mingw-w64-ucrt-x86_64-glslang  mingw-w64-ucrt-x86_64-gnutls  mingw-w64-ucrt-x86_64-graphite2  mingw-w64-ucrt-x86_64-grpc  mingw-w64-ucrt-x86_64-gstreamer  mingw-w64-ucrt-x86_64-harfbuzz  mingw-w64-ucrt-x86_64-hdf5  mingw-w64-ucrt-x86_64-highway  mingw-w64-ucrt-x86_64-hwloc  mingw-w64-ucrt-x86_64-icu  mingw-w64-ucrt-x86_64-imath  mingw-w64-ucrt-x86_64-lerc  mingw-w64-ucrt-x86_64-libarchive  mingw-w64-ucrt-x86_64-libavif  mingw-w64-ucrt-x86_64-libb2  mingw-w64-ucrt-x86_64-libgme  mingw-w64-ucrt-x86_64-libjpeg-turbo  mingw-w64-ucrt-x86_64-libjxl  mingw-w64-ucrt-x86_64-libmodplug  mingw-w64-ucrt-x86_64-libmysofa  mingw-w64-ucrt-x86_64-libpng  mingw-w64-ucrt-x86_64-libsoxr  mingw-w64-ucrt-x86_64-libtasn1  mingw-w64-ucrt-x86_64-libtiff  mingw-w64-ucrt-x86_64-libunwind  mingw-w64-ucrt-x86_64-libvpl  mingw-w64-ucrt-x86_64-libyuv  mingw-w64-ucrt-x86_64-llama.cpp  mingw-w64-ucrt-x86_64-llvm-libs  mingw-w64-ucrt-x86_64-mpdecimal  mingw-w64-ucrt-x86_64-mpfr  mingw-w64-ucrt-x86_64-mpg123  mingw-w64-ucrt-x86_64-ncurses  mingw-w64-ucrt-x86_64-nettle  mingw-w64-ucrt-x86_64-ogre3d  mingw-w64-ucrt-x86_64-openblas  mingw-w64-ucrt-x86_64-opencv  mingw-w64-ucrt-x86_64-openexr  mingw-w64-ucrt-x86_64-openjpeg2  mingw-w64-ucrt-x86_64-openjph  mingw-w64-ucrt-x86_64-openvr  mingw-w64-ucrt-x86_64-pixman  mingw-w64-ucrt-x86_64-portaudio  mingw-w64-ucrt-x86_64-protobuf  mingw-w64-ucrt-x86_64-python  mingw-w64-ucrt-x86_64-python-numpy  mingw-w64-ucrt-x86_64-python-scikit-learn  mingw-w64-ucrt-x86_64-python-scipy  mingw-w64-ucrt-x86_64-qt6-lottie  mingw-w64-ucrt-x86_64-qt6-mqtt  mingw-w64-ucrt-x86_64-qt6-tools  mingw-w64-ucrt-x86_64-re2  mingw-w64-ucrt-x86_64-readline  mingw-w64-ucrt-x86_64-rtmpdump  mingw-w64-ucrt-x86_64-shaderc  mingw-w64-ucrt-x86_64-speexdsp  mingw-w64-ucrt-x86_64-spirv-cross  mingw-w64-ucrt-x86_64-spirv-tools  mingw-w64-ucrt-x86_64-srt  mingw-w64-ucrt-x86_64-suitesparse  mingw-w64-ucrt-x86_64-tbb  mingw-w64-ucrt-x86_64-termcap  mingw-w64-ucrt-x86_64-tesseract-ocr  mingw-w64-ucrt-x86_64-tinyxml  mingw-w64-ucrt-x86_64-vid.stab  mingw-w64-ucrt-x86_64-vsgimgui  mingw-w64-ucrt-x86_64-vulkanscenegraph  mingw-w64-ucrt-x86_64-wavpack  mingw-w64-ucrt-x86_64-whisper.cpp  mingw-w64-ucrt-x86_64-x265  mingw-w64-ucrt-x86_64-zimg  mingw-w64-ucrt-x86_64-zstd
+Optional For    : None
+Conflicts With  : None
+Replaces        : None
+Installed Size  : 3.49 MiB
+Packager        : CI (https://github.com/msys2/msys2-autobuild/actions/runs/31300124490/job/93211454519)
+Build Date      : Sun Aug  9 08:44:55 2026
+Install Date    : Tue Aug 18 19:42:34 2026
+Install Reason  : Installed as a dependency for another package
+Install Script  : No
+Validated By    : SHA-256 Sum  Signature
+

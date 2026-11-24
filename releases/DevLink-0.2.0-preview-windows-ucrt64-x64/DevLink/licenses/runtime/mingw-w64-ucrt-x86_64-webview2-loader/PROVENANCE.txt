@@ -1,0 +1,22 @@
+Name            : mingw-w64-ucrt-x86_64-webview2-loader
+Version         : 1.0.3912.50-1
+Description     : Microsoft WebView2 Loader (mingw-w64)
+Architecture    : any
+URL             : https://learn.microsoft.com/en-us/microsoft-edge/webview2
+Licenses        : spdx:BSD-3-Clause
+Groups          : None
+Provides        : None
+Depends On      : None
+Optional Deps   : None
+Required By     : None
+Optional For    : None
+Conflicts With  : None
+Replaces        : None
+Installed Size  : 2.78 MiB
+Packager        : CI (msys2/msys2-autobuild/actions/runs/24927403471/job/72999575538)
+Build Date      : Sat Apr 25 12:06:07 2026
+Install Date    : Tue Nov 17 14:19:41 2026
+Install Reason  : Explicitly installed
+Install Script  : No
+Validated By    : SHA-256 Sum  Signature
+
