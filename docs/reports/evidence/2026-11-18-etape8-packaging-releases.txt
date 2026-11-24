@@ -1,0 +1,70 @@
+DevLink — preuve d'exécution, étape 8 : publications atomiques vers releases/
+Date : 18 novembre 2026 (UTC)
+Branche : arena/125b0385-local-test-share
+Décision : plan du mandat §8 (BASELINE_AUDIT_1e12c08.md)
+
+================================================================================
+1. Mécanique publiée par build.sh (Linux) et prouvée par l'auto-test
+================================================================================
+publish_release() dans build.sh — la MÊME fonction sert le package réel
+(./build.sh package) et les preuves synthétiques de l'auto-test :
+  - écriture vers <archive>.partial, jamais directement au nom final ;
+  - intégrité lue de bout en bout AVANT publication (tar -tzf / unzip -tq) ;
+  - SHA-256 calculée puis publiée dans <archive>.sha256 au format vérifiable
+    (« cd releases && sha256sum -c <archive>.sha256 ») ;
+  - renommage atomique (mv, même système de fichiers) : un lecteur ne voit
+    jamais une archive tronquée ;
+  - cible refusée hors de releases/ ;
+  - une archive déjà publiée dont l'empreinte diffère n'est JAMAIS écrasée
+    silencieusement : échec explicite avec les deux empreintes.
+
+Lignes réelles de l'auto-test (./build_local_tmp.sh selftest, SELFTEST_EXIT=0) :
+RELEASE PUBLIEE : /home/user/Local-test-share/releases/DevLink-selftest-fixture.tar.gz
+FAILURE: publish_release: DevLink-selftest-fixture.tar.gz existe deja avec une empreinte differente — aucun ecrasement silencieux (existant=bb964c78e35b6d6b023ceaf806404db62cd212fb26062dcae75d4a222718daac nouveau=b706531ad3cbcc6e630cb95166f6aed2343ef51148a121a4f8a18705539fb1de)
+FAILURE: publish_release: archive illisible (tar) : DevLink-selftest-broken.tar.gz
+PASS release-publish-proof
+PASS clean-preserves-releases-proof
+SELFTEST PASS: missing compiler, compilation, linking, archive hash and release publishing failures propagate; clean never touches releases/; no stale successful output
+
+Les deux lignes « FAILURE: publish_release: … » sont les CONTRÔLES NÉGATIFS
+exigés : le sous-shell doit échouer (rc != 0), sinon l'auto-test lui-même
+échoue (« ecrasement silencieux accepté » / « archive illisible publiée »).
+Après la preuve, releases/ ne contient que .gitignore et README.md — aucun
+artefact de test n'est laissé derrière.
+
+================================================================================
+2. clean ne touche jamais releases/ (preuve NON VIDE)
+================================================================================
+L'auto-test dépose une fixture dans out/linux/tests/negative, lance
+« ./build.sh clean », puis exige à la fois :
+  - que clean ait réellement nettoyé ([[ ! -e out/linux/tests/negative ]]) —
+    sans quoi la « préservation » serait démontrée par rien ;
+  - que l'archive publiée et son empreinte aient SURVÉCU au nettoyage.
+Sortie réelle : le journal enfant complet est conservé dans
+`out/linux/logs/selftest-clean.log` (« CLEAN SUCCESS: compiled outputs removed;
+releases/ untouched; logs and dependencies retained »). La branche clean des
+deux scripts n'énumère délibérément que out/{debug,release,tests,packages,doctor}.
+
+================================================================================
+3. Parité Windows (build.bat)
+================================================================================
+:package publie désormais %ROOT%\releases\DevLink-<version>-windows-ucrt64-x64.zip
+via :publish_release : mêmes étapes avec tar.exe (listing d'intégrité), certutil
+-hashfile SHA256 (calcul + recontrôle final sur l'archive renommée), sidecar
+<cible>.sha256 au format compatible sha256sum, move /y pour le renommage de
+remplacement, refus si l'empreinte existante diffère, cible exigée sous
+%ROOT%\releases. L'extraction de preuve porte sur l'archive PUBLIÉE, comme côté
+Linux. Statut : IMPLEMENTED_BUT_NOT_VERIFIED depuis Linux — exécuté dans MSYS2
+UCRT64 ; la mécanique est identique à celle prouvée par l'auto-test bash.
+
+================================================================================
+4. Publication effective via ./build.sh package
+================================================================================
+Le package complet exige une machine capable du bureau natif (X11 + smoke-test
+SDL) ; il n'est donc pas exécuté dans l'environnement headless de cette session.
+La commande de publication reste :
+  ./build.sh package       -> releases/DevLink-<version>-linux-x64.tar.gz(+.sha256)
+  build.bat  package       -> releases\DevLink-<version>-windows-ucrt64-x64.zip(+.sha256)
+Convention de versionnage : les binaires (*.tar.gz, *.zip, *.partial) sont
+ignorés par Git (releases/.gitignore) ; seules les empreintes *.sha256 et le
+README sont versionnés — la traçabilité sans alourdir le dépôt.

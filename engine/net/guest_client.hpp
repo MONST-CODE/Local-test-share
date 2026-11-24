@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -18,6 +19,7 @@
 #include "../core/result.hpp"
 #include "../core/secrets.hpp"
 #include "../platform/socket.hpp"
+#include "transport.hpp"
 #include "../session/session.hpp"
 #include "chat.hpp"
 #include "wire.hpp"
@@ -67,6 +69,7 @@ struct GuestPeer {
     bool self = false;
     std::uint64_t connected_ms = 0;
     std::uint32_t latency_ms = 0;
+    std::string transport;   // canal réel annoncé par l'hôte pour ce pair
 };
 
 struct GuestCounters {
@@ -74,6 +77,7 @@ struct GuestCounters {
     std::uint64_t invalid_frames = 0;
     std::uint64_t chat_received = 0;
     std::uint64_t chat_sent = 0;
+    std::uint64_t feedback_sent = 0;
     std::uint64_t errors = 0;
     std::uint64_t reconnects = 0;
 };
@@ -87,6 +91,7 @@ struct GuestSnapshot {
     std::string host_name;
     std::string session_name;
     ParticipantId self{};
+    ParticipantId host_participant{}; // publié par l'hôte (1.5) : destinataire privé possible
     std::string host_address;         // adresse réellement utilisée (celle saisie ou découverte).
     std::uint16_t host_port = 0;
     std::vector<GuestPeer> peers;
@@ -101,6 +106,12 @@ struct GuestSnapshot {
     // Reprise de place : l'indication est publique, le secret ne l'est jamais.
     bool resume_available = false;
     std::uint32_t resume_ttl_ms = 0;
+    std::string transport;   // réel : "TLSv1.3 …" ou "tcp clair" (ADR-016)
+    // Partage réel (ADR-018) : un canal média a été offert. Le secret n'est
+    // jamais dans l'instantané : voir GuestClient::media_offer().
+    bool media_offered = false;
+    std::uint64_t media_offer_revision = 0;
+    std::uint8_t media_mode = 0;
 };
 
 struct GuestConfig {
@@ -117,6 +128,9 @@ struct GuestConfig {
     // Secret de reprise obtenu lors d'une admission précédente (voir
     // GuestClient::resume_secret). Vide pour une première connexion.
     std::string resume_secret;
+    // ADR-016 / mandat 1355 : refuser un hôte qui ne propose pas l'upgrade TLS.
+    bool tls_required = true;
+    std::uint32_t tls_handshake_timeout_ms = 5000;
 };
 
 class GuestClient {
@@ -134,20 +148,29 @@ public:
 
     bool post_chat(std::string body);
     bool post_direct_message(ParticipantId peer, std::string body);
+    // Signalement d'anomalie vers l'hôte. Refusé localement s'il est vide, trop
+    // long ou si la gravité est inconnue ; l'hôte accuse réception par un
+    // événement système visible de l'auteur seul.
+    bool submit_feedback(FeedbackSeverity severity, std::string description, std::string context);
     bool leave();
 
     // Secret matériel de reprise, à replacer dans un GuestConfig pour retrouver SA
     // place après une coupure. Ne jamais l'afficher, le journaliser ni l'annoncer :
     // c'est une preuve d'identité, pas une information de session.
     std::string resume_secret() const;
+    // Dernière offre de canal média (clé PSK comprise) : à remettre au client
+    // média uniquement. Ne jamais l'afficher ni la journaliser.
+    std::optional<MediaOffer> media_offer() const;
 
 private:
-    enum class CommandKind : std::uint8_t { PostChat, PostDirect, Leave, Stop };
+    enum class CommandKind : std::uint8_t { PostChat, PostDirect, Feedback, Leave, Stop };
     // Type complet : la file de commandes l'instancie dans l'en-tête.
     struct Command {
         CommandKind kind = CommandKind::Stop;
         ParticipantId recipient{};
         std::string text;
+        std::string context{};          // Feedback seulement
+        std::uint8_t severity = 0;      // Feedback seulement
     };
 
     bool enqueue(Command command);
@@ -158,6 +181,12 @@ private:
     void handle_frame(const model::Envelope& envelope);
     bool queue_frame(model::MessageType type, std::span<const std::uint8_t> payload);
     void flush(std::chrono::milliseconds budget);
+    // Basculement transport (ADR-016) : dispatch exclusif du thread d'E/S.
+    TransportDescriptor guest_descriptor() const;
+    Result<std::size_t> read_some_guest(std::span<std::uint8_t> buffer);
+    Result<std::size_t> write_some_guest(std::span<const std::uint8_t> data);
+    void close_guest_transport();
+    bool upgrade_client(const TlsUpgradeNotice& notice);
     void set_phase(GuestPhase phase, std::string text, ErrorCode code = ErrorCode::Ok);
     void record_event(std::string text);
     void record_warning(Error error);
@@ -167,6 +196,8 @@ private:
     IClock& clock_;
     GuestConfig config_;
     Socket socket_;
+    std::unique_ptr<ITransportChannel> channel_;   // après upgrade TLS 1.3
+    bool secure_ = false;
     WakeupSignal wakeup_;
     std::atomic<bool> running_{false};
     bool connected_ = false;
@@ -181,11 +212,13 @@ private:
     std::uint64_t started_ms_ = 0;
 
     FrameAssembler assembler_;
+    std::vector<std::uint8_t> challenge_nonce_;   // défi de l'hôte, rejoué par la notice d'upgrade
     std::vector<std::uint8_t> outbox_;
     std::size_t outbox_sent_ = 0;
 
     GuestSnapshot state_;              // propriété exclusive du thread d'entrées/sorties.
     std::string resume_secret_;        // gardée par mutex_ : lue depuis d'autres threads.
+    std::optional<MediaOffer> media_offer_; // gardée par mutex_.
     std::deque<ChatLine> chat_;        // anneau borné, même borne que l'hôte.
     std::deque<std::string> events_;
 

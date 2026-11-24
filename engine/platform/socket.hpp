@@ -133,6 +133,9 @@ public:
     Result<std::size_t> receive_from(std::span<std::uint8_t> buffer, IpAddress* source, Port* source_port);
 
     void close();
+    // Cède la propriété du descripteur (upgrade vers un canal TLS, étape 5) :
+    // l'objet devient invalide, le descripteur reste ouvert chez l'appelant.
+    NativeSocket release();
     bool valid() const { return handle_ != kInvalidSocket; }
     NativeSocket native() const { return handle_; }
     TransportProtocol protocol() const { return protocol_; }

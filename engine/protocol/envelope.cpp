@@ -12,6 +12,10 @@ std::uint32_t max_payload_size(MessageType type) {
     case MessageType::SessionState: return 16384; // 64 participants nommés bornent ce plafond.
     case MessageType::ServiceList: return 8192;   // 64 services partagés au plus.
     case MessageType::Bye: return 1024;
+    case MessageType::TlsUpgrade: return 512; // identité + nonce publics, dernier clair.
+    case MessageType::AuthChallenge: return 96; // nonce public de 32 octets.
+    case MessageType::AuthProof: return 96;     // preuve HMAC de 32 octets.
+    case MessageType::MediaOffer: return 512;   // port, identité, clé PSK, mode.
     }
     return 0;
 }
@@ -30,7 +34,18 @@ Result<void> validate_header(const Envelope& e, std::size_t size) {
     if (e.type == MessageType::Hello) {
         if (e.session.value != 0 || e.participant.value != 0) return Result<void>::failure(malformed());
     } else if (e.session.value == 0) return Result<void>::failure(malformed());
-    if (e.type != MessageType::Hello && e.type != MessageType::Auth && (e.participant.value == 0 || e.sequence == 0))
+    // Trames d'AVANT admission (ADR-017) : la place n'existe pas encore, donc
+    // l'identifiant de participant est nul pour Hello, AuthChallenge, AuthProof,
+    // TlsUpgrade et Auth. Toute autre trame exige une place attribuée : un pair
+    // non admis ne peut ni discuter, ni téléverser, ni se faire passer pour un
+    // participant. La séquence reste obligatoire (Hello excepté) : le défi, la
+    // preuve et la notice d'upgrade sont rejouables nulle part.
+    const bool pre_admission = e.type == MessageType::Hello || e.type == MessageType::Auth ||
+        e.type == MessageType::AuthChallenge || e.type == MessageType::AuthProof ||
+        e.type == MessageType::TlsUpgrade;
+    if (!pre_admission && (e.participant.value == 0 || e.sequence == 0))
+        return Result<void>::failure(malformed());
+    if (e.type != MessageType::Hello && e.type != MessageType::Auth && e.sequence == 0)
         return Result<void>::failure(malformed());
     return Result<void>::success();
 }

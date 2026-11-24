@@ -1,0 +1,22 @@
+Name            : mingw-w64-ucrt-x86_64-libwinpthread
+Version         : 14.0.0.r283.ga7cb47123-1
+Description     : MinGW-w64 winpthreads library (mingw-w64)
+Architecture    : any
+URL             : https://www.mingw-w64.org/
+Licenses        : spdx:MIT AND BSD-3-Clause-Clear
+Groups          : mingw-w64-ucrt-x86_64-toolchain
+Provides        : mingw-w64-ucrt-x86_64-libwinpthread-git
+Depends On      : None
+Optional Deps   : None
+Required By     : mingw-w64-ucrt-x86_64-abseil-cpp  mingw-w64-ucrt-x86_64-aom  mingw-w64-ucrt-x86_64-binutils  mingw-w64-ucrt-x86_64-flac  mingw-w64-ucrt-x86_64-gcc-libgfortran  mingw-w64-ucrt-x86_64-gcc-libs  mingw-w64-ucrt-x86_64-glog  mingw-w64-ucrt-x86_64-gnutls  mingw-w64-ucrt-x86_64-gstreamer  mingw-w64-ucrt-x86_64-jasper  mingw-w64-ucrt-x86_64-libjxl  mingw-w64-ucrt-x86_64-libssh  mingw-w64-ucrt-x86_64-libvpx  mingw-w64-ucrt-x86_64-openexr  mingw-w64-ucrt-x86_64-qt6-grpc  mingw-w64-ucrt-x86_64-srt  mingw-w64-ucrt-x86_64-vulkanscenegraph  mingw-w64-ucrt-x86_64-winpthreads  mingw-w64-ucrt-x86_64-zimg  mingw-w64-ucrt-x86_64-zvbi
+Optional For    : None
+Conflicts With  : mingw-w64-ucrt-x86_64-libwinpthread-git
+Replaces        : mingw-w64-ucrt-x86_64-libwinpthread-git
+Installed Size  : 64.47 KiB
+Packager        : CI (https://github.com/msys2/msys2-autobuild/actions/runs/32002642566/job/95305827090)
+Build Date      : Mon Aug 17 07:54:10 2026
+Install Date    : Tue Aug 18 19:42:31 2026
+Install Reason  : Installed as a dependency for another package
+Install Script  : No
+Validated By    : SHA-256 Sum  Signature
+

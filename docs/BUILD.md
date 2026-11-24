@@ -15,10 +15,11 @@ C:\msys64\ucrt64\bin\clang++.exe
 Un autre emplacement MSYS2 est permis uniquement par :
 
 ```bat
-set "PLPT_MSYS2_ROOT=D:\outils\msys64"
+set "DEVLINK_MSYS2_ROOT=D:\outils\msys64"
 ```
 
-Le compilateur devient exactement `%PLPT_MSYS2_ROOT%\ucrt64\bin\clang++.exe`.
+Le compilateur devient exactement `%DEVLINK_MSYS2_ROOT%\ucrt64\bin\clang++.exe`
+(`PLPT_MSYS2_ROOT` reste accepté comme ancien nom).
 Aucun `PLPT_CXX`, standalone LLVM, CLANG64, MINGW64/MSVCRT, compilateur MSYS `/usr`,
 clang-cl, MSVC ou découverte automatique de secours. Ne pas utiliser un Developer
 Command Prompt Visual Studio. Un terminal **cmd ordinaire**, y compris dans VS Code,
@@ -57,13 +58,14 @@ bytes. Il ne remplace pas votre SDL et n'utilise jamais `SDL3.lib`.
 Pour votre copie existante d'ImGui :
 
 ```bat
-set "PLPT_IMGUI_DIR=C:\dev\imgui"
+set "DEVLINK_IMGUI_DIR=C:\dev\imgui"
 build.bat deps --fetch
 build.bat doctor --verbose
 build.bat debug
 ```
 
-`PLPT_IMGUI_DIR` est la **racine contenant `imgui.h`, les `.cpp` et `backends/`**,
+`DEVLINK_IMGUI_DIR` (ancien nom accepté : `PLPT_IMGUI_DIR`, celui que lit la
+configuration IntelliSense de VS Code) est la **racine contenant `imgui.h`, les `.cpp` et `backends/`**,
 pas le sous-dossier backends. Les fichiers utilisés doivent correspondre au pin
 ImGui 1.93.0 ; ils sont comparés à l'archive vérifiée et ne sont pas modifiés.
 Un ImGui différent ou un imconfig personnalisé demande une révision explicite du
@@ -98,6 +100,55 @@ téléchargent rien. Un fichier absent/corrompu donne une erreur, pas une autre 
 ./build.bat clean
 ./build.bat package
 ```
+
+### Lire la sortie du build
+
+Chaque opération affiche le bandeau DevLink (dégradé marron de la marque), puis une
+ligne par **phase réelle**, numérotée `[n/N]` :
+
+```text
+  √  [1/11] Contrôle de la chaîne de compilation UCRT64    clang 22.1.8 · x86_64-w64-windows-gnu · 11,9 s
+  √  [4/11] Compilation du moteur DevLink                  30 fichiers · 55,7 s
+  •  [5/11] Compilation des applications et de l'interface 7/12 · imgui_widgets.cpp
+```
+
+| Opération | Étapes |
+|---|---|
+| `debug`, `release` | 8 : chaîne, dépendances, préparation (ImGui, manifeste, icône, version), moteur, applications, liens, contrôle PE, DLL et licences |
+| `test`, `asan` | 11 : les 8 précédentes + compilation des suites, indépendance des en-têtes, exécution des tests |
+| `package` | 14 : `test release --native-ui` + assemblage, publication atomique, vérification de l'archive publiée |
+| `doctor` / `deps` | 3 / 3 |
+| `selftest`, `fuzz`, `ide-check`, `clean` | 7, 5, 4, 1 |
+
+- `√` réussite, `○` étape non exécutable ici (jamais comptée comme réussie : SKIP,
+  code 77), `×` échec. L'étape en cours affiche sa progression (`7/12 · fichier`)
+  sur une seule ligne réécrite.
+- Après l'exécution des tests, une ligne par suite résume cas et vérifications.
+- Le résumé final donne le verdict, la durée, le dossier des binaires (ou
+  l'archive) et le journal.
+- **Aucune sortie d'outil n'est affichée en temps normal** (pacman, certutil,
+  objdump, fc…). Chaque commande est capturée en entier sous `out\windows\logs\`
+  (`<opération>-<mode>-….log`, plus un fichier `.command-N.txt` par commande).
+- **En cas d'échec**, l'étape passe en `×`, puis la sortie de la commande fautive
+  est affichée **telle quelle, sans indentation** : le problem matcher `$gcc` de
+  VS Code relie toujours chaque erreur à sa ligne de code. Le chemin de la capture
+  complète suit. Pour un test : ses assertions, preuves et bilan.
+- `--verbose` rétablit l'affichage intégral de chaque commande et de sa sortie.
+- `--plain`, la variable `NO_COLOR` (norme no-color.org) ou `DEVLINK_PLAIN=1`
+  retirent couleurs et réécriture de ligne. En CI (`GITHUB_ACTIONS=true`), la
+  progression est linéaire ; les annotations `::notice`/`::error` sont inchangées.
+- La console passe en UTF-8 (page de codes 65001) pendant l'opération et retrouve
+  sa page d'origine à la sortie, même en cas d'échec. Les glyphes (`√ × ○ • ·` et
+  les blocs du bandeau) existent dans Consolas et Lucida Console : ils s'affichent
+  aussi dans la console Windows classique, sans police particulière.
+- Un build interrompu (Ctrl+C) laisse le verrou `out\windows\.build-lock` ; le
+  build suivant l'indique et donne la commande pour le retirer, après avoir vérifié
+  qu'aucun build ne tourne.
+
+`build.sh` applique le même modèle sous Linux (bandeau partagé :
+`tools/build/devlink-banner.txt`). Hors terminal (tube, fichier, CI), sa sortie
+reste linéaire ; une commande dont l'appelant redirige la sortie la reçoit
+toujours en entier.
 
 `doctor` vérifie le chemin, `--version`, le triple **x86_64-w64-windows-gnu**,
 `-print-search-dirs`, les chemins réels des headers/librairies, GNU ld, UCRT et
@@ -174,12 +225,22 @@ refus des symlinks/reparse points. Les archives vérifiées et les logs surviven
 `clean`. Ne pas placer des sources/dépendances personnelles sous `out/` et ne pas
 modifier un script pendant son exécution.
 
-`package` reconstruit Release, teste, archive, extrait, compare et exécute. Windows
-inspecte récursivement les imports PE, copie uniquement les DLL UCRT64 nécessaires
-avec provenance/hash/notices, puis exécute avec **PATH système uniquement**.
-Les DLL OS/UCRT Windows ne sont pas copiées. Le package Windows est nommé
-`PLPT-0.1.0-preview-windows-ucrt64-x64.zip`. Linux reste lié à son ABI glibc/libstdc++/X11.
+`package` est conçu pour reconstruire Release, exécuter les tests et smoke tests
+natifs, créer l'archive, l'extraire dans un dossier vierge, comparer les fichiers
+et exécuter les binaires extraits. Le script Linux publie le résultat validé dans
+`releases/` avec sidecar SHA-256 ; le script Windows contient un chemin analogue,
+mais il n'a pas été exécuté dans l'environnement de continuation courant.
 
-Archives de développement, pas installateurs signés. Voir `docs/QUICKSTART.md`,
-les trois rapports `docs/reports/UCRT64_*.md` et les preuves Linux associées.
-Les anciennes preuves MSVC/SDK sont historiques, pas une qualification UCRT64.
+**Statut de qualification (2026-11-21) :** sur un poste Windows 11 x64 avec la
+chaîne MSYS2 UCRT64 officielle (clang 22.1.8), `doctor`, `test debug`,
+`test debug --native-ui`, `test release --native-ui`, `selftest` et `ide-check` ont
+été exécutés (`fuzz` : SKIP, libFuzzer absent ; `package` non exécuté) ; résultats dans
+[`reports/IMPLEMENTATION_STATUS.md`](reports/IMPLEMENTATION_STATUS.md). `build.sh`
+n'a pas été exécuté sur un Linux natif depuis la refonte de son affichage : sa
+syntaxe et sa mécanique d'affichage sont vérifiées, pas une build Linux complète.
+Le test de ressources PE via fixtures synthétiques valide le parseur uniquement.
+
+Toute archive générée avant une qualification complète est une build de diagnostic,
+pas une release de partage fonctionnelle. Linux reste lié à son ABI glibc/libstdc++/
+X11. Les preuves `docs/reports/UCRT64_*.md` sont historiques et ne remplacent pas
+une exécution sur la branche courante.

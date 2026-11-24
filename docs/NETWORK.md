@@ -1,70 +1,86 @@
-# Architecture Réseau de DevLink
+# Architecture réseau de DevLink — état audité
 
-Ce document décrit le modèle réseau, les protocoles de transport, la découverte locale et les flux de communication de **DevLink**.
+Ce document sépare le code présent des fonctions qui restent à construire. La
+présence d'un modèle réseau, d'un test loopback ou d'un écran n'est pas une preuve
+d'un partage LAN complet.
 
----
+## 1. Services locaux et ports
 
-## 1. Deux Familles de Ports Distinctes
+Le moniteur observe les processus et ports existants. Une détection est informative
+seulement : elle n'autorise pas le partage. Le moteur utilise des sockets allouées
+par l'OS et des adresses de bind explicites selon sa configuration. L'interface,
+les règles de pare-feu, les interfaces multiples et le test multi-machine doivent
+être qualifiés sur la plateforme cible.
 
-Une distinction fondamentale régit l'architecture réseau de DevLink :
+## 2. Découverte
 
-1. **Ports Projet (Amont)** :
-   - Ce sont les serveurs exécutés localement par le développeur (Next.js sur 3000, Vite sur 5173, Flask sur 5000, Supabase, API, etc.).
-   - DevLink n'ouvre, ne modifie et ne redirige jamais directement ces ports. Il les observe passivement via les tables de l'OS.
-2. **Ports Internes DevLink (Aval)** :
-   - Ce sont les endpoints réservés par DevLink pour le plan de contrôle et le plan de données.
-   - Ils sont **toujours alloués dynamiquement** par le système d'exploitation via `bind(port=0)` sous le compte utilisateur courant.
+Le dépôt contient annonce/écoute LAN ainsi qu'un parcours de test local. Les
+annonces ne sont pas une authentification de l'hôte et ne doivent contenir aucun
+secret. Multicast/broadcast entre machines physiques, réseaux Wi-Fi isolés, pare-feu
+et IPv6 demeurent à qualifier ; un test loopback ne valide pas ces scénarios.
 
----
+## 3. Plan de contrôle hôte/invité
 
-## 2. Découverte Réseau Local (LAN)
+Le code courant utilise un échange de défi-réponse avant l'upgrade TLS :
 
-DevLink implémente un mécanisme de découverte LAN sans dépendre d'Internet, de registre central ou de serveur cloud tiers :
+1. Hello avec informations publiques, sans code d'invitation ni secret de reprise ;
+2. défi aléatoire de l'hôte ;
+3. preuve HMAC vérifiée par l'hôte ;
+4. notice d'upgrade contenant les paramètres publics nécessaires ;
+5. poignée TLS 1.3 PSK avec identité liée à la session ;
+6. admission/état/chat sur le canal TLS selon le cycle de session.
 
-- **Protocole** : UDP Multicast sur le groupe administré `239.255.77.88`, port `47788`.
-- **Mécanisme de repli** : Émission en broadcast IPv4 (`255.255.255.255`) et loopback local (`127.0.0.1`) pour les environnements de test sur machine unique.
-- **Sécurité de l'annonce** :
-  - L'annonce contient uniquement : `session_id`, `session_name`, `host_name`, `control_port`, nombre de participants, capacité max et état d'acceptation.
-  - **Le code d'invitation n'est JAMAIS diffusé sur le réseau**.
-  - Une annonce LAN ne constitue en aucun cas une preuve d'identité ni une autorisation d'accès.
+Le transport charge OpenSSL 3 à l'exécution et exige TLS 1.3 : bibliothèque
+système sous Linux, DLL UCRT64 épinglées livrées à côté de l'application sous
+Windows (chargées depuis son dossier seulement). Le contrôle d'indisponibilité
+échoue fermé ; aucun repli TCP clair n'est permis quand TLS est requis. Les preuves
+sont en boucle locale (Linux historique, Windows 2026-11-21) : ni test physique
+LAN, ni audit cryptographique indépendant.
 
----
+Sur ce canal circulent aussi le chat, les messages privés et, depuis le protocole
+1.5, les signalements d'anomalie (invité → hôte seulement, accusé à l'auteur seul ;
+ADR-019).
 
-## 3. Plan de Contrôle (`HostServer` & `GuestClient`)
+## 4. Proxy applicatif
 
-Le plan de contrôle gère le cycle de vie de la session, l'authentification et la messagerie :
+`ServiceProxy` est un pont HTTP applicatif entre un invité et un endpoint local
+sélectionné, avec jeton de capacité, limites et gestion de réponses HTTP/1.x,
+`1xx` et WebSocket documentée dans les tests existants. **Il ne fait plus partie du partage**
+(ADR-018) : il livrerait aux invités le HTML, le JavaScript et les ressources du
+projet. Son trafic n'est pas chiffré ; ne l'exposez pas à un réseau non fiable.
 
-- **Transport** : TCP sécurisé avec trames bornées (`Envelope` de 56 octets d'en-tête + charge utile validée avant allocation).
-- **Poignée de main (Handshake)** :
-  1. L'invité transmet un message `GuestHello` contenant son nom, son identifiant de client et le code d'invitation présenté.
-  2. L'hôte compare le code en **temps constant** avec l'entropie OS générée (`invite_code_matches`).
-  3. Si le code est invalide, l'hôte refuse la connexion immédiatement (`HostAuth::accepted = false`) et incrémente le compteur de tentatives suspectes.
-  4. Si le code est valide et que l'hôte exige une approbation manuelle, l'invité entre dans l'état `AwaitingApproval`.
-  5. Dès que l'hôte clique sur "Autoriser", un message `HostAuth` d'admission est envoyé, suivi de l'état complet de la session (`SessionState`) et de la liste des services partagés (`ServiceList`).
-- **Supervision & Présence** :
-  - Envoi périodique de trames `Heartbeat` avec horodatage monotone et écho.
-  - La latence affichée correspond au temps d'aller-retour réel (RTT) mesuré par les sockets.
+## 5. Partage : navigateur hôte, canal média, entrées (ADR-018)
 
----
+Chaîne vérifiée en boucle locale sous Windows :
 
-## 4. Plan de Données (`ServiceProxy`)
+`WebView2 hors écran → images JPEG du compositeur → TLS 1.3 PSK par invité →
+décodage WIC → texture SDL3 → souris/clavier/texte → autorisation côté hôte →
+injection dans le seul contexte navigateur concerné`.
 
-Le plan de données assure le relais applicatif entre les testeurs et l'application Web locale :
+- **Sortie réseau du navigateur** : uniquement par EgressGuard, un proxy SOCKS5
+  DevLink qui n'ouvre que les couples `hôte:port` autorisés (boucle locale
+  comprise). Mesure : 0 connexion vers un port canari interdit. Navigations,
+  redirections, sous-ressources, fenêtres, téléchargements et schémas externes
+  hors allowlist sont refusés.
+- **Canal média** : une connexion TCP par invité, sur la même interface que le
+  contrôle et un port choisi par l'OS ; clé PSK de 32 octets propre au
+  participant, offerte uniquement sur le contrôle déjà chiffré ; enregistrements
+  bornés avant allocation ; une seule image en attente par invité.
+- **Entrées** : chaque enregistrement est réautorisé par `SharePolicy` (participant,
+  révocation, séquence strictement croissante, suspension, mode, bail) ; refus
+  systématique en mode C, même pour un client modifié.
+- **Limites** : viewport fixe 1280×720 ; invité Linux non disponible ; aucune
+  mesure sur deux machines.
 
-- **Contrôle d'accès par jeton de capacité** :
-  - Le proxy écoute sur un port TCP dynamique dédié.
-  - Chaque connexion entrante doit présenter un jeton de 32 caractères hexadécimaux (`?plpt=<token>` ou cookie).
-  - Toute requête sans jeton ou avec un jeton invalide est immédiatement rejetée avec un statut HTTP 403.
-- **Pont bidirectionnel transparent** :
-  - Une fois autorisé, le flux est relayé de façon transparente entre l'invité et le service local amont.
-  - Prise en charge native des requêtes HTTP/1.1, Server-Sent Events (SSE) et WebSockets (RFC 6455 après poignée de main Upgrade).
-  - Gestion stricte de la contre-pression (backpressure) et tampons bornés à 256 Ko par flux.
+## 6. Tests et limites
 
----
-
-## 5. Rendu Distant & Flux Vidéo
-
-Pour les scénarios où le code et les assets Web ne doivent pas quitter la machine hôte :
-- Le navigateur de test s'exécute sur le PC de l'hôte dans un profil temporaire dédié.
-- Les frames de composition sont capturées hors écran et transmises sous forme de trames d'images au client invité.
-- L'invité envoie en retour des événements d'interaction (souris et clavier) sérialisés et filtrés.
+- `devlink-platform-tests` : plan de contrôle réel, TLS 1.3, messagerie et
+  signalements en boucle locale. `devlink-browser-tests`, `devlink-share-tests`,
+  `devlink-desktop-e2e-tests` (Windows) : navigateur réel, partage, attaques, cinq
+  invités et bout en bout sur les vrais exécutables. Aucun ne remplace une
+  validation LAN multi-machine (`docs/reports/REAL_LAN_QUALIFICATION.md`).
+- `DemoBrowserBackend` est explicitement synthétique et réservé au parcours
+  `--demo-synthetic-browser` ; il n'est jamais partageable.
+- L'absence d'IPv6, d'un runtime, d'un second ordinateur ou d'un écran physique
+  reste `SKIP` (code 77) ou non qualifiée, jamais un PASS.
+- État vérifié et prochaines portes : `docs/reports/IMPLEMENTATION_STATUS.md`.

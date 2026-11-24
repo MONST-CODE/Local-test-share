@@ -1,0 +1,64 @@
+raw_environment_start_utc=2026-11-19T19:31:07Z
+raw_environment_end_utc=2026-11-19T19:31:36Z
+duration_seconds=29
+authoritative_session_date=2026-11-13; raw execution clock retained
+commit=1a70c6600c5253433badd9ce446087242c62de5d
+branch=arena/125b0385-local-test-share
+os=Linux 6.1.158+ x86_64
+compiler=LLVM clang/clang++ 23.1.5 from llvm-runtime-clang-linux-x64@23.1.6-1; temporary wrapper adds GCC 12 builtin headers absent from npm package; Linux ABI uses system libstdc++/glibc
+command=DEVLINK_CXX=.cache/toolchain-provision/bin/clang++ DEVLINK_CC=.cache/toolchain-provision/bin/clang ./build.sh test debug --headless
+exit_code=1
+DevLink direct Linux operation=test mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261119T193107Z-test-debug-35002.log
+CXX=/home/user/Local-test-share/.cache/toolchain-provision/bin/clang++
+CC=/home/user/Local-test-share/.cache/toolchain-provision/bin/clang
+clang version 23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/Local-test-share/.cache/toolchain-provision/llvm/bin
+Configuration file: /home/user/Local-test-share/.cache/toolchain-provision/llvm/etc/clang/clang++.cfg
+native linker: /usr/bin/ld
+clang version 23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)
+Target: x86_64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /home/user/Local-test-share/.cache/toolchain-provision/llvm/bin
+Configuration file: /home/user/Local-test-share/.cache/toolchain-provision/llvm/etc/clang/clang++.cfg
+toolchain-probe: native Linux x64, clang=23.1.5 (https://github.com/llvm/llvm-project.git 392dfff97d29b59d77e5cac6d4b6ef2585fe7117), C++=202002, pointer=8
+libstdc++ headers: 20220819
+SHA256 OK e6a9c4e75de8fe719f922dddc208627f77754a502909f457a1355981f20c21e0 /home/user/Local-test-share/out/linux/dependencies/SDL-f00dc919ca35b9756316e86c4777392de442f9b2.tar.gz
+SHA256 OK b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 /home/user/Local-test-share/out/linux/dependencies/imgui-c1aaac65e896a45f81f47a4d68f9959e0f86c859.tar.gz
+Compilation started: debug, clean deterministic objects (no cache)
+Compilation: engine/core/random.cpp
+Compilation: engine/core/digest.cpp
+Compilation: engine/core/mac.cpp
+Compilation: engine/core/secrets.cpp
+Compilation: engine/core/format.cpp
+Compilation: engine/diagnostics/audit.cpp
+Compilation: engine/discovery/process_tree.cpp
+Compilation: engine/discovery/terminal_classifier.cpp
+Compilation: engine/discovery/monitor.cpp
+Compilation: engine/service_registry/registry.cpp
+Compilation: engine/port_allocator/port_allocator.cpp
+Compilation: engine/platform/socket.cpp
+Compilation: engine/platform/linux/linux_platform.cpp
+Compilation: engine/session/session.cpp
+Compilation: engine/messaging/messaging.cpp
+Compilation: engine/protocol/envelope.cpp
+Compilation: engine/resource_manager/resource.cpp
+Compilation: engine/net/wire.cpp
+Compilation: engine/net/discovery.cpp
+Compilation: engine/net/host_server.cpp
+Compilation: engine/net/guest_client.cpp
+Compilation: engine/net/proxy.cpp
+Compilation: engine/net/transport.cpp
+Compilation: engine/net/transport_tls.cpp
+Compilation: engine/browser/webview2_backend.cpp
+In file included from engine/browser/webview2_backend.cpp:5:
+engine/browser/webview2_backend.hpp:73:19: error: private field 'next_context_id_' is not used [-Werror,-Wunused-private-field]
+   73 |     std::uint64_t next_context_id_ = 1;
+      |                   ^
+engine/browser/webview2_backend.hpp:75:11: error: private field 'loader_module_' is not used [-Werror,-Wunused-private-field]
+   75 |     void* loader_module_ = nullptr;
+      |           ^
+2 errors generated.
+Command exit 1: /home/user/Local-test-share/.cache/toolchain-provision/bin/clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Wshadow -pthread -I /home/user/Local-test-share -O0 -g -MMD -MP -MF /home/user/Local-test-share/out/linux/tests/debug/objects/engine_browser_webview2_backend.cpp.o.d -c engine/browser/webview2_backend.cpp -o /home/user/Local-test-share/out/linux/tests/debug/objects/engine_browser_webview2_backend.cpp.o 
+FAILURE exit=1 operation=test (see /home/user/Local-test-share/out/linux/logs/20261119T193107Z-test-debug-35002.log)

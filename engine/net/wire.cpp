@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include "../core/digest.hpp"
+#include "../core/mac.hpp"
 #include "../core/text.hpp"
 
 namespace plpt::net {
@@ -186,6 +188,15 @@ std::vector<std::uint8_t> encode(const SessionInfo& message) {
         writer.u32(peer.latency_ms);
         writer.boolean(peer.self);
     }
+    // Bloc 1.3 optionnel : transport réel, session puis chaque pair dans l'ordre.
+    const bool extended = !message.transport.empty();
+    writer.boolean(extended);
+    if (extended) {
+        writer.text(message.transport);
+        for (const auto& peer : message.peers) writer.text(peer.transport);
+    }
+    // Bloc 1.5 optionnel, toujours APRÈS le bloc 1.3 : identifiant de l'hôte.
+    if (message.host_participant.value != 0) writer.u64(message.host_participant.value);
     return writer.take();
 }
 std::vector<std::uint8_t> encode(const ServiceList& message) {
@@ -210,6 +221,34 @@ std::vector<std::uint8_t> encode(const ChatText& message) {
     writer.boolean(message.system);
     writer.text(message.body);
     return writer.take();
+}
+std::vector<std::uint8_t> encode(const FeedbackReport& message) {
+    PayloadWriter writer;
+    writer.u8(message.severity);
+    writer.u64(message.sent_ms);
+    writer.text(message.description);
+    writer.text(message.context);
+    return writer.take();
+}
+Result<FeedbackReport> decode_feedback(std::span<const std::uint8_t> data) {
+    PayloadReader reader(data);
+    auto severity = reader.u8();
+    auto sent = reader.u64();
+    auto description = reader.text(kMaxFeedbackBytes);
+    auto context = reader.text(kMaxFeedbackContextBytes);
+    if (!severity || !sent || !description || !context)
+        return Result<FeedbackReport>::failure({ErrorCode::ProtocolViolation, "signalement tronqué", "wire"});
+    if (auto end = reader.require_end(); !end) return Result<FeedbackReport>::failure(end.error());
+    if (severity.value() > 3)
+        return Result<FeedbackReport>::failure({ErrorCode::InvalidArgument, "gravité inconnue", "wire"});
+    if (!valid_text(context.value()) || !control_free(context.value()))
+        return Result<FeedbackReport>::failure({ErrorCode::InvalidArgument, "contexte de signalement invalide", "wire"});
+    FeedbackReport report;
+    report.severity = severity.value();
+    report.sent_ms = sent.value();
+    report.description = std::move(description).value();
+    report.context = std::move(context).value();
+    return Result<FeedbackReport>::success(std::move(report));
 }
 std::vector<std::uint8_t> encode(const ErrorNotice& message) {
     PayloadWriter writer;
@@ -347,6 +386,30 @@ Result<SessionInfo> decode_session_info(std::span<const std::uint8_t> data) {
         peer.self = self.value();
         message.peers.push_back(std::move(peer));
     }
+    if (!reader.at_end()) {
+        auto extended = reader.boolean();
+        if (!extended) return Result<SessionInfo>::failure(extended.error());
+        if (extended.value()) {
+            auto transport = reader.text(kMaxNameBytes * 4);
+            if (!transport) return Result<SessionInfo>::failure(transport.error());
+            message.transport = std::move(transport).value();
+            for (auto& peer : message.peers) {
+                auto peer_transport = reader.text(kMaxNameBytes * 4);
+                if (!peer_transport) return Result<SessionInfo>::failure(peer_transport.error());
+                peer.transport = std::move(peer_transport).value();
+            }
+        }
+        if (!reader.at_end()) {
+            auto host = reader.u64();
+            if (!host) return Result<SessionInfo>::failure(host.error());
+            if (host.value() == 0)
+                return Result<SessionInfo>::failure({ErrorCode::ProtocolViolation, "identifiant d'hôte nul", "wire"});
+            for (const auto& peer : message.peers)
+                if (peer.id.value == host.value())
+                    return Result<SessionInfo>::failure({ErrorCode::ProtocolViolation, "hôte listé comme invité", "wire"});
+            message.host_participant = ParticipantId{host.value()};
+        }
+    }
     if (auto end = reader.require_end(); !end) return Result<SessionInfo>::failure(end.error());
     return Result<SessionInfo>::success(std::move(message));
 }
@@ -415,6 +478,168 @@ Result<ChatText> decode_chat(std::span<const std::uint8_t> data) {
     return Result<ChatText>::success(std::move(message));
 }
 
+namespace {
+constexpr std::size_t kMaxTlsIdentityBytes = 128;
+
+void append_be64(std::vector<std::uint8_t>& out, std::uint64_t value) {
+    for (int shift = 56; shift >= 0; shift -= 8)
+        out.push_back(static_cast<std::uint8_t>((value >> static_cast<unsigned>(shift)) & 0xff));
+}
+
+Result<std::vector<std::uint8_t>> keyed(std::span<const std::uint8_t> secret, std::string_view label,
+    std::span<const std::uint8_t> message) {
+    if (secret.empty())
+        return Result<std::vector<std::uint8_t>>::failure(
+            Error{ErrorCode::InvalidArgument, "secret d'authentification vide", "wire", 0});
+    std::vector<std::uint8_t> keyed_message;
+    keyed_message.reserve(label.size() + message.size());
+    keyed_message.insert(keyed_message.end(), label.begin(), label.end());
+    keyed_message.insert(keyed_message.end(), message.begin(), message.end());
+    auto mac = hmac_sha256(secret, keyed_message);
+    if (!mac) return Result<std::vector<std::uint8_t>>::failure(mac.error());
+    return Result<std::vector<std::uint8_t>>::success(std::move(mac).value());
+}
+} // namespace
+
+std::vector<std::uint8_t> auth_proof_message(std::span<const std::uint8_t> nonce, std::uint64_t session,
+    AuthProofKind kind) {
+    std::vector<std::uint8_t> message;
+    message.reserve(nonce.size() + 10);
+    message.insert(message.end(), nonce.begin(), nonce.end());
+    append_be64(message, session);
+    message.push_back(static_cast<std::uint8_t>(kind));
+    return message;
+}
+
+Result<std::vector<std::uint8_t>> compute_auth_proof(std::span<const std::uint8_t> secret,
+    std::span<const std::uint8_t> nonce, std::uint64_t session, AuthProofKind kind) {
+    if (nonce.size() != kAuthNonceBytes)
+        return Result<std::vector<std::uint8_t>>::failure(
+            Error{ErrorCode::InvalidArgument, "nonce de défi hors taille", "wire", 0});
+    return keyed(secret, "DevLink auth proof v1|", auth_proof_message(nonce, session, kind));
+}
+
+Result<std::string> derive_transport_secret(std::span<const std::uint8_t> secret,
+    std::span<const std::uint8_t> nonce, std::uint64_t session, const std::string& identity) {
+    if (nonce.size() != kAuthNonceBytes)
+        return Result<std::string>::failure(
+            Error{ErrorCode::InvalidArgument, "nonce de défi hors taille", "wire", 0});
+    if (identity.empty() || !control_free(identity))
+        return Result<std::string>::failure(
+            Error{ErrorCode::InvalidArgument, "identité PSK invalide", "wire", 0});
+    std::vector<std::uint8_t> message;
+    message.reserve(nonce.size() + identity.size() + 8);
+    message.insert(message.end(), nonce.begin(), nonce.end());
+    append_be64(message, session);
+    message.insert(message.end(), identity.begin(), identity.end());
+    auto mac = keyed(secret, "DevLink TLS13 PSK v2|", message);
+    if (!mac) return Result<std::string>::failure(mac.error());
+    return Result<std::string>::success(to_hex(mac.value()));
+}
+
+Result<std::vector<std::uint8_t>> encode_auth_challenge(const AuthChallenge& message) {
+    if (message.nonce.size() != kAuthNonceBytes)
+        return Result<std::vector<std::uint8_t>>::failure(
+            Error{ErrorCode::InvalidArgument, "nonce de défi hors taille", "wire", 0});
+    PayloadWriter writer;
+    writer.blob(message.nonce);
+    return Result<std::vector<std::uint8_t>>::success(writer.take());
+}
+
+Result<AuthChallenge> decode_auth_challenge(std::span<const std::uint8_t> data) {
+    PayloadReader reader(data);
+    AuthChallenge message;
+    auto nonce = reader.blob(kAuthNonceBytes);
+    if (!nonce) return Result<AuthChallenge>::failure(nonce.error());
+    if (auto end = reader.require_end(); !end) return Result<AuthChallenge>::failure(end.error());
+    message.nonce = std::move(nonce).value();
+    if (message.nonce.size() != kAuthNonceBytes)
+        return Result<AuthChallenge>::failure({ErrorCode::ProtocolViolation,
+            "défi : nonce de taille inattendue", "wire"});
+    return Result<AuthChallenge>::success(std::move(message));
+}
+
+Result<std::vector<std::uint8_t>> encode_auth_proof(const AuthProof& message) {
+    if (message.invite_proof.empty() && message.resume_proof.empty())
+        return Result<std::vector<std::uint8_t>>::failure(
+            Error{ErrorCode::InvalidArgument, "réponse au défi sans aucune preuve", "wire", 0});
+    for (const auto& proof : {message.invite_proof, message.resume_proof}) {
+        if (!proof.empty() && proof.size() != kAuthProofBytes)
+            return Result<std::vector<std::uint8_t>>::failure(
+                Error{ErrorCode::InvalidArgument, "preuve hors taille", "wire", 0});
+    }
+    PayloadWriter writer;
+    writer.blob(message.invite_proof);
+    writer.blob(message.resume_proof);
+    return Result<std::vector<std::uint8_t>>::success(writer.take());
+}
+
+Result<AuthProof> decode_auth_proof(std::span<const std::uint8_t> data) {
+    PayloadReader reader(data);
+    AuthProof message;
+    auto invite = reader.blob(kAuthProofBytes);
+    if (!invite) return Result<AuthProof>::failure(invite.error());
+    auto resume = reader.blob(kAuthProofBytes);
+    if (!resume) return Result<AuthProof>::failure(resume.error());
+    if (auto end = reader.require_end(); !end) return Result<AuthProof>::failure(end.error());
+    message.invite_proof = std::move(invite).value();
+    message.resume_proof = std::move(resume).value();
+    for (const auto& proof : {message.invite_proof, message.resume_proof}) {
+        if (!proof.empty() && proof.size() != kAuthProofBytes)
+            return Result<AuthProof>::failure({ErrorCode::ProtocolViolation,
+                "preuve de taille inattendue", "wire"});
+    }
+    if (message.invite_proof.empty() && message.resume_proof.empty())
+        return Result<AuthProof>::failure({ErrorCode::ProtocolViolation,
+            "réponse au défi sans aucune preuve", "wire"});
+    return Result<AuthProof>::success(std::move(message));
+}
+
+Result<std::vector<std::uint8_t>> encode_tls_upgrade(const TlsUpgradeNotice& message) {
+    if (message.identity.empty() || !control_free(message.identity))
+        return Result<std::vector<std::uint8_t>>::failure(
+            Error{ErrorCode::InvalidArgument, "upgrade tls : identité PSK invalide", "wire", 0});
+    if (message.identity.size() > kMaxTlsIdentityBytes)
+        return Result<std::vector<std::uint8_t>>::failure(
+            Error{ErrorCode::TooLarge, "upgrade tls : identité hors borne", "wire", 0});
+    if (message.nonce.size() != kAuthNonceBytes)
+        return Result<std::vector<std::uint8_t>>::failure(
+            Error{ErrorCode::InvalidArgument, "upgrade tls : nonce hors taille", "wire", 0});
+    PayloadWriter writer;
+    writer.text(message.identity);
+    writer.u8(static_cast<std::uint8_t>(message.secret_kind));
+    writer.blob(message.nonce);
+    return Result<std::vector<std::uint8_t>>::success(writer.take());
+}
+
+Result<TlsUpgradeNotice> decode_tls_upgrade(std::span<const std::uint8_t> data) {
+    PayloadReader reader(data);
+    TlsUpgradeNotice message;
+    auto identity = reader.text(kMaxTlsIdentityBytes);
+    if (!identity) return Result<TlsUpgradeNotice>::failure(identity.error());
+    auto kind = reader.u8();
+    if (!kind) return Result<TlsUpgradeNotice>::failure(kind.error());
+    if (kind.value() > static_cast<std::uint8_t>(AuthProofKind::ResumeSecret))
+        return Result<TlsUpgradeNotice>::failure({ErrorCode::ProtocolViolation,
+            "upgrade tls : nature de secret inconnue", "wire"});
+    auto nonce = reader.blob(kAuthNonceBytes);
+    if (!nonce) return Result<TlsUpgradeNotice>::failure(nonce.error());
+    if (auto end = reader.require_end(); !end) return Result<TlsUpgradeNotice>::failure(end.error());
+    message.identity = std::move(identity).value();
+    message.secret_kind = static_cast<AuthProofKind>(kind.value());
+    message.nonce = std::move(nonce).value();
+    if (message.identity.empty())
+        return Result<TlsUpgradeNotice>::failure({ErrorCode::ProtocolViolation,
+            "upgrade tls : identité vide", "wire"});
+    if (!control_free(message.identity))
+        return Result<TlsUpgradeNotice>::failure({ErrorCode::InvalidArgument,
+            "upgrade tls : identité invalide", "wire"});
+    if (message.nonce.size() != kAuthNonceBytes)
+        return Result<TlsUpgradeNotice>::failure({ErrorCode::ProtocolViolation,
+            "upgrade tls : nonce de taille inattendue", "wire"});
+    return Result<TlsUpgradeNotice>::success(std::move(message));
+}
+
 Result<ByeNotice> decode_bye(std::span<const std::uint8_t> data) {
     PayloadReader reader(data);
     ByeNotice message;
@@ -447,6 +672,44 @@ Result<ErrorNotice> decode_error(std::span<const std::uint8_t> data) {
     if (!control_free(message.text))
         return Result<ErrorNotice>::failure({ErrorCode::InvalidArgument, "texte d'erreur invalide", "wire"});
     return Result<ErrorNotice>::success(std::move(message));
+}
+
+std::vector<std::uint8_t> encode(const MediaOffer& m) {
+    PayloadWriter w;
+    w.u16(m.port);
+    w.text(m.identity);
+    w.text(m.key);
+    w.u8(m.mode);
+    w.u32(m.viewport_width);
+    w.u32(m.viewport_height);
+    return w.take();
+}
+
+Result<MediaOffer> decode_media_offer(std::span<const std::uint8_t> payload) {
+    PayloadReader r(payload);
+    auto port = r.u16();
+    auto identity = r.text(kMaxNameBytes + 32);
+    auto key = r.text(kMaxSecretBytes);
+    auto mode = r.u8();
+    auto w = r.u32();
+    auto h = r.u32();
+    if (!port || !identity || !key || !mode || !w || !h || !r.require_end())
+        return Result<MediaOffer>::failure({ErrorCode::ProtocolViolation, "offre média tronquée", "wire"});
+    const auto& k = key.value();
+    const bool hex = k.size() == 64 && std::all_of(k.begin(), k.end(), [](char c) {
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+    });
+    if (port.value() == 0 || identity.value().empty() || !hex || mode.value() < 1 || mode.value() > 3 ||
+        w.value() == 0 || h.value() == 0 || w.value() > 4096 || h.value() > 2160)
+        return Result<MediaOffer>::failure({ErrorCode::ProtocolViolation, "offre média invalide", "wire"});
+    MediaOffer m;
+    m.port = port.value();
+    m.identity = std::move(identity).value();
+    m.key = k;
+    m.mode = mode.value();
+    m.viewport_width = w.value();
+    m.viewport_height = h.value();
+    return Result<MediaOffer>::success(std::move(m));
 }
 
 Result<Heartbeat> decode_heartbeat(std::span<const std::uint8_t> data) {

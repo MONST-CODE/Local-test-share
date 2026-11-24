@@ -1,0 +1,22 @@
+Name            : mingw-w64-ucrt-x86_64-openssl
+Version         : 3.6.3-1
+Description     : The Open Source toolkit for Secure Sockets Layer and Transport Layer Security (mingw-w64)
+Architecture    : any
+URL             : https://openssl-library.org
+Licenses        : spdx:Apache-2.0
+Groups          : None
+Provides        : None
+Depends On      : None
+Optional Deps   : mingw-w64-ucrt-x86_64-ca-certificates [installed]
+Required By     : mingw-w64-ucrt-x86_64-aws-c-cal  mingw-w64-ucrt-x86_64-curl  mingw-w64-ucrt-x86_64-grpc  mingw-w64-ucrt-x86_64-libarchive  mingw-w64-ucrt-x86_64-libssh  mingw-w64-ucrt-x86_64-libssh2  mingw-w64-ucrt-x86_64-llama.cpp  mingw-w64-ucrt-x86_64-ngtcp2  mingw-w64-ucrt-x86_64-opusfile  mingw-w64-ucrt-x86_64-python  mingw-w64-ucrt-x86_64-qt6-base  mingw-w64-ucrt-x86_64-srt
+Optional For    : None
+Conflicts With  : None
+Replaces        : None
+Installed Size  : 58.92 MiB
+Packager        : CI (https://github.com/msys2/msys2-autobuild/actions/runs/27246132402/job/80460453741)
+Build Date      : Wed Jun 10 02:06:51 2026
+Install Date    : Tue Aug 18 19:44:30 2026
+Install Reason  : Installed as a dependency for another package
+Install Script  : No
+Validated By    : SHA-256 Sum  Signature
+

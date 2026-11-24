@@ -1,0 +1,119 @@
+DevLink — preuve d'exécution, étape 5 : basculement du plan de contrôle sur TLS 1.3
+Date : 18 novembre 2026 (UTC)
+Branche : arena/125b0385-local-test-share
+Environnement : Debian 12 x86-64, g++ 12 (copie locale de build.sh neutralisée
+  clang pour itération ; build.sh de référence inchangé sur ce point), runtime
+  OpenSSL 3.0.20 chargé par dlopen, SDL3 + Dear ImGui épinglés (SHA-256 vérifié).
+Décision : docs/ADR/ADR-017-defi-reponse-et-basculement-tls13.md
+
+================================================================================
+1. Construction complète + tests (./build.sh test debug --headless)
+================================================================================
+PASS 34 independent native headers
+PASS 7 independent UI headers
+unit: 38 cases, 21119 checks, 0 failures (0 failed cases)
+platform: 20 cases, 760 checks, 0 failures (0 failed cases)
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+TEST SUMMARY passed=15 skipped=0 mode=debug
+SUCCESS operation=test log=/home/user/Local-test-share/out/linux/logs/20261118T114312Z-test-debug-19057.log
+TEST_EXIT=0
+
+Détail des cas nouveaux/modifiés (sortie brute du binaire de plateforme) :
+[PASS] lan_control_plane_host_and_guest
+[PASS] lan_resume_secret_binds_identity
+[PASS] transport_clear_declares_itself
+[PASS] tls13_availability_is_honest
+[PASS] tls13_psk_loopback_authenticated
+[PASS] tls13_psk_wrong_secret_refused
+[PASS] tls13_downgrade_refused
+[PASS] control_plane_challenge_response_gates_admission
+[PASS] tls13_wire_oracle_no_plaintext
+[PASS] lan_control_wire_never_carries_secrets
+tls13 runtime: available=1 reason=
+control-plane: tls_runtime=1
+control-wire-oracle: 2558 octets observés, aucun secret ni message en clair
+
+================================================================================
+2. Auto-test : runtime TLS volontairement introuvable (refus, pas de repli)
+================================================================================
+Commande : DEVLINK_TLS_LIBRARY_PATH=/does/not/exist/libssl.so ./build.sh selftest
+tls-unavailable-proof: reason=libssl introuvable (dlopen) : /does/not/exist/libssl.so: cannot open shared object file: No such file or directory
+SKIP tls13: runtime indisponible (libssl introuvable (dlopen) : /does/not/exist/libssl.so: cannot open shared object file: No such file or directory)
+host-refusal-proof: partage refusé : transport TLS 1.3 indisponible (libssl introuvable (dlopen) : /does/not/exist/libssl.so: cannot open shared object file: No such file or directory) ; installer le runtime OpenSSL ou assumer tls_required=false
+host-cleared-proof: TCP clair assumé (tls_required=false) : libssl introuvable (dlopen) : /does/not/exist/libssl.so: cannot open shared object file: No such file or directory
+platform: 16 cases, 693 checks, 0 failures (0 failed cases)
+PASS tls-unavailable-proof: exit=0
+PASS tls-host-refusal-proof
+SELFTEST PASS: missing compiler, compilation, linking and archive hash failures propagate; no stale successful output
+SUCCESS operation=selftest log=/home/user/Local-test-share/out/linux/logs/20261118T114603Z-selftest-debug-22714.log
+SELFTEST_EXIT=0
+
+Contrôles négatifs by-design de l'auto-test (FAIL attendus, exit non nul vérifié) :
+FAIL test=intentional-exit expected=0 actual=23 command=/home/user/Local-test-share/out/linux/doctor/probe --fail 
+FAIL test=renamed-ico expected=0 actual=1 command=/home/user/Local-test-share/out/linux/doctor/probe --ico /home/user/Local-test-share/out/linux/tests/negative/fake.ico 
+
+================================================================================
+3. Trame réellement observée sur le fil (relais octet-par-octet, boucle locale)
+================================================================================
+Sonde : hôte DevLink + invité DevLink, relais TCP enregistrant tout le trafic.
+--- fil observé (10 paquets) ---
+INVITE->HOTE (85 o) : 50 4c 50 54 00 01 00 03 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+HOTE->INVITE (92 o) : 50 4c 50 54 00 01 00 03 00 11 00 00 75 25 1e ee 6d 37 20 5b 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00
+INVITE->HOTE (96 o) : 50 4c 50 54 00 01 00 03 00 12 00 00 75 25 1e ee 6d 37 20 5b 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00
+HOTE->INVITE (137 o) : 50 4c 50 54 00 01 00 03 00 10 00 00 75 25 1e ee 6d 37 20 5b 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 02 00 00 0
+INVITE->HOTE (308 o) : 16 03 01 01 2f 01 00 01 2b 03 03 a0 13 93 ac 6f a5 df 7e 6d db c2 fc a3 3b 6f 83 42 dc 14 fe ed 12 d9 61 fa 5b 32 fb 98 cd eb 5
+HOTE->INVITE (225 o) : 16 03 03 00 80 02 00 00 7c 03 03 ec 63 c6 67 a9 e1 f1 07 9f 31 99 17 60 a9 dc 5b 17 4a e5 ad 55 f4 e3 a8 a1 48 a5 0d b8 ca 38 f
+INVITE->HOTE (64 o) : 14 03 03 00 01 01 17 03 03 00 35 1a e0 39 5c 5e ef f0 a6 e2 d5 2a 6f 05 1d 84 65 c8 6e 54 32 9b 71 f6 cb b7 e6 f5 2f 1f 9f 80 83
+HOTE->INVITE (239 o) : 17 03 03 00 ea 5d e6 f9 75 1c 6b 69 85 b1 b3 96 0f e4 0d 1b b5 a5 65 9d c7 d6 18 dc 33 24 0d be 93 22 a3 4d e2 3e b0 fc b4 76 7
+HOTE->INVITE (820 o) : 17 03 03 03 2f bb f7 63 95 33 c1 e0 54 df 46 09 18 5c cf eb 98 ca 6c 7a 5e 88 17 ed 45 a3 36 75 28 cf 1c 24 ab 14 2f 88 91 33 3
+INVITE->HOTE (24 o) : 17 03 03 00 13 e5 1e 9a a8 b5 3b 66 1e 27 f4 db 19 93 02 70 8a 69 4f 72  |..........;f.'.....p.iOr|
+
+Lecture :
+  - trame 1 (type 0x0001 Hello) : « Alice » et « PLPT 1.3 » en clair, AUCUN code
+    d'invitation, AUCUN secret de reprise ;
+  - trame 2 (type 0x0011 AuthChallenge) : nonce public de 32 octets ;
+  - trame 3 (type 0x0012 AuthProof) : HMAC-SHA256 de 32 octets, non réutilisable ;
+  - trame 4 (type 0x0010 TlsUpgrade) : identité PSK publique + nature du secret +
+    nonce — dernier échange en clair, sans secret ;
+  - puis enregistrements TLS : 0x16 (poignée de main, ClientHello/ServerHello avec
+    la suite 0x1301 = TLS_AES_128_GCM_SHA256), 0x14 (ChangeCipherSpec), 0x17
+    (données d'application chiffrées : Auth, SessionState, ServiceList, Chat).
+
+================================================================================
+4. Oracle du plan de contrôle (cas lan_control_wire_never_carries_secrets)
+================================================================================
+control-wire-oracle: 2558 octets observés, aucun secret ni message en clair
+Assertions exécutées sur la capture : code d'invitation (texte ET octets) absent,
+secret de reprise absent, messages de discussion absents des deux sens, libellés
+de dérivation (« DevLink TLS13 PSK », « DevLink auth proof ») absents ; le nom
+d'invité (champ public du Hello) est présent, ce qui prouve que l'oracle a bien
+capturé le trafic clair initial et n'est pas vide par construction.
+
+================================================================================
+5. Défauts réels découverts et corrigés pendant le basculement
+================================================================================
+a) validate_header n'autorisait un participant nul que pour Hello et Auth : les
+   trames AuthChallenge/AuthProof/TlsUpgrade étaient INENCODABLES — le défi
+   n'aurait jamais pu être envoyé. Détecté par le cas unitaire
+   challenge_response_codec_and_derivation (échec réel, pas une régression de
+   test) ; règle élargie et bornée (séquence toujours obligatoire).
+b) L'identité PSK (41 octets, « dl-s<session>-<nonce> ») servait d'identifiant de
+   session OpenSSL, borné à 32 octets : SSL_SESSION_set1_id levait
+   « ssl session id too long » et la poignée de main échouait des deux côtés.
+   Corrigé dans transport_tls.cpp : identifiant de session = SHA-256(identité),
+   identité complète toujours envoyée sur le fil.
+c) OpenSSL écrit via son BIO socket SANS MSG_NOSIGNAL : un pair fermé pendant une
+   émission TLS tuait le processus entier par SIGPIPE (exit 141 observé en
+   intégration). Corrigé : SIGPIPE ignoré une fois à la construction de la
+   fabrique TLS ; les sockets maison gardent MSG_NOSIGNAL (EPIPE -> Disconnected).
+d) Une connexion morte était retirée sans faire bouger la révision publiée :
+   l'interface aurait affiché indéfiniment un pair fantôme après un upgrade
+   refusé. Corrigé : prune_dead_connections() centralise retrait + republication.
+e) La boucle d'authentification de l'invité lisait une seule fois par tour de
+   poll : avec TLS, plusieurs enregistrements déjà déchiffrés restent dans le
+   canal et poll ne les signale plus — Auth aurait été traité sans SessionState
+   ni ServiceList (« 0 service » affiché à tort). Corrigé : drainage jusqu'à
+   WouldBlock, comme le fait déjà l'hôte.
+f) Un délai de poignée de main expiré remontait « erreur OpenSSL inconnue » :
+   SSL_ERROR_WANT_READ/WANT_WRITE sur des délais socket temporaires signifie
+   « le pair n'a pas répondu ». Diagnostic explicite + ErrorCode::TimedOut.

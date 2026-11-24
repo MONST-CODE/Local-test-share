@@ -1,0 +1,30 @@
+# Preuve — exécution de la suite de tests au commit 1e12c08 (état initial, non modifié)
+# Date UTC : 2026-11-17T16:36Z
+# Compilateur : g++ 12.2.0 (Debian 12) — la chaîne CI UCRT64/clang++ n'est pas disponible localement
+# Commandes de construction (mêmes drapeaux que le produit : -Wall -Wextra -Werror) :
+#   g++ -std=c++20 -Wall -Wextra -Werror -I. -O0 tests/unit/test_main.cpp <23 sources moteur> -o unit -ldl
+#   g++ -std=c++20 -Wall -Wextra -Werror -I. -O0 tests/integration/platform_tests.cpp <23 sources moteur> -o platform -ldl
+#   g++ ... app/host_shell/main.cpp -> monitor      (compile, rc=0)
+#   g++ ... app/demo_service/main.cpp -> demo       (compile, rc=0)
+# Note : la liste de sources utilisée ici est celle élargie manuellement (secure_channel.cpp,
+#        webview2_backend.cpp inclus) car build.sh/build.bat ne les référencent pas (§9.4 du mandat).
+
+## ./unit
+unit: 37 cases, 20946 checks, 1 failures (1 failed cases)
+Cas en échec :
+FAIL tests/unit/test_main.cpp:991: sealed
+[FAIL] secure_channel_confidentiality_and_anti_replay
+
+## ./platform
+platform: 12 cases, 622 checks, 0 failures (0 failed cases)
+
+## ./monitor --version
+DevLink 0.2.0-preview / local monitor / no sharing
+
+## ./monitor --smoke-test
+Usage: DevLink-Monitor [--help | --version]
+Local TCP listeners / UDP endpoints; no probes, no server, no sharing.
+code de sortie = 2 (option inconnue : build.bat appelle --smoke-test sur plpt-desktop, pas sur monitor)
+
+## app/desktop_ui/main.cpp
+NE COMPILE PAS — 22 erreurs de compilation (voir 2026-11-17-desktop-ui-compile-errors.txt)

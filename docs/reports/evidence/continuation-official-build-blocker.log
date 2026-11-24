@@ -1,0 +1,2 @@
+DevLink direct Linux operation=doctor mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261119T174627Z-doctor-debug-1665.log
+FAILURE: clang++ missing; install LLVM or set DEVLINK_CXX to its executable

@@ -1,0 +1,50 @@
+// DevLink - gabarit de ressources PE (mandat 15).
+// Rendu par build.bat (:render_resources) dans out/ a partir de chemins et de
+// versions VERIFIES : le quadruplet provient de engine/core/product.hpp via
+// :product_identity, l'icone de assets/branding/devlink.ico (controlee par la
+// sonde --ico avant compilation), le manifeste du gabarit app.manifest.
+// Ne pas referencer de chemin temporaire : tout ce qui est cite ici existe dans
+// le depot ou dans out/ au moment du link.
+//
+// Jetons remplaces au rendu :
+//   @DEVLINK_MANIFEST@            chemin du manifeste rendu
+//   @DEVLINK_ICO@                 chemin de assets/branding/devlink.ico
+//   @DEVLINK_VERSION_COMMA@       quadruplet virgules (FILEVERSION)
+//   @DEVLINK_PRODUCT_VERSION@     chaine publique (kProductVersion)
+//   @DEVLINK_FILE_DESCRIPTION@    description du binaire
+//   @DEVLINK_INTERNAL_NAME@       nom interne
+//   @DEVLINK_ORIGINAL_FILENAME@   nom de fichier .exe
+// Fichier ASCII uniquement : le preprocesseur du compilateur de ressources ne
+// doit pas dependre d'une page de codes particuliere.
+
+1 24 "@DEVLINK_MANIFEST@"
+1 ICON "@DEVLINK_ICO@"
+
+1 VERSIONINFO
+ FILEVERSION @DEVLINK_VERSION_COMMA@
+ PRODUCTVERSION @DEVLINK_VERSION_COMMA@
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS 0x00040004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040c04b0"
+    BEGIN
+      VALUE "CompanyName", "DevLink"
+      VALUE "FileDescription", "@DEVLINK_FILE_DESCRIPTION@"
+      VALUE "FileVersion", "@DEVLINK_PRODUCT_VERSION@"
+      VALUE "InternalName", "@DEVLINK_INTERNAL_NAME@"
+      VALUE "LegalCopyright", "DevLink contributors"
+      VALUE "OriginalFilename", "@DEVLINK_ORIGINAL_FILENAME@"
+      VALUE "ProductName", "DevLink"
+      VALUE "ProductVersion", "@DEVLINK_PRODUCT_VERSION@"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x40c, 1200
+  END
+END

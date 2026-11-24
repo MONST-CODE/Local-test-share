@@ -1,0 +1,19 @@
+DevLink direct Linux operation=selftest mode=debug; log=/home/user/Local-test-share/out/linux/logs/20261119T184819Z-selftest-debug-30753.log
++ mkdir -p -- /home/user/Local-test-share/out/linux/tests/negative 
+FAILURE: SHA-256 mismatch: /home/user/Local-test-share/out/linux/tests/negative/corrupt.tar.gz expected=b3d8f99838bb3ff05e14185562345f85e00c032da4d8fc277608d7898d847114 actual=d716e02ec1b5a0a4a0c241f0f82f640516191591c831eb86866642f140afba2d (not extracted)
+PASS intentional-exit-propagation: exit=23 preserved by the probe
+Test started: brand-ico (expected exit=0)
++ /home/user/Local-test-share/out/linux/doctor/probe --ico /home/user/Local-test-share/assets/branding/devlink.ico --expect-entries 7 
+ico: PASS 7 entries, all required Windows sizes present
+PASS brand-ico: exit=0
+Test started: renamed-ico (expected exit=1)
++ /home/user/Local-test-share/out/linux/doctor/probe --ico /home/user/Local-test-share/out/linux/tests/negative/fake.ico --expect-entries 7 
+ICO validation failed: /home/user/Local-test-share/out/linux/tests/negative/fake.ico
+PASS renamed-ico: exit=1
++ python3 /home/user/Local-test-share/tests/build/synthetic_pe.py --out-dir /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe 
+usage: synthetic_pe.py [-h] [--icons ICONS] [--group-declares GROUP_DECLARES]
+                       [--version VERSION] [--drop-version] [--drop-manifest]
+                       output
+synthetic_pe.py: error: unrecognized arguments: --out-dir
+Command exit 2: python3 /home/user/Local-test-share/tests/build/synthetic_pe.py --out-dir /home/user/Local-test-share/out/linux/tests/negative/synthetic-pe 
+FAILURE exit=2 operation=selftest (see /home/user/Local-test-share/out/linux/logs/20261119T184819Z-selftest-debug-30753.log)

@@ -1,89 +1,92 @@
-# Guide d'Utilisation de DevLink
+# Guide d'utilisation — partager une application web locale
 
-Ce guide détaille les parcours d'utilisation de **DevLink** pour l'hôte (développeur) et pour les invités (testeurs / collaborateurs).
+> **Portée réelle :** hôte et invité sous Windows 10/11 x64 (runtime Microsoft Edge
+> WebView2 requis côté hôte, présent par défaut sur Windows 11). Le parcours est
+> qualifié sur **une machine** (vrais exécutables hôte et invité). Le test sur deux
+> ordinateurs du même LAN n'a pas encore été exécuté : voir
+> `docs/reports/REAL_LAN_QUALIFICATION.md`.
 
----
+## Ce que voit et fait l'invité
 
-## 1. Parcours Développeur (Espace Hôte)
+L'invité **ne reçoit ni le code, ni les fichiers, ni le `.env`, ni un accès HTTP** à
+votre application. Un navigateur s'exécute sur votre machine, l'invité reçoit ses
+images et lui renvoie souris, molette, clavier et texte. Il ne peut joindre que les
+origines que vous avez choisies : pas d'autre port local, pas de base de données,
+pas de Docker, pas de `file://`.
 
-### Étape 1 : Démarrer vos services de développement locaux
-Lancez vos applications comme vous le faites habituellement dans votre terminal ou IDE :
-```bash
-# Exemple Next.js
-npm run dev
+## Côté hôte
 
-# Ou exemple conteneurs Docker
-docker compose up -d
+1. Lancez votre application comme d'habitude (Next.js, API, base locale…).
+2. **Découverte** : repérez le serveur de l'application (port, processus) et
+   cliquez « Choisir ». Rien n'est partagé à cette étape.
+3. **Configuration** :
+   - vérifiez l'**origine autorisée** proposée (par exemple
+     `http://127.0.0.1:3000`). Ajoutez, séparées par des virgules, les autres
+     origines dont la page a besoin (par exemple une API sur un autre port) ;
+   - l'**URL d'entrée** (vide = racine de la première origine) ;
+   - le **mode** :
+     - **A — test indépendant** : chaque invité a son propre navigateur (cookies et
+       stockage séparés). Le backend de l'application reste commun : un compte créé
+       par un invité existe pour les autres ;
+     - **B — collaboration** : une vue commune, un seul invité pilote à la fois ;
+       vous donnez ou reprenez le contrôle ;
+     - **C — observation** : les invités regardent, toute entrée est refusée par
+       votre machine ;
+   - l'approbation de chaque invité (activée par défaut).
+4. « **Démarrer le partage** ». L'état passe par les étapes réelles (navigateur,
+   chargement, première image, canal média). « Actif » n'apparaît qu'une fois tout
+   confirmé. Un échec est affiché avec sa cause.
+5. Communiquez le **code d'invitation** (écran « Session active ») par un canal de
+   votre choix. Il n'est jamais diffusé sur le réseau.
+6. **Session active** : approuvez, révoquez, donnez ou reprenez le contrôle,
+   suspendez les entrées, suivez images et entrées acceptées ou refusées par invité.
+   « Vue partagée » montre ce que voient les invités.
+7. « **Arrêter la session** » coupe les flux, détruit les navigateurs et oublie les
+   secrets.
 
-# Ou exemple API Python Flask
-flask run --port 5000
-```
+Au premier partage, Windows demande l'accès réseau : autorisez-le pour les
+**réseaux privés** uniquement.
 
-### Étape 2 : Ouvrir DevLink et Découvrir les Services
-1. Lancez `plpt-desktop.exe`.
-2. Dans la barre latérale gauche, sélectionnez **Centre de découverte**.
-3. DevLink affiche instantanément l'inventaire des sockets en écoute (TCP/UDP), les PIDs associés et l'origine probable (PowerShell, CMD, VS Code, Terminal).
-4. Cliquez sur le service Web que vous souhaitez partager (par exemple votre port Next.js `3000`), puis cliquez sur **Choisir** ou **Sélectionner comme point d'entrée**.
+## Côté invité
 
-### Étape 3 : Configurer et Démarrer la Session
-1. Rendez-vous dans l'onglet **Configurer le partage**.
-2. Renseignez :
-   - Le **Nom de la session** (ex. `Test Sprint 4`).
-   - Votre **Nom d'hôte** (ex. `Alex`).
-   - Le **Nombre maximum d'invités** (défaut : 5).
-   - Le **Mode de participation** :
-     - *Test indépendant* : chaque testeur dispose de ses propres cookies et session applicative.
-     - *Collaboration* : vue partagée avec contrôle exclusif.
-     - *Observation seule* : flux vidéo passif sans interaction clavier/souris.
-   - Cochez **Exiger une validation manuelle** pour approuver chaque invité avant admission.
-3. Cliquez sur **Lancer la Session DevLink**.
+1. Basculez sur « Espace invité ». Dans **Sessions du réseau**, écoutez les
+   annonces ou saisissez l'adresse et le port de l'hôte.
+2. **Rejoindre** : votre nom et le code d'invitation.
+3. Une fois admis, la **Vue partagée** s'ouvre : FLUX RÉEL, TLS 1.3, mode et droits
+   s'affichent tels que l'hôte les décide. En mode B, « Demander le contrôle ».
+4. Cliquez dans la page pour la piloter : le clavier lui est alors envoyé. Cliquez
+   hors de la vue pour le récupérer. Le presse-papier n'est pas partagé.
 
-### Étape 4 : Inviter des Testeurs et Modérer la Session
-1. L'écran bascule automatiquement sur **Session active**.
-2. Communiquez à vos testeurs le **Code d'invitation** affiché en haut (ex. `K7QF-2MXA-9TRD-4BCS`).
-3. Lorsque les testeurs saisissent le code, une demande apparaît sous **Demandes d'Adhésion en Attente** :
-   - Cliquez sur **Autoriser** pour admettre l'invité.
-   - Cliquez sur **Refuser** pour rejeter la demande.
-4. Dans le tableau des participants, vous pouvez surveiller l'état et la latence en temps réel de chaque invité, ou cliquer sur **Révoquer** pour déconnecter un participant instantanément.
+## Si cela ne marche pas
 
-### Étape 5 : Communiquer et Consulter les Signalements
-- **Messagerie** : Cliquez sur l'onglet **Messagerie de session** pour discuter avec vos testeurs ou envoyer des directives de test.
-- **Retours & Feedback** : Cliquez sur **Retours & Feedback** pour consulter la liste des bugs signalés par les testeurs (gravité, page concernée, description détaillée).
+| Symptôme | Cause probable |
+|---|---|
+| « Moteur navigateur indisponible » | runtime WebView2 absent sur l'hôte |
+| « TLS 1.3 indisponible » | DLL OpenSSL du paquet manquantes : réinstallez le paquet complet |
+| Invité : « hôte injoignable sur le port média (pare-feu ?) » | pare-feu Windows de l'hôte, ou réseau « public » |
+| Aucune session annoncée | multicast bloqué par le réseau : saisie manuelle de l'adresse et du port |
+| Page blanche ou bloquée | une ressource vient d'une origine non autorisée : ajoutez-la (compteurs « bloqués » dans Session active) |
 
-### Étape 6 : Clôture de la Session
-Cliquez sur **Fermer la Session Définitivement** :
-- Tous les flux et sockets sont instantanément coupés.
-- Les jetons d'accès et profils temporaires sont purgés.
-- Les invités sont déconnectés sans conserver aucun accès.
+## Messagerie et signalements
 
----
+Les deux passent par le canal de contrôle chiffré (TLS 1.3) de la session, sans
+service tiers. Rien n'est conservé après l'arrêt de la session.
 
-## 2. Parcours Testeur (Espace Invité)
+**Messagerie** (onglet Messagerie) : choisissez le destinataire à gauche de la
+zone de saisie, « Canal général » ou un participant (un invité peut aussi écrire
+à l'hôte). Un message privé est signalé « (privé) A → B ». L'hôte étant le serveur
+de la session, il peut lire les messages privés entre invités : ils ne sont pas
+chiffrés de bout en bout entre invités.
 
-### Étape 1 : Rejoindre une Session
-1. Lancez `plpt-desktop.exe` sur votre ordinateur.
-2. Cliquez en haut à droite sur **[ Espace Invité ]**.
-3. Dans l'onglet **Rejoindre une session** :
-   - Si la découverte réseau automatique est active, la session de votre collègue apparaît dans la liste **Sessions Détectées sur le Réseau**. Cliquez sur **Sélectionner**.
-   - Sinon, saisissez manuellement l'adresse IP de l'hôte et le port de contrôle.
-4. Saisissez votre **Nom de testeur** et le **Code d'invitation** fourni par l'hôte.
-5. Cliquez sur **Rejoindre la Session**.
+**Signalements** (onglet Signalements) :
 
-### Étape 2 : Attente et Validation
-- Si l'hôte a configuré la validation manuelle, le statut indique *En attente de l'autorisation de l'hôte*.
-- Dès que l'hôte valide, votre statut passe à *Connecté*.
-
-### Étape 3 : Tester l'Application
-1. Rendez-vous dans l'onglet **Application partagée**.
-2. Cliquez sur **Lancer le Navigateur de Test Isolé** ou copiez l'URL sécurisée tokenisée pour tester l'application.
-3. Vous disposez d'un profil de test indépendant : vos cookies, logins de test et paniers d'achat n'écrasent pas ceux des autres testeurs.
-
-### Étape 4 : Échanger et Signaler des Anomalies
-- Utilisez l'onglet **Messagerie de session** pour échanger des messages avec l'hôte et l'équipe.
-- En cas de problème ou de bug, rendez-vous dans **Signaler une anomalie** :
-  - Choisissez la gravité (Informatif, Mineur, Majeur, Bloquant).
-  - Indiquez la page testée et décrivez le problème.
-  - Cliquez sur **Transmettre le Signalement** pour notifier immédiatement l'hôte.
-
-### Étape 5 : Quitter la Session
-Cliquez sur **Se déconnecter** pour quitter proprement la session.
+- *Côté invité* : choisissez la gravité (information, mineure, majeure, bloquante),
+  indiquez éventuellement le contexte (écran, route, étape) et décrivez ce que vous
+  avez fait, ce que vous attendiez et ce qui s'est produit (2 048 octets au plus).
+  « Envoyer le signalement ». L'accusé de réception de l'hôte apparaît sous le
+  formulaire : seul cet accusé prouve la réception. N'y collez pas d'URL contenant
+  un jeton, un identifiant ou une donnée personnelle. Aucune capture d'écran ni
+  pièce jointe n'est envoyée.
+- *Côté hôte* : les signalements arrivent en tête de liste, avec gravité, auteur,
+  contexte et description, et des compteurs par gravité. Le journal de la session
+  ne garde que le numéro et la gravité, jamais le texte.

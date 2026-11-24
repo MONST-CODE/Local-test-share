@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DevLink — logo horizontal (symbole + wordmark), verrouillage officiel.
+  Rapport : symbole 240 u de haut, wordmark à 40 % (96 u), axe vertical commun,
+  espace entre les deux 44 u. Ne pas resserrer cet espace, ne pas empiler les
+  deux éléments sans refaire un verrouillage documenté.
+  Couleurs : rôles DevDark. Version monochrome : devlink-mono-dark/light.svg.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="604" height="240" viewBox="0 0 604 240">
+  <g fill="none" stroke="#C49A78" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 61 83 L 25 120 L 61 157"/>
+    <path d="M 179 83 L 215 120 L 179 157"/>
+  </g>
+  <g fill="none" stroke="#C49A78" stroke-width="13" stroke-linecap="round">
+    <path d="M 73 120 L 85 120"/>
+    <path d="M 155 120 L 167 120"/>
+  </g>
+  <g fill="none" stroke="#F5E9DC" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 94 166 L 94 74 C 126 74 146 94 146 120 C 146 146 126 166 94 166"/>
+  </g>
+  <g transform="translate(284,72) scale(0.4)">
+    <g fill="none" stroke="#F5E9DC" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M 34 180 L 34 60 C 92 60 118 84 118 120 C 118 156 92 180 34 180"/>
+      <path d="M 150 146 L 228 146 C 228 116 210 104 190 104 C 166 104 148 122 148 144 C 148 168 168 182 192 180 C 210 178 222 170 228 160"/>
+      <path d="M 264 108 L 302 180 L 340 108"/>
+      <path d="M 372 60 L 372 180 L 446 180"/>
+      <path d="M 478 112 L 478 180"/>
+      <path d="M 510 180 L 510 110"/>
+      <path d="M 510 134 C 514 114 528 104 546 104 C 568 104 580 120 580 142 L 580 180"/>
+      <path d="M 612 60 L 612 180"/>
+      <path d="M 686 106 L 624 146"/>
+      <path d="M 636 138 L 700 180"/>
+    </g>
+    <circle cx="478" cy="80" r="11" fill="#F5E9DC"/>
+  </g>
+</svg>

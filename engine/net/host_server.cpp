@@ -9,6 +9,7 @@
 #include <utility>
 #include "../core/digest.hpp"
 #include "../core/format.hpp"
+#include "../core/mac.hpp"
 #include "../core/random.hpp"
 #include "../core/secrets.hpp"
 #include "../core/text.hpp"
@@ -50,12 +51,23 @@ struct HostServer::Connection {
     FrameAssembler assembler;
     std::vector<std::uint8_t> outbox;
     std::size_t outbox_sent = 0;
-    enum class Phase : std::uint8_t { AwaitingHello, AwaitingApproval, Authed, Closing } phase = Phase::AwaitingHello;
+    enum class Phase : std::uint8_t { AwaitingHello, AwaitingProof, AwaitingApproval, Authed, Closing } phase = Phase::AwaitingHello;
     ParticipantId participant{};
     std::uint64_t request_id = 0;
     std::string guest_name;
     std::string client;
-    std::string resume_secret; // présenté au Hello, puis remplacé à l'admission.
+    // ADR-017 : aucun secret ne transite en clair. Le secret de reprise n'est
+    // plus présenté au Hello : il est PROUVÉ par HMAC sur le nonce du défi, et
+    // ce champ ne porte que le secret dont la preuve a été vérifiée (puis le
+    // nouveau secret émis à l'admission, sur le canal déjà chiffré).
+    std::string resume_secret;
+    std::vector<std::uint8_t> challenge_nonce;              // nonce public du défi
+    AuthProofKind proof_kind = AuthProofKind::InviteCode;   // nature du secret prouvé
+    std::vector<std::uint8_t> auth_secret;                  // secret prouvé, jamais transmis
+    // Basculement ADR-016 : après upgrade, TOUT passe par channel (non bloquant).
+    std::unique_ptr<ITransportChannel> channel;
+    bool secure = false;
+    std::string transport_label;
     std::uint16_t protocol_minor = model::kProtocolMinor;
     bool voluntary_leave = false;      // Bye reçu : la place n'est pas réservée.
     std::uint64_t opened_ms = 0;
@@ -106,6 +118,22 @@ Result<std::uint16_t> HostServer::start(HostConfig config) {
     published_revision_ = 0;
     shutdown_done_ = false;
 
+    // ADR-016 / mandat 1355 : le partage réel exige TLS 1.3 disponible par défaut.
+    tls_factory_.reset();
+    if (auto factory = make_tls13_factory(); factory) tls_factory_ = std::move(factory.value());
+    else return Result<std::uint16_t>::failure(factory.error());
+    if (tls_factory_->available()) {
+        session_transport_ = "TLS 1.3 PSK (pairs authentifiés)";
+    } else if (config.tls_required) {
+        return Result<std::uint16_t>::failure(Error{ErrorCode::Unsupported,
+            "partage refusé : transport TLS 1.3 indisponible (" +
+                std::string(tls_factory_->unavailability_reason()) +
+                ") ; installer le runtime OpenSSL ou assumer tls_required=false",
+            "host start", 0});
+    } else {
+        session_transport_ = "TCP clair assumé (tls_required=false) : " +
+            std::string(tls_factory_->unavailability_reason());
+    }
     session_ = std::make_unique<model::Session>(SessionId{session_id_},
         model::SessionPolicy{config_.max_participants, config_.session_ttl_ms}, clock_);
     messaging_ = std::make_unique<model::Messaging>(*session_);
@@ -164,7 +192,7 @@ void HostServer::stop() {
         worker_.request_stop();
         worker_.join();
     }
-    for (auto& connection : connections_) connection->socket.close();
+    for (auto& connection : connections_) close_connection(*connection);
     connections_.clear();
     listener_.close();
     publish();
@@ -233,8 +261,7 @@ void HostServer::run(std::stop_token token) {
         // fermeture réelle (Bye, transitions de session) ait eu lieu.
         drain_commands();
         if (!running_.load() || token.stop_requested()) break;
-        connections_.erase(std::remove_if(connections_.begin(), connections_.end(),
-            [](const std::unique_ptr<Connection>& connection) { return !connection->socket.valid(); }), connections_.end());
+        prune_dead_connections();
         accept_pending_connections();
         // Le jeu de poll est figé pour cette itération : les connexions acceptées
         // pendant le pompage ne sont PAS parcourues ici, sinon les indices
@@ -246,7 +273,7 @@ void HostServer::run(std::stop_token token) {
         entries.push_back(PollEntry{wakeup_.native(), true, false, false, false, false});
         for (const auto& connection : connections_) {
             const bool wants_write = connection->outbox_sent < connection->outbox.size();
-            entries.push_back(PollEntry{connection->socket.native(), connection->phase != Connection::Phase::Closing, wants_write, false, false, false});
+            entries.push_back(PollEntry{static_cast<NativeSocket>(connection_descriptor(*connection)), connection->phase != Connection::Phase::Closing, wants_write, false, false, false});
         }
         std::uint32_t wait_ms = 100;
         const auto now = clock_.now_monotonic_ms();
@@ -271,7 +298,7 @@ void HostServer::run(std::stop_token token) {
                 }
                 if (entry.readable && connection.phase != Connection::Phase::Closing) {
                     for (std::size_t round = 0; round < kMaxReceivePerPoll; ++round) {
-                        auto received = connection.socket.receive(buffer);
+                        auto received = read_some(connection, buffer);
                         if (!received) {
                             if (received.error().code == ErrorCode::WouldBlock) break;
                             disconnect(connection, received.error().code, "lecture impossible", false);
@@ -302,12 +329,12 @@ void HostServer::run(std::stop_token token) {
                     }
                 }
                 if (connection.phase == Connection::Phase::Closing && connection.outbox_sent >= connection.outbox.size()) {
-                    connection.socket.close();
+                    close_connection(connection);
                     continue;
                 }
                 if (entry.writable || entry.readable) {
                     while (connection.outbox_sent < connection.outbox.size()) {
-                        auto sent = connection.socket.send({connection.outbox.data() + connection.outbox_sent,
+                        auto sent = write_some(connection, {connection.outbox.data() + connection.outbox_sent,
                             connection.outbox.size() - connection.outbox_sent});
                         if (!sent) break; // WouldBlock : le reste part au prochain tour.
                         if (sent.value() == 0) break;
@@ -323,8 +350,7 @@ void HostServer::run(std::stop_token token) {
                     }
                 }
             }
-            connections_.erase(std::remove_if(connections_.begin(), connections_.end(),
-                [](const std::unique_ptr<Connection>& connection) { return !connection->socket.valid(); }), connections_.end());
+            prune_dead_connections();
             // Acceptation APRÈS le pompage : jamais au milieu d'un tableau d'entrées.
             if (entries[0].readable) accept_pending_connections();
         }
@@ -349,7 +375,7 @@ void HostServer::shutdown() {
     for (auto& connection : connections_) {
         if (connection->participant.value != 0 && session_)
             (void)session_->set_participant_state(connection->participant, model::ParticipantState::Disconnected);
-        connection->socket.close();
+        close_connection(*connection);
     }
     connections_.clear();
     listener_.close();
@@ -431,6 +457,11 @@ void HostServer::drain_commands() {
             line.recipient = command.participant;
             line.body = body.value();
             line.sent_ms = clock_.now_monotonic_ms();
+            {
+                auto& stored = direct_channels_[direct_key(host_participant_, command.participant)];
+                stored.push_back(line);
+                if (stored.size() > 200) stored.pop_front();
+            }
             relay_chat(line, config_.host_name, true, command.participant);
             counters_.chat_relayed++;
             ++revision_;
@@ -464,7 +495,7 @@ void HostServer::flush_bounded(std::chrono::milliseconds budget) {
         for (auto& connection : connections_) {
             if (connection->outbox_sent >= connection->outbox.size()) continue;
             pending = true;
-            entries.push_back(PollEntry{connection->socket.native(), false, true, false, false, false});
+            entries.push_back(PollEntry{static_cast<NativeSocket>(connection_descriptor(*connection)), false, true, false, false, false});
         }
         if (!pending) return;
         auto waited = poll_sockets(entries, std::chrono::milliseconds(50));
@@ -473,13 +504,117 @@ void HostServer::flush_bounded(std::chrono::milliseconds budget) {
         for (auto& connection : connections_) {
             if (connection->outbox_sent >= connection->outbox.size()) continue;
             if (index < entries.size() && entries[index].writable) {
-                auto sent = connection->socket.send({connection->outbox.data() + connection->outbox_sent,
+                auto sent = write_some(*connection, {connection->outbox.data() + connection->outbox_sent,
                     connection->outbox.size() - connection->outbox_sent});
                 if (sent) connection->outbox_sent += sent.value();
             }
             ++index;
         }
     }
+}
+
+TransportDescriptor HostServer::connection_descriptor(const Connection& connection) const {
+    return connection.secure ? connection.channel->descriptor()
+                             : static_cast<TransportDescriptor>(connection.socket.native());
+}
+
+bool HostServer::connection_alive(const Connection& connection) const {
+    return connection.secure ? connection.channel->descriptor() >= 0 : connection.socket.valid();
+}
+
+Result<std::size_t> HostServer::read_some(Connection& connection, std::span<std::uint8_t> buffer) {
+    return connection.secure ? connection.channel->receive(buffer) : connection.socket.receive(buffer);
+}
+
+Result<std::size_t> HostServer::write_some(Connection& connection, std::span<const std::uint8_t> data) {
+    return connection.secure ? connection.channel->send(data) : connection.socket.send(data);
+}
+
+void HostServer::close_connection(Connection& connection) {
+    if (connection.secure && connection.channel) connection.channel->close();
+    connection.socket.close();
+    connection.secure = false;
+    connection.channel.reset();
+}
+
+void HostServer::prune_dead_connections() {
+    // Retire les connexions dont le canal est mort. TOUTE suppression fait
+    // bouger la révision et republie aussitôt : l'état publié ne doit jamais
+    // conserver un pair fantôme. Le cas réel observé : un upgrade TLS refusé
+    // cède le descripteur à la fabrique, qui le ferme en échec — la connexion
+    // est morte mais l'interface continuerait d'afficher « 1 connexion ».
+    const auto before = connections_.size();
+    connections_.erase(std::remove_if(connections_.begin(), connections_.end(),
+        [this](const std::unique_ptr<Connection>& connection) { return !connection_alive(*connection); }),
+        connections_.end());
+    if (connections_.size() != before) {
+        ++revision_;
+        publish();
+    }
+}
+
+bool HostServer::flush_connection(Connection& connection, std::chrono::milliseconds budget) {
+    // Écriture bornée sur fd NON bloquant : on attend la disponibilité avant
+    // d'écrire, donc aucun blocage long du thread d'E/S (mandat 1355).
+    const auto deadline = std::chrono::steady_clock::now() + budget;
+    while (connection.outbox_sent < connection.outbox.size()) {
+        PollEntry entry{static_cast<NativeSocket>(connection_descriptor(connection)), false, true, false, false, false};
+        auto waited = poll_sockets(std::span<PollEntry>(&entry, 1), std::chrono::milliseconds(50));
+        if (!waited) return false;
+        if (entry.failed) return false;
+        if (!entry.writable) {
+            if (std::chrono::steady_clock::now() >= deadline) return false;
+            continue;
+        }
+        auto sent = write_some(connection, {connection.outbox.data() + connection.outbox_sent,
+            connection.outbox.size() - connection.outbox_sent});
+        if (sent) { connection.outbox_sent += sent.value(); continue; }
+        if (sent.error().code != ErrorCode::WouldBlock) return false;
+        if (std::chrono::steady_clock::now() >= deadline) return false;
+    }
+    connection.outbox.clear();
+    connection.outbox_sent = 0;
+    return true;
+}
+
+bool HostServer::upgrade_to_tls(Connection& connection, const std::string& identity) {
+    if (!tls_factory_ || !tls_factory_->available()) return false;
+    if (connection.auth_secret.empty() || connection.challenge_nonce.size() != kAuthNonceBytes) {
+        record_event("upgrade TLS 1.3 impossible : secret non prouvé ou défi absent");
+        return false;
+    }
+    // Secret de transport DÉRIVÉ LOCALEMENT (HMAC-SHA256 du secret prouvé, lié au
+    // nonce, à la session et à l'identité PSK). Il ne traverse jamais le fil :
+    // l'invité le recalcule de son côté (ADR-017).
+    auto derived = derive_transport_secret(connection.auth_secret, connection.challenge_nonce, session_id_, identity);
+    if (!derived) {
+        record_event("upgrade TLS 1.3 impossible : " + derived.error().message);
+        return false;
+    }
+    // 1) Dernière trame EN CLAIR : la notice publique (identité, nature du
+    //    secret, nonce). Aucun secret dedans — c'est vérifié par le codec.
+    TlsUpgradeNotice notice;
+    notice.identity = identity;
+    notice.secret_kind = connection.proof_kind;
+    notice.nonce = connection.challenge_nonce;
+    auto encoded = encode_tls_upgrade(notice);
+    if (!encoded) return false;
+    if (!queue_frame(connection, model::MessageType::TlsUpgrade, encoded.value())) return false;
+    if (!flush_connection(connection, std::chrono::milliseconds(1000))) return false;
+    // 2) Le descripteur est CÉDÉ : la fabrique le ferme même en cas d'échec.
+    const TransportDescriptor fd = static_cast<TransportDescriptor>(connection.socket.release());
+    auto channel = tls_factory_->wrap_server(fd,
+        TransportCredentials{identity, derived.value()}, config_.tls_handshake_timeout_ms);
+    if (!channel) {
+        record_event("upgrade TLS 1.3 refusé : " + channel.error().message);
+        return false;
+    }
+    connection.channel = std::move(channel.value());
+    connection.secure = true;
+    const auto info = connection.channel->info();
+    connection.transport_label = info.protocol + " " + info.cipher + " (pair authentifié)";
+    record_event("transport basculé : " + connection.transport_label + " pour « " + connection.guest_name + " »");
+    return true;
 }
 
 bool HostServer::rate_limited(const IpAddress& address) {
@@ -594,6 +729,8 @@ SessionInfo HostServer::build_session_info() const {
     info.state = session_ ? static_cast<std::uint8_t>(session_->state()) : 0;
     info.max_participants = static_cast<std::uint32_t>(config_.max_participants);
     info.started_ms = started_ms_;
+    info.transport = session_transport_;
+    info.host_participant = host_participant_;
     for (const auto& meta : participant_meta_) {
         const auto* participant = session_ ? session_->find_participant(meta.first) : nullptr;
         if (!participant || participant->role == Role::Host) continue;
@@ -603,6 +740,14 @@ SessionInfo HostServer::build_session_info() const {
         peer.state = static_cast<std::uint8_t>(participant->state);
         peer.connected_ms = meta.second.connected_ms;
         peer.latency_ms = meta.second.latency_ms;
+        // Transport RÉEL du pair, pas une espérance : étiquette du canal chiffré
+        // ou « tcp clair » assumé (ADR-016).
+        for (const auto& connection : connections_) {
+            if (connection->participant == meta.first) {
+                peer.transport = connection->secure ? connection->transport_label : std::string("tcp clair");
+                break;
+            }
+        }
         info.peers.push_back(std::move(peer));
         if (info.peers.size() >= kMaxPeers) break;
     }
@@ -655,6 +800,10 @@ void HostServer::relay_chat(const model::ChatMessage& message, const std::string
     const auto payload = encode(text);
     if (direct && only.value != 0) {
         queue_to(only, model::MessageType::Chat, payload);
+        // Écho à l'expéditeur invité : il n'affiche que ce que l'hôte a accepté,
+        // y compris ses propres messages privés.
+        if (message.sender != host_participant_ && message.sender != only)
+            queue_to(message.sender, model::MessageType::Chat, payload);
         return;
     }
     // Écho inclus : l'invité n'affiche que ce qu'il a réellement reçu du réseau.
@@ -685,12 +834,25 @@ std::vector<ChatLine> HostServer::build_chat() const {
             line.body = message.body;
             line.sent_ms = message.sent_ms;
             line.direct = true;
+            line.recipient = message.recipient.value_or(ParticipantId{});
             const auto meta = participant_meta_.find(message.sender);
             line.sender_name = message.sender == host_participant_ ? config_.host_name : (meta == participant_meta_.end() ? std::string("invité") : meta->second.name);
             lines.push_back(std::move(line));
         }
     }
-    std::stable_sort(lines.begin(), lines.end(), [](const ChatLine& left, const ChatLine& right) { return left.id < right.id; });
+    // `std::stable_sort` instantiates libstdc++'s deprecated temporary-buffer API,
+    // which fails this project's strict Clang `-Werror` build. The history is
+    // bounded to 200 records below; stable insertion sort keeps equal IDs in
+    // their original channel order without allocating a temporary buffer.
+    for (std::size_t i = 1; i < lines.size(); ++i) {
+        ChatLine current = std::move(lines[i]);
+        std::size_t position = i;
+        while (position > 0 && current.id < lines[position - 1].id) {
+            lines[position] = std::move(lines[position - 1]);
+            --position;
+        }
+        lines[position] = std::move(current);
+    }
     if (lines.size() > 200) lines.erase(lines.begin(), lines.begin() + static_cast<std::ptrdiff_t>(lines.size() - 200));
     return lines;
 }
@@ -721,6 +883,14 @@ void HostServer::handle_frame(Connection& connection, const model::Envelope& env
         return;
     }
     connection.sequence_in = envelope.sequence;
+    if (connection.phase == Connection::Phase::AwaitingProof) {
+        if (envelope.type == model::MessageType::AuthProof) { handle_auth_proof(connection, envelope); return; }
+        if (envelope.type == model::MessageType::Heartbeat) { handle_heartbeat(connection, envelope); return; }
+        if (envelope.type == model::MessageType::Bye) { handle_bye(connection, envelope); return; }
+        counters_.invalid_frames++;
+        disconnect(connection, ErrorCode::ProtocolViolation, "preuve d'authentification attendue", true);
+        return;
+    }
     if (connection.phase == Connection::Phase::AwaitingApproval) {
         if (envelope.type == model::MessageType::Heartbeat) { handle_heartbeat(connection, envelope); return; }
         if (envelope.type == model::MessageType::Bye) { handle_bye(connection, envelope); return; }
@@ -731,6 +901,7 @@ void HostServer::handle_frame(Connection& connection, const model::Envelope& env
     if (connection.phase != Connection::Phase::Authed) return;
     switch (envelope.type) {
     case model::MessageType::Chat: handle_chat(connection, envelope); break;
+    case model::MessageType::Feedback: handle_feedback(connection, envelope); break;
     case model::MessageType::Heartbeat: handle_heartbeat(connection, envelope); break;
     case model::MessageType::Bye: handle_bye(connection, envelope); break;
     default:
@@ -745,7 +916,8 @@ void HostServer::handle_hello(Connection& connection, const model::Envelope& env
     // est indiscernable d'un homonyme. Refus explicite, jamais de repli deviné.
     if (envelope.protocol_minor < model::kProtocolMinor) {
         counters_.invalid_frames++;
-        disconnect(connection, ErrorCode::UnsupportedVersion, "client trop ancien : protocole 1.2 requis", true);
+        disconnect(connection, ErrorCode::UnsupportedVersion,
+            "client trop ancien : protocole 1.3 requis (upgrade TLS 1.3)", true);
         return;
     }
     connection.protocol_minor = envelope.protocol_minor;
@@ -763,28 +935,115 @@ void HostServer::handle_hello(Connection& connection, const model::Envelope& env
     }
     connection.guest_name = name.value();
     connection.client = hello.value().client;
-    connection.resume_secret = hello.value().resume_secret; // preuve éventuelle de reprise.
-    if (!invite_code_matches(hello.value().invite_code, config_.invite_code)) {
-        counters_.bad_codes++;
-        connection.code_failures++;
-        record_code_failure(connection.address);
-        record_event("code d'invitation refusé pour « " + connection.guest_name + " » depuis " + connection.address.text);
-        if (connection.code_failures >= kMaxCodeFailuresPerConnection || rate_limited(connection.address)) {
-            disconnect(connection, ErrorCode::Unauthorized, "code d'invitation incorrect", true);
-            return;
-        }
-        HostAuth denied;
-        denied.accepted = false;
-        denied.reason = ErrorCode::Unauthorized;
-        denied.reason_text = "code d'invitation incorrect";
-        denied.host_name = config_.host_name;
-        denied.session_name = config_.session_name;
-        denied.approval_required = config_.approval_required;
-        queue_frame(connection, model::MessageType::Auth, encode(denied));
-        ++revision_;
+    // ADR-017 : un client qui enverrait encore le code ou le secret de reprise
+    // EN CLAIR est refusé net. Ce chemin n'existe plus : la connaissance du
+    // secret se prouve par HMAC sur un nonce, jamais par sa transmission.
+    if (!hello.value().invite_code.empty() || !hello.value().resume_secret.empty()) {
+        counters_.invalid_frames++;
+        disconnect(connection, ErrorCode::ProtocolViolation,
+            "secret transmis en clair refusé : protocole 1.3 exige la preuve par défi (ADR-017)", true);
         return;
     }
-    if (config_.approval_required) {
+    // Défi : nonce tiré de l'entropie de l'OS, valable une seule fois.
+    connection.challenge_nonce.resize(kAuthNonceBytes);
+    SecureRandom random;
+    if (!random.fill(connection.challenge_nonce)) {
+        disconnect(connection, ErrorCode::PlatformError, "entropie indisponible : défi impossible", true);
+        return;
+    }
+    connection.phase = Connection::Phase::AwaitingProof;
+    AuthChallenge challenge;
+    challenge.nonce = connection.challenge_nonce;
+    auto encoded_challenge = encode_auth_challenge(challenge);
+    if (!encoded_challenge) {
+        disconnect(connection, encoded_challenge.error().code, "défi invalide", true);
+        return;
+    }
+    queue_frame(connection, model::MessageType::AuthChallenge, encoded_challenge.value());
+    flush_bounded(std::chrono::milliseconds(200));
+    ++revision_;
+    return;
+}
+
+void HostServer::refuse_proof(Connection& connection, const std::string& reason) {
+    counters_.bad_codes++;
+    connection.code_failures++;
+    record_code_failure(connection.address);
+    record_event("preuve d'authentification refusée pour « " + connection.guest_name + " » depuis " +
+        connection.address.text);
+    if (connection.code_failures >= kMaxCodeFailuresPerConnection || rate_limited(connection.address)) {
+        disconnect(connection, ErrorCode::Unauthorized, reason, true);
+        return;
+    }
+    HostAuth denied;
+    denied.accepted = false;
+    denied.reason = ErrorCode::Unauthorized;
+    denied.reason_text = reason;
+    denied.host_name = config_.host_name;
+    denied.session_name = config_.session_name;
+    denied.approval_required = config_.approval_required;
+    queue_frame(connection, model::MessageType::Auth, encode(denied));
+    ++revision_;
+}
+
+void HostServer::handle_auth_proof(Connection& connection, const model::Envelope& envelope) {
+    auto proof = decode_auth_proof(envelope.payload);
+    if (!proof) {
+        counters_.invalid_frames++;
+        disconnect(connection, proof.error().code, "preuve d'authentification invalide", true);
+        return;
+    }
+    if (connection.challenge_nonce.size() != kAuthNonceBytes) {
+        disconnect(connection, ErrorCode::Internal, "défi absent : preuve refusée", true);
+        return;
+    }
+    // 1) Reprise de place : le secret est celui d'une place libérée, encore dans
+    //    son délai de grâce. Comparaison à temps constant, jamais par le nom.
+    if (!proof.value().resume_proof.empty()) {
+        const auto now = clock_.now_monotonic_ms();
+        for (const auto& slot : reconnect_slots_) {
+            if (now - slot.disconnected_ms > config_.reconnect_grace_ms) continue;
+            const std::vector<std::uint8_t> secret(slot.resume_secret.begin(), slot.resume_secret.end());
+            auto expected = compute_auth_proof(secret, connection.challenge_nonce, session_id_,
+                AuthProofKind::ResumeSecret);
+            if (!expected) continue;
+            if (!mac_equals(expected.value(), proof.value().resume_proof)) continue;
+            connection.proof_kind = AuthProofKind::ResumeSecret;
+            connection.auth_secret = secret;
+            connection.resume_secret = slot.resume_secret; // reconnu : admit() le consommera.
+            break;
+        }
+    }
+    // 2) Code d'invitation : comparé en binaire, à temps constant.
+    if (connection.auth_secret.empty() && !proof.value().invite_proof.empty()) {
+        auto expected = compute_auth_proof(std::span<const std::uint8_t>(config_.invite_code.bytes),
+            connection.challenge_nonce, session_id_, AuthProofKind::InviteCode);
+        if (expected && mac_equals(expected.value(), proof.value().invite_proof)) {
+            connection.proof_kind = AuthProofKind::InviteCode;
+            connection.auth_secret.assign(config_.invite_code.bytes.begin(), config_.invite_code.bytes.end());
+        }
+    }
+    if (connection.auth_secret.empty()) {
+        refuse_proof(connection, "code d'invitation ou secret de reprise incorrect");
+        return;
+    }
+    // Le secret est prouvé : upgrade TLS 1.3 IMMÉDIAT, avant toute attente
+    // d'approbation. Plus aucune trame utile ne circule en clair (ADR-016/017).
+    const std::string identity = "dl-s" + std::to_string(session_id_) + "-" +
+        to_hex(connection.challenge_nonce).substr(0, 16);
+    if (tls_factory_ && tls_factory_->available()) {
+        if (!upgrade_to_tls(connection, identity)) {
+            counters_.denied++;
+            disconnect(connection, ErrorCode::Unauthorized,
+                "upgrade TLS 1.3 impossible : session refusée plutôt que clair silencieux", true);
+            return;
+        }
+    } else if (config_.tls_required) {
+        disconnect(connection, ErrorCode::Unsupported,
+            "transport TLS 1.3 indisponible : partage refusé plutôt que clair silencieux", true);
+        return;
+    }
+    if (config_.approval_required && connection.proof_kind == AuthProofKind::InviteCode) {
         if (pending_.size() >= kMaxPendingJoins) {
             counters_.denied++;
             disconnect(connection, ErrorCode::CapacityExceeded, "trop de demandes en attente", true);
@@ -800,12 +1059,13 @@ void HostServer::handle_hello(Connection& connection, const model::Envelope& env
         connection.request_id = join.request_id;
         connection.phase = Connection::Phase::AwaitingApproval;
         pending_.push_back(std::move(join));
-        record_event("demande de connexion de « " + connection.guest_name + " » (" + connection.address.text + ")");
+        record_event("demande de connexion de « " + connection.guest_name + " » (" + connection.address.text +
+            ") — secret prouvé, canal " + (connection.secure ? "chiffré" : "clair assumé"));
         HostAuth waiting;
         waiting.accepted = false;
         waiting.awaiting_approval = true;
         waiting.reason = ErrorCode::Ok;
-        waiting.reason_text = "code valide : en attente d'autorisation de l'hôte";
+        waiting.reason_text = "code prouvé : en attente d'autorisation de l'hôte";
         waiting.host_name = config_.host_name;
         waiting.session_name = config_.session_name;
         waiting.approval_required = true;
@@ -854,6 +1114,14 @@ void HostServer::admit(Connection& connection) {
         }
     }
     if (participant.value == 0) {
+        if (config_.share) {
+            if (const auto reason = config_.share->admission_block_reason()) {
+                counters_.denied++;
+                record_event("admission suspendue pour « " + connection.guest_name + " » : " + *reason);
+                disconnect(connection, ErrorCode::CapacityExceeded, *reason, true);
+                return;
+            }
+        }
         auto admitted = session_->admit_verified_guest(Role::Observer, ContextId{next_context_++});
         if (!admitted) {
             counters_.denied++;
@@ -906,6 +1174,16 @@ void HostServer::admit(Connection& connection) {
         return encode(info);
     }());
     queue_frame(connection, model::MessageType::ServiceList, encode(build_service_list()));
+    // Partage réel : la clé du canal média ne part que sur un canal TLS 1.3
+    // authentifié. Sans chiffrement, aucune offre : le partage n'est pas servi.
+    if (config_.share && connection.secure) {
+        if (auto offer = config_.share->on_participant_admitted(SessionId{session_id_}, participant, connection.guest_name)) {
+            queue_frame(connection, model::MessageType::MediaOffer, encode(*offer));
+            counters_.media_offers++;
+        }
+    } else if (config_.share) {
+        record_event("« " + connection.guest_name + " » : aucun canal média offert (canal de contrôle non chiffré)");
+    }
     ChatText notice;
     notice.sender = host_participant_;
     notice.sender_name = config_.host_name;
@@ -974,6 +1252,7 @@ void HostServer::revoke_participant(ParticipantId participant) {
         return;
     }
     counters_.revoked++;
+    if (config_.share) config_.share->on_participant_removed(participant, true);
     const auto meta = participant_meta_.find(participant);
     const auto name = meta == participant_meta_.end() ? std::to_string(participant.value) : meta->second.name;
     reconnect_slots_.erase(std::remove_if(reconnect_slots_.begin(), reconnect_slots_.end(),
@@ -1057,6 +1336,54 @@ void HostServer::handle_chat(Connection& connection, const model::Envelope& enve
     publish();
 }
 
+void HostServer::handle_feedback(Connection& connection, const model::Envelope& envelope) {
+    auto report = decode_feedback(envelope.payload);
+    if (!report) {
+        counters_.invalid_frames++;
+        disconnect(connection, report.error().code, "signalement invalide", true);
+        return;
+    }
+    const auto refuse = [&](const Error& error) {
+        queue_frame(connection, model::MessageType::Error, encode(ErrorNotice{error.code, error.message}));
+        if (warnings_.size() < kMaxWarnings) warnings_.push_back(error);
+        ++revision_;
+    };
+    auto description = sanitize_chat_body(report.value().description);
+    if (!description) { refuse(description.error()); return; }
+    // Capacité SubmitFeedback et quotas : l'autorité de session décide.
+    model::IssueReport issue;
+    issue.description = description.value();
+    issue.severity = static_cast<model::Severity>(report.value().severity);
+    auto accepted = messaging_->report_issue(connection.participant, std::move(issue));
+    if (!accepted) { refuse(accepted.error()); return; }
+    FeedbackEntry entry;
+    // Identifiant unique attribué par l'autorité de messagerie : jamais réutilisé.
+    entry.id = accepted.value().value;
+    entry.reporter = connection.participant;
+    entry.reporter_name = connection.guest_name;
+    entry.severity = static_cast<FeedbackSeverity>(report.value().severity);
+    entry.description = description.value();
+    // Contexte saisi par l'invité, borné et sans caractère de contrôle.
+    entry.context = report.value().context;
+    entry.received_ms = clock_.now_wall_ms();
+    const std::string label = feedback_severity_text(entry.severity);
+    // Journal : jamais le contenu, seulement le fait et la gravité.
+    record_event("signalement n°" + std::to_string(entry.id) + " (" + label + ") reçu de « " + connection.guest_name + " »");
+    // Accusé de réception visible du seul auteur.
+    ChatText ack;
+    ack.sender = host_participant_;
+    ack.sender_name = config_.host_name;
+    ack.body = "Signalement n°" + std::to_string(entry.id) + " (gravité " + label + ") reçu par l'hôte.";
+    ack.sent_ms = clock_.now_wall_ms();
+    ack.system = true;
+    queue_frame(connection, model::MessageType::Chat, encode(ack));
+    feedback_.push_back(std::move(entry));
+    while (feedback_.size() > 200) feedback_.pop_front();
+    counters_.feedback_received++;
+    ++revision_;
+    publish();
+}
+
 void HostServer::handle_heartbeat(Connection& connection, const model::Envelope& envelope) {
     auto beat = decode_heartbeat(envelope.payload);
     if (!beat) {
@@ -1096,7 +1423,7 @@ void HostServer::handle_bye(Connection& connection, const model::Envelope& envel
 }
 
 bool HostServer::notify_refusal(Connection& connection, ErrorCode code, const std::string& text) {
-    if (!connection.socket.valid()) return false;
+    if (!connection_alive(connection)) return false;
     if (connection.participant.value != 0) {
         ByeNotice bye{code, text};
         return queue_frame(connection, model::MessageType::Bye, encode(bye));
@@ -1120,6 +1447,8 @@ void HostServer::disconnect(Connection& connection, ErrorCode code, std::string 
     }
     if (connection.participant.value != 0 && session_) {
         const auto* participant = session_->find_participant(connection.participant);
+        if (participant && participant->state != model::ParticipantState::Revoked && config_.share)
+            config_.share->on_participant_removed(connection.participant, connection.voluntary_leave);
         if (participant && participant->state != model::ParticipantState::Revoked) {
             ChatText notice;
             notice.sender = host_participant_;
@@ -1155,7 +1484,7 @@ void HostServer::disconnect(Connection& connection, ErrorCode code, std::string 
     if (code == ErrorCode::TimedOut) counters_.timeouts++;
     connection.phase = Connection::Phase::Closing;
     connection.close_deadline_ms = now + (notify_peer ? 250 : 0);
-    if (!notify_peer) connection.socket.close();
+    if (!notify_peer) close_connection(connection);
     ++revision_;
     publish();
 }
@@ -1168,6 +1497,12 @@ void HostServer::apply_timeouts() {
             if (now - connection->opened_ms > config_.auth_timeout_ms) {
                 counters_.timeouts++;
                 disconnect(*connection, ErrorCode::TimedOut, "aucune demande d'authentification dans le délai", true);
+            }
+            break;
+        case Connection::Phase::AwaitingProof:
+            if (now - connection->opened_ms > config_.auth_timeout_ms) {
+                counters_.timeouts++;
+                disconnect(*connection, ErrorCode::TimedOut, "aucune preuve d'authentification dans le délai", true);
             }
             break;
         case Connection::Phase::AwaitingApproval:
@@ -1194,12 +1529,11 @@ void HostServer::apply_timeouts() {
             break;
         }
         case Connection::Phase::Closing:
-            if (now >= connection->close_deadline_ms) connection->socket.close();
+            if (now >= connection->close_deadline_ms) close_connection(*connection);
             break;
         }
     }
-    connections_.erase(std::remove_if(connections_.begin(), connections_.end(),
-        [](const std::unique_ptr<Connection>& connection) { return !connection->socket.valid(); }), connections_.end());
+    prune_dead_connections();
     if (session_ && session_->is_expired()) {
         record_event("durée de vie de la session atteinte : fermeture");
         running_.store(false);
@@ -1227,6 +1561,7 @@ void HostServer::publish() {
     snapshot->invite_code = config_.invite_code.text;
     snapshot->control_address = config_.control_address;
     snapshot->control_port = control_port_;
+    snapshot->transport = session_transport_;
     snapshot->started_ms = started_ms_;
     snapshot->state = session_ ? session_->state() : model::SessionState::Closed;
     snapshot->services = services_;
@@ -1246,9 +1581,16 @@ void HostServer::publish() {
         record.latency_ms = meta.latency_ms;
         record.chat_messages = meta.chat_messages;
         record.client = meta.client;
+        for (const auto& connection : connections_) {
+            if (connection->participant == id) {
+                record.transport = connection->secure ? connection->transport_label : std::string("tcp clair");
+                break;
+            }
+        }
         snapshot->participants.push_back(std::move(record));
     }
     snapshot->chat = build_chat();
+    snapshot->feedback.assign(feedback_.begin(), feedback_.end());
     snapshot->events.assign(events_.begin(), events_.end());
     snapshot->warnings = warnings_;
     {

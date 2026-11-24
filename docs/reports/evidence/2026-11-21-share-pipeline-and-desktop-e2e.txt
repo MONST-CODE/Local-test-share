@@ -1,0 +1,109 @@
+﻿DevLink - preuves du 2026-11-21 (UTC 2026-11-21T03:06:32Z)
+Branche arena/125b0385-local-test-share, base 6f8550b + changements du commit qui ajoute ce fichier.
+Machine unique Windows 11 Pro x64 (10.0.26200), MSYS2 UCRT64 clang++ (build.bat officiel). Boucle locale : PAS une qualification LAN.
+Arbre teste : contenait aussi des modifications non commitees d'un autre agent (feedback, engine/net) - additives, non utilisees par ce travail.
+
+==== build.bat test release ====
+SKIP capability: UCRT64 ASan runtime not installed. Not a memory-test PASS.
+	003d50a0  <none>  02d8  GetTextMetricsW
+	003d5b98  <none>  01bf  GetSystemMetrics
+PASS 45 independent native headers
+PASS 7 independent UI headers
+	0012a178  <none>  01bf  GetSystemMetrics
+	0013b2e8  <none>  01bf  GetSystemMetrics
+	0021a950  <none>  01bf  GetSystemMetrics
+	0014e0e8  <none>  01bf  GetSystemMetrics
+	00131178  <none>  01bf  GetSystemMetrics
+	001620e8  <none>  01bf  GetSystemMetrics
+	003d50a0  <none>  02d8  GetTextMetricsW
+	003d5b98  <none>  01bf  GetSystemMetrics
+BUILD SUCCESS mode=release elapsed_centiseconds=22637 (including validation/extraction, not tests)
+unit: 42 cases, 21332 checks, 0 failures (0 failed cases)
+PASS unit exit=0
+platform: 16 cases, 531 checks, 0 failures (0 failed cases)
+PASS platform exit=0
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS ipv6 exit=0
+EVIDENCE run_id=d04cf7eef39265b5 read_from_pixels=d04cf7eef39265b5 frame_bytes=13325 1280x720
+METRIC startup_context_ms=334 navigate_ms=108 first_marked_frame_ms=143
+METRIC ticker_page_fps=10.7 avg_frame_kb=13.0
+METRIC click_to_changed_frame_ms=25 (inject -> host DOM -> compositor -> decoded)
+EVIDENCE egress_allowed=9 egress_denied=6 recent_denied=config.edge.skype.com:443
+EVIDENCE canary_hits=0 blocked_requests=4 blocked_popups=2 blocked_navigations=11 blocked_downloads=1
+browser: 5 cases, 116 checks, 0 failures (0 failed cases)
+PASS browser exit=0
+METRIC share_start_to_first_real_frame_ms=5559
+EVIDENCE guest_read_run_id=5f8abac96b31e844 transport=TLSv1.3 TLS_AES_128_GCM_SHA256
+METRIC guest_fps=11.8 guest_kbps=1500 decode_ms_avg=4.17 input_rtt_ms_avg=24.7 input_rtt_ms_last=24.7
+METRIC five_guests_min_fps=9.8 total_kbps=5479
+share: 6 cases, 137 checks, 0 failures (0 failed cases)
+PASS share exit=0
+EVIDENCE host_active control_port=50086 (invite read over a pipe, never printed)
+EVIDENCE host_dom clicks>=1=1 value_matches_guest_typing=1
+EVIDENCE guest_window_capture=1440x920 fixture_green_pixels=27224 file=e2e-guest-window.bmp
+desktop-e2e: 1 cases, 13 checks, 0 failures (0 failed cases)
+PASS desktop-e2e exit=0
+PASS cli-help exit=0
+PASS cli-version exit=0
+PASS cli-unknown exit=2
+PASS cli-extra exit=2
+PASS cli-ambiguous exit=2
+PASS ui-smoke exit=0
+PASS ui-unknown exit=2
+PASS ui-missing-argument exit=2
+PASS ui-capture-requires-smoke exit=2
+PASS ui-driver-error exit=1
+PASS ui-file-error exit=1
+TEST SUMMARY passed=17 skipped=0 mode=release
+==== build.bat test debug ====
+SKIP capability: UCRT64 ASan runtime not installed. Not a memory-test PASS.
+	003d50a0  <none>  02d8  GetTextMetricsW
+	003d5b98  <none>  01bf  GetSystemMetrics
+PASS 45 independent native headers
+PASS 7 independent UI headers
+	002070f8  <none>  01bf  GetSystemMetrics
+	00237298  <none>  01bf  GetSystemMetrics
+	003618d0  <none>  01bf  GetSystemMetrics
+	0023c068  <none>  01bf  GetSystemMetrics
+	002110f8  <none>  01bf  GetSystemMetrics
+	00248078  <none>  01bf  GetSystemMetrics
+	003d50a0  <none>  02d8  GetTextMetricsW
+	003d5b98  <none>  01bf  GetSystemMetrics
+BUILD SUCCESS mode=debug elapsed_centiseconds=21701 (including validation/extraction, not tests)
+unit: 42 cases, 21332 checks, 0 failures (0 failed cases)
+PASS unit exit=0
+platform: 16 cases, 531 checks, 0 failures (0 failed cases)
+PASS platform exit=0
+ipv6: 2 cases, 41 checks, 0 failures (0 failed cases)
+PASS ipv6 exit=0
+EVIDENCE run_id=e47c93363f568cd0 read_from_pixels=e47c93363f568cd0 frame_bytes=13265 1280x720
+METRIC startup_context_ms=314 navigate_ms=161 first_marked_frame_ms=141
+METRIC ticker_page_fps=10.7 avg_frame_kb=13.0
+METRIC click_to_changed_frame_ms=50 (inject -> host DOM -> compositor -> decoded)
+EVIDENCE egress_allowed=9 egress_denied=6 recent_denied=config.edge.skype.com:443
+EVIDENCE canary_hits=0 blocked_requests=4 blocked_popups=2 blocked_navigations=11 blocked_downloads=1
+browser: 5 cases, 116 checks, 0 failures (0 failed cases)
+PASS browser exit=0
+METRIC share_start_to_first_real_frame_ms=5600
+EVIDENCE guest_read_run_id=72136797cf060cd9 transport=TLSv1.3 TLS_AES_128_GCM_SHA256
+METRIC guest_fps=13.0 guest_kbps=1624 decode_ms_avg=3.46 input_rtt_ms_avg=32.2 input_rtt_ms_last=32.2
+METRIC five_guests_min_fps=9.8 total_kbps=5380
+share: 6 cases, 137 checks, 0 failures (0 failed cases)
+PASS share exit=0
+EVIDENCE host_active control_port=60690 (invite read over a pipe, never printed)
+EVIDENCE host_dom clicks>=1=1 value_matches_guest_typing=1
+EVIDENCE guest_window_capture=1440x920 fixture_green_pixels=27224 file=e2e-guest-window.bmp
+desktop-e2e: 1 cases, 13 checks, 0 failures (0 failed cases)
+PASS desktop-e2e exit=0
+PASS cli-help exit=0
+PASS cli-version exit=0
+PASS cli-unknown exit=2
+PASS cli-extra exit=2
+PASS cli-ambiguous exit=2
+PASS ui-smoke exit=0
+PASS ui-unknown exit=2
+PASS ui-missing-argument exit=2
+PASS ui-capture-requires-smoke exit=2
+PASS ui-driver-error exit=1
+PASS ui-file-error exit=1
+TEST SUMMARY passed=17 skipped=0 mode=debug

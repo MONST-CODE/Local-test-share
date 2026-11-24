@@ -1,0 +1,10 @@
+raw_environment_start_utc=2026-11-19T19:27:53Z
+raw_environment_end_utc=2026-11-19T19:27:56Z
+authoritative_session_date=2026-11-13 (environment clock anomaly is not corrected)
+commit=1a70c6600c5253433badd9ce446087242c62de5d
+branch=arena/125b0385-local-test-share
+os=Linux 6.1.158+ x86_64
+compiler=g++ (Debian 12.2.0-14+deb12u1) 12.2.0
+command=ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 ./.cache/media_codec_fuzz_smoke
+exit_code=0
+coverage=250000 randomized inputs plus single-byte mutations of one valid raw RGBA frame and one valid UTF-8 input packet
