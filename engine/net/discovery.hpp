@@ -21,6 +21,9 @@
 namespace plpt::net {
 
 inline constexpr char kDiscoveryGroup[] = "239.255.77.88";
+// Repli LAN lorsque le point d'accès filtre le multicast. L'annonce ne porte
+// aucun secret et rejoindre exige toujours le code d'invitation TLS.
+inline constexpr char kDiscoveryBroadcast[] = "255.255.255.255";
 inline constexpr std::uint16_t kDiscoveryPort = 47788;
 inline constexpr std::uint16_t kAnnounceVersion = 1;
 inline constexpr std::size_t kMaxAnnouncementBytes = 512;
@@ -155,8 +158,8 @@ private:
     std::jthread worker_;
 };
 
-// Cibles réelles d'annonce : multicast par interface LAN + loopback (démo sur une
-// seule machine) + broadcast si le multicast n'est pas disponible.
+// Cibles réelles d'annonce : multicast par interface LAN + broadcast limité
+// (repli pour les Wi-Fi qui filtrent le multicast) + loopback de démonstration.
 Announcer::Config announce_targets(const std::vector<NetworkInterfaceInfo>& interfaces, const Announcement& announcement,
     Port discovery_port, bool include_loopback);
 

@@ -1114,6 +1114,14 @@ void HostServer::admit(Connection& connection) {
         }
     }
     if (participant.value == 0) {
+        if (config_.share) {
+            if (const auto reason = config_.share->admission_block_reason()) {
+                counters_.denied++;
+                record_event("admission suspendue pour « " + connection.guest_name + " » : " + *reason);
+                disconnect(connection, ErrorCode::CapacityExceeded, *reason, true);
+                return;
+            }
+        }
         auto admitted = session_->admit_verified_guest(Role::Observer, ContextId{next_context_++});
         if (!admitted) {
             counters_.denied++;

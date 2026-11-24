@@ -32,6 +32,11 @@
 
 namespace plpt::share {
 
+// The wire/session model intentionally has a finite ceiling.  This is a
+// safety boundary, not an estimate of the access point's client capacity.
+inline constexpr std::size_t kMaxShareGuests = 64;
+inline constexpr std::size_t kDefaultShareGuests = 16;
+
 enum class ShareStage : std::uint8_t {
     Idle, Validating, StartingBrowser, Navigating, AwaitingFirstFrame, OpeningMediaChannel, Active, Stopping, Stopped, Failed
 };
@@ -44,7 +49,9 @@ struct ShareHostConfig {
     IpAddress bind_address = IpAddress::loopback(IpFamily::Ipv4); // same interface as the control plane
     std::uint32_t viewport_width = 1280;
     std::uint32_t viewport_height = 720;
-    std::size_t max_guests = 5;
+    // Operator target.  Admission can temporarily stop below this value when
+    // a real media channel is back-pressured.
+    std::size_t max_guests = kDefaultShareGuests;
     std::uint32_t max_fps = 30;
     std::chrono::milliseconds first_frame_timeout{15000};
     std::uint32_t tls_handshake_timeout_ms = 5000;
@@ -63,6 +70,8 @@ struct SharePeerSnapshot {
     std::uint64_t inputs_rejected = 0;
     std::string last_rejection;
     double send_fps = 0.0;
+    bool network_backpressured = false;
+    std::uint64_t backpressure_ms = 0;
 };
 
 struct ShareSnapshot {
@@ -102,6 +111,7 @@ public:
     void set_paused(bool paused);
 
     // net::IShareObserver — called on the HostServer I/O thread, never blocks.
+    std::optional<std::string> admission_block_reason() const override;
     std::optional<net::MediaOffer> on_participant_admitted(SessionId session, ParticipantId participant,
         const std::string& name) override;
     void on_participant_removed(ParticipantId participant, bool revoked) override;

@@ -43,9 +43,15 @@ namespace {
 constexpr std::uint64_t kHostContextOwner = 0x7FFF'FFFF'FFFF'FFFFULL; // profile naming only
 constexpr std::size_t kMaxPendingHandshakes = 8;
 constexpr unsigned kMaxFailuresPerMinute = 10;
+constexpr auto kAdmissionBackpressureGrace = 2s;
 
 std::uint64_t now_ns() {
     return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        SteadyClock::now().time_since_epoch()).count());
+}
+
+std::uint64_t now_steady_ms() {
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
         SteadyClock::now().time_since_epoch()).count());
 }
 
@@ -94,6 +100,9 @@ struct ShareHost::Impl {
         std::atomic<std::uint64_t> frames_sent{0};
         std::atomic<std::uint64_t> bytes_sent{0};
         std::atomic<double> fps{0.0};
+        // Set only while the single bounded pending record cannot be drained.
+        // This is a transport fact, unlike FPS (which can be zero on a static page).
+        std::atomic<std::uint64_t> backpressure_since_ms{0};
     };
 
     explicit Impl(std::unique_ptr<IRemoteBrowserBackend> b) : backend(std::move(b)) {}
@@ -453,9 +462,12 @@ struct ShareHost::Impl {
                 auto sent = ch.send(std::span<const std::uint8_t>(pending.data() + offset, pending.size() - offset));
                 if (!sent) {
                     if (sent.error().code != ErrorCode::WouldBlock) break;
+                    std::uint64_t unset = 0;
+                    (void)peer.backpressure_since_ms.compare_exchange_strong(unset, now_steady_ms());
                 } else {
                     offset += sent.value();
                     peer.bytes_sent += sent.value();
+                    peer.backpressure_since_ms.store(0);
                 }
             }
         }
@@ -603,8 +615,8 @@ Result<void> ShareHost::start(ShareHostConfig config) {
     }
     if (!browser::url_origin::is_allowed(config.entry_url, config.allowed_origins))
         return I.fail(share_error(ErrorCode::PermissionDenied, "l'URL d'entrée n'appartient pas aux origines sélectionnées"));
-    if (config.max_guests == 0 || config.max_guests > 16)
-        return I.fail(share_error(ErrorCode::InvalidArgument, "nombre d'invités hors bornes (1..16)"));
+    if (config.max_guests == 0 || config.max_guests > kMaxShareGuests)
+        return I.fail(share_error(ErrorCode::InvalidArgument, "nombre d'invités hors bornes (1..64)"));
     if (!I.backend || !I.backend->real_engine())
         return I.fail(share_error(ErrorCode::Unsupported, "aucun moteur navigateur réel : partage refusé (jamais de démonstration silencieuse)"));
     auto tls = net::make_tls13_factory();
@@ -710,6 +722,11 @@ ShareSnapshot ShareHost::snapshot() const {
                     ps.frames_sent = peer->second->frames_sent.load();
                     ps.bytes_sent = peer->second->bytes_sent.load();
                     ps.send_fps = peer->second->fps.load();
+                    const auto blocked_since = peer->second->backpressure_since_ms.load();
+                    if (blocked_since != 0) {
+                        ps.backpressure_ms = now_steady_ms() - blocked_since;
+                        ps.network_backpressured = ps.backpressure_ms >= static_cast<std::uint64_t>(kAdmissionBackpressureGrace.count());
+                    }
                 }
                 s.peers.push_back(std::move(ps));
             }
@@ -729,6 +746,22 @@ bool ShareHost::grant_control(ParticipantId participant) {
 void ShareHost::set_paused(bool paused) {
     std::lock_guard l(impl_->mutex);
     if (impl_->policy) impl_->policy->set_paused(paused);
+}
+
+std::optional<std::string> ShareHost::admission_block_reason() const {
+    const auto& I = *impl_;
+    std::lock_guard l(I.mutex);
+    if (I.stage != ShareStage::Active || !I.policy) return std::nullopt;
+    if (I.grants.size() >= I.config.max_guests)
+        return "capacité cible de partage atteinte";
+    const auto now = now_steady_ms();
+    for (const auto& [id, peer] : I.peers) {
+        const auto blocked_since = peer->backpressure_since_ms.load();
+        if (blocked_since != 0 && now >= blocked_since &&
+            now - blocked_since >= static_cast<std::uint64_t>(kAdmissionBackpressureGrace.count()))
+            return "admission suspendue : flux média saturé par le réseau";
+    }
+    return std::nullopt;
 }
 
 std::optional<net::MediaOffer> ShareHost::on_participant_admitted(SessionId session, ParticipantId participant,

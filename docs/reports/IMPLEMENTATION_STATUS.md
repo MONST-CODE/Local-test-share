@@ -1,7 +1,7 @@
 # État d'implémentation vérifié — DevLink 0.2.0-preview
 
-**Date :** 2026-11-21. **Base :** branche `arena/125b0385-local-test-share`, commit
-`8351a12` + modifications de cette session (non commitées à la rédaction).
+**Date :** 2026-11-23. **Base :** branche `arena/125b0385-local-test-share`, commit
+`fa3f379392b30f5c0caf7fb16c7fcc79f27906e3`.
 **Environnement d'exécution :** Windows 11 Pro x64 (10.0.26200), MSYS2 UCRT64,
 clang 22.1.8 (`x86_64-w64-windows-gnu`), SDL3 3.4.20-1, Dear ImGui `c1aaac6`,
 runtime WebView2 présent. **Une seule machine.**
@@ -14,6 +14,25 @@ datées. Vocabulaire : **VÉRIFIÉ** = exécuté ici, résultat conforme ;
 **PARTIEL** ; **ABSENT**. Un SKIP (code 77) n'est jamais compté comme réussi.
 
 ## 1. Exécutions de cette session
+
+### Complément de qualification locale — 2026-11-23
+
+Les commandes ci-dessous ont été exécutées sur le commit de base indiqué ci-dessus,
+avec la chaîne UCRT64 installée sur ce poste. Elles remplacent les résultats
+antérieurs lorsqu'il s'agit de qualifier ce commit précis ; elles ne remplacent pas
+la qualification LAN physique.
+
+| Commande | Résultat |
+|---|---|
+| `build.bat doctor` | VÉRIFIÉ — chaîne UCRT64/Clang 22.1.8, dépendances épinglées et sonde native OK (`SUCCESS operation=doctor`) |
+| `build.bat test debug --native-ui` | VÉRIFIÉ — 11/11 étapes, 18 tests réussis, 0 ignoré. Unit 42/21 348 ; platform 16/537 ; IPv6 2/41 ; browser 5/116 ; share 6/137 ; E2E desktop et UI native réussis. |
+| `build.bat test release --native-ui` | VÉRIFIÉ — 11/11 étapes, 18 tests réussis, 0 ignoré. Même matrice fonctionnelle en optimisation Release, E2E desktop et UI native réussis. |
+
+Les journaux bruts sont sous `out/windows/logs/` (générés localement et non
+versionnés). La qualification sur deux machines reste `BLOCKED_BY_ENVIRONMENT` :
+ce poste est connecté au Wi-Fi sous le profil Windows **Public** et aucune machine
+invitée distincte n'est disponible dans cette exécution. Ne pas modifier ce profil
+ni désactiver le pare-feu pour contourner cette porte.
 
 | Commande | Résultat |
 |---|---|
@@ -51,6 +70,18 @@ datées. Vocabulaire : **VÉRIFIÉ** = exécuté ici, résultat conforme ;
 | FR-SHR-007 expiration configurable | **PARTIEL** | `Session::is_expired` au modèle ; pas de réglage dans l'UI |
 
 ### Multi-invités (§5.3)
+
+**Capacité adaptative — 2026-11-24.** La valeur visible dans l'UI est désormais
+une capacité cible réglable de 1 à 64, avec un défaut de 16 ; ce plafond de 64
+est une borne de sûreté du protocole, pas une prétendue capacité du point
+d'accès. Windows et les bornes Wi-Fi ne publient pas de façon portable une
+capacité client fiable. L'hôte observe donc le fait utile : lorsqu'un canal
+média TLS conserve son unique enregistrement en attente pendant au moins deux
+secondes, les nouvelles admissions sont temporairement refusées avec la raison
+« flux média saturé par le réseau ». Les reconnexions conservent leur place.
+Une page immobile ne déclenche pas ce mécanisme, car son FPS peut légitimement
+être nul. L'UI affiche cet état par invité. La campagne physique multi-postes
+reste nécessaire pour calibrer ces seuils sur le point d'accès réel.
 
 | ID | Statut | Preuve / réserve |
 |---|---|---|

@@ -241,13 +241,15 @@ void roles_contexts_control_and_revocation() {
     CHECK(!role_has_capability(Role::Host, static_cast<Capability>(255)));
     CHECK(!role_has_capability(static_cast<Role>(255), Capability::ViewStream));
 }
-void five_model_guests_and_capacity() {
+void model_guest_capacity_is_configured_and_bounded() {
     ManualClock clock;
-    Session session(SessionId{1}, {}, clock); ready(session);
-    for (std::uint64_t i = 1; i <= 5; ++i) CHECK(session.admit_verified_guest(Role::IndependentTester, ContextId{i}));
-    auto sixth = session.admit_verified_guest(Role::IndependentTester, ContextId{6});
-    REQUIRE(!sixth); CHECK_EQ(sixth.error().code, ErrorCode::CapacityExceeded);
-    CHECK_EQ(session.active_count(), 5U); // modèles, PAS cinq navigateurs ou cinq PCs.
+    SessionPolicy policy;
+    policy.max_participants = 64; // protocol safety ceiling, not a Wi-Fi estimate.
+    Session session(SessionId{1}, policy, clock); ready(session);
+    for (std::uint64_t i = 1; i <= 64; ++i) CHECK(session.admit_verified_guest(Role::IndependentTester, ContextId{i}));
+    auto overflow = session.admit_verified_guest(Role::IndependentTester, ContextId{65});
+    REQUIRE(!overflow); CHECK_EQ(overflow.error().code, ErrorCode::CapacityExceeded);
+    CHECK_EQ(session.active_count(), 64U);
 }
 void messages_dm_privacy_and_read_receipts() {
     ManualClock clock;
@@ -1071,6 +1073,32 @@ void discovery_announcement_codec_is_bounded() {
     CHECK(!encode_announcement(control_char));
 }
 
+void discovery_targets_cover_multicast_broadcast_and_loopback() {
+    using namespace plpt::net;
+    Announcement announcement;
+    announcement.session_id = 1;
+    announcement.session_name = "LAN";
+    announcement.host_name = "hôte";
+    announcement.control_port = 41000;
+    announcement.max_participants = 1;
+    const std::vector<NetworkInterfaceInfo> interfaces{
+        {"Wi-Fi", "192.168.1.20", IpFamily::Ipv4, 0, true, false},
+        {"hors-ligne", "10.0.0.2", IpFamily::Ipv4, 0, false, false},
+        {"boucle", "127.0.0.1", IpFamily::Ipv4, 0, true, true},
+    };
+    const auto targets = announce_targets(interfaces, announcement, Port{kDiscoveryPort}, true);
+    REQUIRE(targets.interfaces.size() == 1U);
+    CHECK_EQ(targets.interfaces[0].text, std::string("192.168.1.20"));
+    bool multicast = false, broadcast = false, loopback = false;
+    for (const auto& [address, port] : targets.extra_targets) {
+        CHECK_EQ(port.value, kDiscoveryPort);
+        multicast = multicast || address.text == kDiscoveryGroup;
+        broadcast = broadcast || address.text == kDiscoveryBroadcast;
+        loopback = loopback || address.is_loopback();
+    }
+    CHECK(multicast); CHECK(broadcast); CHECK(loopback);
+}
+
 
 void capability_is_never_forwarded_upstream() {
     using namespace plpt::net;
@@ -1662,7 +1690,7 @@ int main() {
     CASE(result_invariants); CASE(exact_classifier_and_ancestry); CASE(cycles_missing_and_reused_pid);
     CASE(registry_grouping_and_no_auto_share); CASE(registry_churn_and_incomplete); CASE(unknown_owner_cannot_retain_selection);
     CASE(state_expiry_and_cleanup); CASE(closing_revokes_without_waiting_for_expiry); CASE(roles_contexts_control_and_revocation);
-    CASE(five_model_guests_and_capacity); CASE(messages_dm_privacy_and_read_receipts); CASE(messages_quotas_and_feedback_redaction);
+    CASE(model_guest_capacity_is_configured_and_bounded); CASE(messages_dm_privacy_and_read_receipts); CASE(messages_quotas_and_feedback_redaction);
     CASE(text_validation); CASE(protocol_golden_and_bounds);
     CASE(hmac_sha256_matches_rfc4231); CASE(challenge_response_codec_and_derivation); CASE(protocol_deterministic_mutations); CASE(estimates_are_bounded);
     CASE(audit_is_opt_in_typed_and_bounded); CASE(demo_browser_isolation_and_allowlist); CASE(unavailable_backends_fail_closed);
@@ -1672,6 +1700,7 @@ int main() {
     CASE(worker_invalidates_selection_on_partial_or_error); CASE(worker_command_queue_is_bounded);
     CASE(wire_messages_roundtrip_and_guard); CASE(secrets_digests_and_formats_are_exact);
     CASE(proxy_handshake_is_bounded_and_exact); CASE(discovery_announcement_codec_is_bounded);
+    CASE(discovery_targets_cover_multicast_broadcast_and_loopback);
     CASE(capability_is_never_forwarded_upstream); CASE(bind_resolution_never_defaults_to_any);
     CASE(resume_secret_is_the_only_proof_of_a_place);
     CASE(remote_frame_and_input_serialization); CASE(bounded_frame_queue_enforces_limits_and_lifecycle);

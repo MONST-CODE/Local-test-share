@@ -339,7 +339,7 @@ struct AppState {
     char bind_address[64] = "";      // vide = DevLink choisit (LAN reel sinon boucle locale)
     char allowed_origins[256] = "";  // allowlist du navigateur distant
     char entry_url[256] = "";        // vide = premiere origine autorisee
-    int max_participants = 5;
+    int max_participants = static_cast<int>(plpt::share::kDefaultShareGuests);
     bool approval_required = true;
     ParticipationMode mode = ParticipationMode::Collaborative;
 
@@ -450,7 +450,8 @@ bool start_host_session(AppState& state) {
     share_config.allowed_origins = origins;
     share_config.entry_url = entry;
     share_config.bind_address = bind.value().address;
-    share_config.max_guests = static_cast<std::size_t>(std::clamp(state.max_participants, 1, 5));
+    share_config.max_guests = static_cast<std::size_t>(std::clamp(state.max_participants, 1,
+        static_cast<int>(plpt::share::kMaxShareGuests)));
 
     plpt::net::HostConfig config;
     config.session_name = state.session_name;
@@ -517,7 +518,8 @@ void poll_host_launch(AppState& state) {
     announcement.host_name = snapshot->host_name;
     announcement.control_port = snapshot->control_port;
     announcement.participants = 0;
-    announcement.max_participants = static_cast<std::uint16_t>(std::max(1, state.max_participants));
+    announcement.max_participants = static_cast<std::uint16_t>(std::clamp(state.max_participants, 1,
+        static_cast<int>(plpt::share::kMaxShareGuests)));
     announcement.shared_services = 1;
     announcement.accepting = true;
     announcement.wall_ms = state.clock.now_wall_ms();
@@ -956,7 +958,9 @@ void render_share_setup(AppState& state) {
         ImGui::InputText("Adresse d'ecoute (vide = DevLink choisit)", state.bind_address, sizeof(state.bind_address));
         text_disabled_label("Jamais toutes les interfaces par defaut : une interface privee LAN "
                             "reellement presente, sinon la boucle locale, avec la raison affichee.");
-        ImGui::SliderInt("Capacite maximale d'invites", &state.max_participants, 1, 5);
+        ImGui::SliderInt("Capacite cible d'invites", &state.max_participants, 1,
+            static_cast<int>(plpt::share::kMaxShareGuests));
+        text_disabled_label("Admission adaptative : DevLink suspend les nouvelles arrivees si un flux media est reellement sature.");
         ImGui::Checkbox("Exiger l'approbation explicite de chaque invite", &state.approval_required);
 
         ImGui::Spacing();
@@ -1323,9 +1327,14 @@ void render_active_session(AppState& state) {
                     ImGui::TableNextColumn();
                     status_pill(p.media_connected ? (p.context_ready ? "RECOIT" : "PREPARATION") : "DECONNECTE",
                         p.media_connected ? colors.status_success : colors.text_disabled);
+                    if (p.network_backpressured) {
+                        ImGui::SameLine();
+                        status_pill("RESEAU SATURE", colors.status_warning);
+                    }
                     ImGui::TableNextColumn();
                     ImGui::Text("%llu - %.1f i/s - %.1f Mo", static_cast<unsigned long long>(p.frames_sent), p.send_fps,
                         static_cast<double>(p.bytes_sent) / 1e6);
+                    if (p.network_backpressured) ImGui::TextDisabled("bloque depuis %llums", static_cast<unsigned long long>(p.backpressure_ms));
                     ImGui::TableNextColumn();
                     ImGui::Text("%llu / %llu%s", static_cast<unsigned long long>(p.inputs_accepted),
                         static_cast<unsigned long long>(p.inputs_rejected), p.may_input ? " (peut agir)" : "");
@@ -2436,7 +2445,8 @@ void refresh_announcement(AppState& state) {
     announcement.host_name = snapshot->host_name;
     announcement.control_port = snapshot->control_port;
     announcement.participants = static_cast<std::uint16_t>(snapshot->participants.size());
-    announcement.max_participants = static_cast<std::uint16_t>(std::max(1, state.max_participants));
+    announcement.max_participants = static_cast<std::uint16_t>(std::clamp(state.max_participants, 1,
+        static_cast<int>(plpt::share::kMaxShareGuests)));
     announcement.shared_services = snapshot->services.empty() ? 0 : 1;
     announcement.accepting = snapshot->state == plpt::model::SessionState::AwaitingGuests ||
         snapshot->state == plpt::model::SessionState::Active;

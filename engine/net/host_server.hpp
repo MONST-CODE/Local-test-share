@@ -142,6 +142,10 @@ struct HostSnapshot {
 class IShareObserver {
 public:
     virtual ~IShareObserver() = default;
+    // Called before a NEW participant is allocated.  A share implementation
+    // may apply a live network-pressure gate; reconnecting participants keep
+    // their existing place.  It must be fast and non-blocking.
+    virtual std::optional<std::string> admission_block_reason() const = 0;
     // Admission sur un canal TLS 1.3 authentifié : rend l'offre média à envoyer
     // à CE participant (clé propre, renouvelée), ou nullopt si aucun partage.
     virtual std::optional<MediaOffer> on_participant_admitted(SessionId session, ParticipantId participant,
@@ -160,7 +164,7 @@ struct HostConfig {
     IpAddress bind_address{};
     std::uint16_t control_port = 0;              // 0 = port éphémère choisi par l'OS.
     std::string control_address;                 // adresse annoncée aux invités.
-    std::size_t max_participants = 5;
+    std::size_t max_participants = 16;
     bool approval_required = true;               // l'hôte autorise chaque demande.
     std::uint64_t session_ttl_ms = 4ULL * 60 * 60 * 1000;
     std::uint32_t auth_timeout_ms = 10000;       // sans Hello valide : connexion fermée.

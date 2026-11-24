@@ -1682,8 +1682,12 @@ set "PR_SRC=%~1"
 set "PR_DST=%~2"
 if not exist "%ROOT%\releases" mkdir "%ROOT%\releases"
 if not exist "%PR_SRC%" (call :problem "publish_release: archive source absente : %PR_SRC%"& exit /b 2)
-echo "%PR_DST%" | findstr /I /B /C:"%ROOT%\releases\" >NUL
-if errorlevel 1 (call :problem "publish_release: cible hors de releases/ : %PR_DST%"& exit /b 2)
+rem Do not compare an echoed, quoted path: FINDSTR then sees `"C:` rather than
+rem `C:` and rejects every valid destination.  Compare normalized parent paths
+rem instead; this remains a strict guard against publishing outside releases/.
+for %%R in ("%ROOT%\releases") do set "PR_RELEASES_DIR=%%~fR\"
+for %%D in ("%PR_DST%") do set "PR_DESTINATION_DIR=%%~dpD"
+if /I not "%PR_DESTINATION_DIR%"=="%PR_RELEASES_DIR%" (call :problem "publish_release: cible hors de releases/ : %PR_DST%"& exit /b 2)
 for %%T in ("%PR_DST%") do set "PR_BASE=%%~nxT"
 set "PR_PARTIAL=%PR_DST%.partial"
 set "PR_SIDECAR=%PR_DST%.sha256"

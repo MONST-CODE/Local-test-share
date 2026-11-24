@@ -108,7 +108,8 @@ Announcer::Config announce_targets(const std::vector<NetworkInterfaceInfo>& inte
     Announcer::Config config;
     config.announcement = announcement;
     const auto group = IpAddress::parse(kDiscoveryGroup);
-    if (!group) return config; // aucune cible : l'appelant verra sent_datagrams() rester à 0.
+    const auto broadcast = IpAddress::parse(kDiscoveryBroadcast);
+    if (!group || !broadcast) return config; // aucune cible : l'appelant verra sent_datagrams() rester à 0.
     const auto chosen = select_lan_interfaces(interfaces);
     for (const auto index : chosen) {
         const auto& info = interfaces[index];
@@ -117,6 +118,10 @@ Announcer::Config announce_targets(const std::vector<NetworkInterfaceInfo>& inte
             config.extra_targets.emplace_back(group.value(), discovery_port);
         }
     }
+    // Le multicast est fréquemment désactivé par les hotspots et certains Wi-Fi
+    // invités. Un unique broadcast limité est un repli sûr : il ne quitte pas le
+    // segment IPv4 local et ne contient aucune capacité ou donnée applicative.
+    if (!config.interfaces.empty()) config.extra_targets.emplace_back(broadcast.value(), discovery_port);
     if (include_loopback) config.extra_targets.emplace_back(IpAddress::loopback(IpFamily::Ipv4), discovery_port);
     return config;
 }
@@ -150,15 +155,45 @@ Result<void> DiscoveryListener::start(const Config& config) {
         view_ = std::make_shared<const std::vector<DiscoveredSession>>();
     }
     if (config_.join_multicast) {
-        // Chaque interface LAN rejoint le groupe ; un échec est un avertissement
-        // visible, jamais un démarrage silencieux en mode dégradé inconnu.
+        // Rejoindre chaque interface LAN active est nécessaire quand le poste a
+        // un Wi-Fi et un adaptateur virtuel (Hyper-V/WSL/VPN). Rejoindre seulement
+        // l'interface « par défaut » rendait l'écoute dépendante du routage local.
         auto group = IpAddress::parse(kDiscoveryGroup);
         if (!group) return Result<void>::failure(group.error());
         bool joined_any = false;
-        if (auto joined = socket_.join_multicast(group.value(), IpAddress{}); joined) joined_any = true;
-        else {
+        const auto enumerated = enumerate_network_interfaces();
+        if (enumerated) {
+            const auto selected = select_lan_interfaces(enumerated.value());
+            for (const auto index : selected) {
+                const auto& info = enumerated.value()[index];
+                if (info.family != IpFamily::Ipv4) continue;
+                auto local = IpAddress::parse(info.address);
+                if (!local) continue;
+                local.value().scope_id = info.scope_id;
+                if (auto joined = socket_.join_multicast(group.value(), local.value()); joined) {
+                    joined_any = true;
+                } else {
+                    std::lock_guard<std::mutex> guard(mutex_);
+                    if (warnings_.size() < 32)
+                        warnings_.push_back({ErrorCode::PlatformError,
+                            "multicast indisponible sur l'interface " + info.name, "discovery", joined.error().native_code});
+                }
+            }
+        } else {
             std::lock_guard<std::mutex> guard(mutex_);
-            warnings_.push_back({ErrorCode::PlatformError, "multicast sur l'interface par défaut indisponible", "discovery", joined.error().native_code});
+            warnings_.push_back({ErrorCode::PlatformError,
+                "énumération des interfaces impossible pour le multicast : " + enumerated.error().message, "discovery", enumerated.error().native_code});
+        }
+        // Aucun LAN IPv4 sélectionnable : laisser l'OS tenter l'interface de
+        // routage par défaut afin de préserver le comportement sur les réseaux
+        // atypiques. L'avertissement reste visible si cela échoue.
+        if (!joined_any) {
+            if (auto joined = socket_.join_multicast(group.value(), IpAddress{}); joined) joined_any = true;
+            else {
+                std::lock_guard<std::mutex> guard(mutex_);
+                if (warnings_.size() < 32)
+                    warnings_.push_back({ErrorCode::PlatformError, "multicast sur l'interface par défaut indisponible", "discovery", joined.error().native_code});
+            }
         }
         if (!joined_any) {
             std::lock_guard<std::mutex> guard(mutex_);

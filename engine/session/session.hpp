@@ -18,7 +18,7 @@ struct Participant {
     ContextId browser_context{};
 };
 struct SessionPolicy {
-    std::size_t max_participants = 5;
+    std::size_t max_participants = 16;
     std::uint64_t session_ttl_ms = 4 * 60 * 60 * 1000;
 };
 class Session {
